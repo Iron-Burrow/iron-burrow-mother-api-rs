@@ -1,5 +1,9 @@
 mod app;
 mod config;
+mod db;
+mod error;
+mod repositories;
+mod resolve;
 mod routes;
 mod state;
 
@@ -16,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = Config::from_env()?;
     let address = config.socket_addr()?;
-    let state = AppState::new(config);
+    let state = AppState::try_new(config)?;
     let app = create_app(state.clone());
     let listener = TcpListener::bind(address).await?;
 

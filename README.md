@@ -14,7 +14,6 @@ Deployment-wise, the old service used the stable container name `iron-burrow-mot
 
 - Price-indexer logic
 - Event or holder indexing
-- Database access and migrations
 - Auth, API keys, billing, or x402 boundaries
 - Admin, explorer, account, tracked-token, and price routes
 - TypeScript package/module architecture
@@ -51,7 +50,44 @@ Deployment-wise, the old service used the stable container name `iron-burrow-mot
 }
 ```
 
-Both endpoints are dependency-free. They do not call Postgres, price-indexer, EVM indexer, Erigon, Chainlink, or any external service.
+`/health` is dependency-free. `/v1/status` reports `checks.database` as `skipped`
+when `DATABASE_URL` is not configured, otherwise it runs a lightweight `select 1`
+and reports `reachable` or `unreachable`.
+
+`GET /api/v1/resolve?q=<query>`
+
+Resolves broad Sentinel search queries against Mother API-owned global assets.
+Unknown searches return a successful unresolved response with recommendations
+instead of forcing the frontend into a blind 404.
+
+```json
+{
+  "ok": true,
+  "type": "resolve",
+  "resolved": true,
+  "query": {
+    "raw": "usdc coin usd",
+    "normalized": "usdc coin usd"
+  },
+  "result": {
+    "kind": "asset",
+    "canonical_path": "/assets/usdc",
+    "confidence": "alias_exact",
+    "asset": {
+      "asset_id": "usdc",
+      "symbol": "USDC",
+      "name": "USD Coin",
+      "category": "crypto"
+    }
+  }
+}
+```
+
+Invalid query responses are stable:
+
+- missing or empty `q`: `400 missing_query`
+- trimmed `q` over 128 characters: `400 query_too_long`
+- configured database unavailable: `503 database_unavailable`
 
 ## Configuration
 
@@ -60,7 +96,23 @@ Both endpoints are dependency-free. They do not call Postgres, price-indexer, EV
 | `APP_ENV` | `development` | Public environment value returned by `/v1/status`. |
 | `HTTP_HOST` | `0.0.0.0` | Bind host. |
 | `HTTP_PORT` | `3000` | Bind port. |
+| `DATABASE_URL` | unset | Optional Postgres URL for `mother_api.global_assets` resolver reads. |
 | `RUST_LOG` | `iron_burrow_mother_api_rs=info,tower_http=info` | Optional tracing filter. |
+
+## Database
+
+Mother API owns a minimal `mother_api.global_assets` table for product-facing
+asset search and routing. Price-indexer, chain indexer, and infra-gateway tables
+remain out of scope for this service.
+
+Run migrations with `sqlx-cli` when `DATABASE_URL` points at the target database:
+
+```sh
+sqlx migrate run
+```
+
+The demo seed includes Bitcoin, Ethereum, USDC, Gold, Mantle, NEAR, Base, and
+Arbitrum search entries.
 
 ## Local Run
 
@@ -71,6 +123,9 @@ cargo run
 ```sh
 curl -i http://localhost:3000/health
 curl -i http://localhost:3000/v1/status
+curl -i 'http://localhost:3000/api/v1/resolve?q=usdc%20coin%20usd'
+curl -i 'http://localhost:3000/api/v1/resolve?q=oro%20de%20ley'
+curl -i 'http://localhost:3000/api/v1/resolve?q=some%20unknown%20thing'
 ```
 
 With Docker:

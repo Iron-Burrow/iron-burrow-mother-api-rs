@@ -1,7 +1,7 @@
 use axum::{extract::State, Json};
 use serde::Serialize;
 
-use crate::{routes::health, state::AppState};
+use crate::{db, routes::health, state::AppState};
 
 #[derive(Serialize)]
 pub struct StatusResponse {
@@ -23,6 +23,8 @@ pub struct StatusChecks {
 }
 
 pub async fn status(State(state): State<AppState>) -> Json<StatusResponse> {
+    let database = db::health_status(state.database_pool.as_ref()).await;
+
     Json(StatusResponse {
         ok: true,
         service: health::service_name(),
@@ -32,7 +34,7 @@ pub async fn status(State(state): State<AppState>) -> Json<StatusResponse> {
         message: "Mother API is online.",
         checks: StatusChecks {
             app: "ok",
-            database: "skipped",
+            database,
             price_indexer: "not_connected",
             evm_indexer: "not_connected",
         },

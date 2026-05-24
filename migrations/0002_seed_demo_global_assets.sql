@@ -1,0 +1,145 @@
+insert into mother_api.global_assets (
+  slug,
+  symbol,
+  name,
+  asset_kind,
+  category,
+  canonical_path,
+  aliases,
+  metadata,
+  status,
+  sort_order,
+  updated_at
+)
+values
+  (
+    'bitcoin',
+    'BTC',
+    'Bitcoin',
+    'crypto',
+    'crypto',
+    '/assets/bitcoin',
+    array['btc', 'bitcoin', 'bit coin'],
+    '{"demo_seed": true}'::jsonb,
+    'active',
+    10,
+    now()
+  ),
+  (
+    'ethereum',
+    'ETH',
+    'Ethereum',
+    'crypto',
+    'crypto',
+    '/assets/ethereum',
+    array['eth', 'ether', 'ethereum'],
+    '{"demo_seed": true}'::jsonb,
+    'active',
+    20,
+    now()
+  ),
+  (
+    'usdc',
+    'USDC',
+    'USD Coin',
+    'crypto',
+    'crypto',
+    '/assets/usdc',
+    array[
+      'usdc',
+      'usd coin',
+      'usdc coin',
+      'usdc coin usd',
+      'circle usd coin',
+      'circle usdc',
+      'dollar coin'
+    ],
+    '{"demo_seed": true}'::jsonb,
+    'active',
+    30,
+    now()
+  ),
+  (
+    'gold',
+    'XAU',
+    'Gold',
+    'commodity',
+    'commodity',
+    '/assets/gold',
+    array[
+      'gold',
+      'oro',
+      'oro de ley',
+      'xau',
+      'precious metal',
+      'metal precioso'
+    ],
+    '{"demo_seed": true}'::jsonb,
+    'active',
+    40,
+    now()
+  ),
+  (
+    'mantle',
+    'MNT',
+    'Mantle',
+    'crypto',
+    'crypto',
+    '/assets/mantle',
+    array['mnt', 'mantle', 'mantle network'],
+    '{"demo_seed": true}'::jsonb,
+    'active',
+    50,
+    now()
+  ),
+  (
+    'near',
+    'NEAR',
+    'NEAR Protocol',
+    'crypto',
+    'crypto',
+    '/assets/near',
+    array['near', 'near protocol'],
+    '{"demo_seed": true}'::jsonb,
+    'active',
+    60,
+    now()
+  ),
+  (
+    'base',
+    'BASE',
+    'Base',
+    'network',
+    'network',
+    '/networks/base',
+    array['base', 'base mainnet', 'coinbase base'],
+    '{"demo_seed": true}'::jsonb,
+    'active',
+    70,
+    now()
+  ),
+  (
+    'arbitrum',
+    'ARB',
+    'Arbitrum',
+    'network',
+    'network',
+    '/networks/arbitrum',
+    array['arb', 'arbitrum', 'arbitrum one', 'arbitrum mainnet'],
+    '{"demo_seed": true}'::jsonb,
+    'active',
+    80,
+    now()
+  )
+on conflict ((lower(slug))) do update
+set
+  symbol = excluded.symbol,
+  name = excluded.name,
+  asset_kind = excluded.asset_kind,
+  category = excluded.category,
+  canonical_path = excluded.canonical_path,
+  aliases = excluded.aliases,
+  metadata = mother_api.global_assets.metadata || excluded.metadata,
+  status = excluded.status,
+  sort_order = excluded.sort_order,
+  updated_at = now();

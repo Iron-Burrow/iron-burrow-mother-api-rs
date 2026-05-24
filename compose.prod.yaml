@@ -8,6 +8,7 @@ services:
       APP_ENV: ${APP_ENV:-production}
       HTTP_HOST: 0.0.0.0
       HTTP_PORT: 3000
+      DATABASE_URL: ${DATABASE_URL:-}
     expose:
       - "3000"
     networks:

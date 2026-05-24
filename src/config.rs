@@ -9,6 +9,7 @@ pub struct Config {
     pub app_env: String,
     pub http_host: String,
     pub http_port: u16,
+    pub database_url: Option<String>,
 }
 
 impl Config {
@@ -22,6 +23,7 @@ impl Config {
                     .map_err(|_| ConfigError::InvalidHttpPort(value))?,
                 Err(_) => DEFAULT_HTTP_PORT,
             },
+            database_url: optional_env("DATABASE_URL"),
         })
     }
 
@@ -41,8 +43,16 @@ impl Default for Config {
             app_env: DEFAULT_APP_ENV.to_string(),
             http_host: DEFAULT_HTTP_HOST.to_string(),
             http_port: DEFAULT_HTTP_PORT,
+            database_url: None,
         }
     }
+}
+
+fn optional_env(key: &str) -> Option<String> {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -80,6 +90,7 @@ mod tests {
         assert_eq!(config.app_env, "development");
         assert_eq!(config.http_host, "0.0.0.0");
         assert_eq!(config.http_port, 3000);
+        assert_eq!(config.database_url, None);
         assert_eq!(
             config.socket_addr().unwrap(),
             "0.0.0.0:3000".parse::<SocketAddr>().unwrap()
