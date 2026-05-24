@@ -1,0 +1,7 @@
+target
+.git
+.DS_Store
+_reference_implementation/node_modules
+_reference_implementation/.git
+_reference_implementation/backups
+*.log

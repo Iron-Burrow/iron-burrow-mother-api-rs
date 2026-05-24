@@ -1,0 +1,31 @@
+{$CADDY_DOMAIN} {
+	encode zstd gzip
+
+	log {
+		output stdout
+		format json
+	}
+
+	request_body {
+		max_size 1MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+	}
+
+	@motherApi {
+		method GET
+		path /health /v1/status
+	}
+	handle @motherApi {
+		reverse_proxy iron-burrow-mother-api:3000
+	}
+
+	handle {
+		respond "not found" 404
+	}
+}

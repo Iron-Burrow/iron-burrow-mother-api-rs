@@ -1,0 +1,22 @@
+services:
+  iron-burrow-mother-api:
+    build: !reset null
+    image: ghcr.io/iron-burrow/iron-burrow-mother-api-rs:${IRON_BURROW_MOTHER_API_TAG:?IRON_BURROW_MOTHER_API_TAG is required}
+    restart: unless-stopped
+    ports: !reset []
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: 3000
+    expose:
+      - "3000"
+    networks:
+      iron-burrow-net:
+        aliases:
+          - mother-api
+          - iron-burrow-mother-api
+
+networks:
+  iron-burrow-net:
+    external: true
+    name: iron-burrow-net

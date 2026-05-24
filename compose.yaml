@@ -1,0 +1,28 @@
+name: iron-burrow-mother-api-rs
+
+services:
+  iron-burrow-mother-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iron-burrow-mother-api
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: 3000
+    ports:
+      - "${HTTP_PORT:-3000}:3000"
+    networks:
+      iron-burrow-net:
+        aliases:
+          - mother-api
+          - iron-burrow-mother-api
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+networks:
+  iron-burrow-net:
+    name: iron-burrow-net
