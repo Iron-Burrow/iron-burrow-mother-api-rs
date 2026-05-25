@@ -61,6 +61,7 @@ impl ResolveResponse {
             resolved: true,
             query: QueryPayload::from(query),
             result: ResolveResult::Asset {
+                resource_url: asset_resource_url(&asset_match.asset),
                 canonical_path: asset_match.asset.canonical_path.clone(),
                 confidence: asset_match.confidence.as_str(),
                 asset: AssetPayload::from(asset_match.asset),
@@ -101,6 +102,7 @@ impl From<NormalizedQuery> for QueryPayload {
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum ResolveResult {
     Asset {
+        resource_url: String,
         canonical_path: String,
         confidence: &'static str,
         asset: AssetPayload,
@@ -109,6 +111,10 @@ enum ResolveResult {
         message: &'static str,
         recommendations: Vec<Recommendation>,
     },
+}
+
+fn asset_resource_url(asset: &GlobalAsset) -> String {
+    format!("/v1/assets/{}", asset.slug)
 }
 
 #[derive(Serialize)]
@@ -171,6 +177,7 @@ mod tests {
 
         assert_eq!(json["resolved"], true);
         assert_eq!(json["result"]["canonical_path"], "/assets/usdc");
+        assert_eq!(json["result"]["resource_url"], "/v1/assets/usdc");
         assert_eq!(json["result"]["confidence"], "alias_exact");
     }
 
@@ -226,6 +233,7 @@ mod tests {
 
         assert_eq!(json["resolved"], false);
         assert_eq!(json["result"]["kind"], "unknown");
+        assert!(json["result"]["resource_url"].is_null());
         assert!(json["result"]["recommendations"].as_array().unwrap().len() > 0);
     }
 }

@@ -283,6 +283,7 @@ mod tests {
             assert_eq!(json["type"], "resolve");
             assert_eq!(json["result"]["kind"], "asset");
             assert_eq!(json["result"]["canonical_path"], "/assets/usdc");
+            assert_eq!(json["result"]["resource_url"], "/v1/assets/usdc");
             assert_eq!(json["result"]["asset"]["asset_id"], "usdc");
         }
     }
@@ -364,6 +365,7 @@ mod tests {
 
         assert_eq!(json["resolved"], false);
         assert_eq!(json["result"]["kind"], "unknown");
+        assert!(json["result"]["resource_url"].is_null());
         assert!(json["result"]["recommendations"].as_array().unwrap().len() > 0);
     }
 
@@ -446,6 +448,7 @@ mod tests {
         assert_eq!(json["query"]["raw"], "USDC,,,coin---USD");
         assert_eq!(json["query"]["normalized"], "usdc coin usd");
         assert_eq!(json["result"]["canonical_path"], "/assets/usdc");
+        assert_eq!(json["result"]["resource_url"], "/v1/assets/usdc");
     }
 
     async fn resolve_json(uri: &str) -> Value {

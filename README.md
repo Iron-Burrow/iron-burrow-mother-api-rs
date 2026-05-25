@@ -74,6 +74,7 @@ instead of forcing the frontend into a blind 404.
   "result": {
     "kind": "asset",
     "canonical_path": "/assets/usdc",
+    "resource_url": "/v1/assets/usdc",
     "confidence": "alias_exact",
     "asset": {
       "asset_id": "usdc",
