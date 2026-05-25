@@ -59,6 +59,9 @@ services:
         aliases:
           - mother-api
           - iron-burrow-mother-api
+      iron-burrow-public-net:
+        aliases:
+          - mother-api
 
   db-migrate:
     build: !reset null

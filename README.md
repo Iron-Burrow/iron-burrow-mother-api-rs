@@ -8,7 +8,7 @@ This repository is not a line-by-line port of the old TypeScript gateway. The Ty
 
 The old TypeScript gateway was built as a broad API gateway. It includes health and status endpoints, public explorer routes, price routes, account/tracking routes, admin preview routes, API-key context middleware, rate limiting, response caching, database checks, and price-indexer checks.
 
-Deployment-wise, the old service used the stable container name `iron-burrow-mother-api`, listened on port `3000`, and was expected to be reached by Caddy over a Docker network. The Rust service keeps those deployment assumptions but drops the gateway sprawl.
+Deployment-wise, the old service used the stable container name `iron-burrow-mother-api`, listened on port `3000`, and was expected to be reached by Caddy over a Docker network. The Rust service takes over those canonical deployment names after the old TypeScript app is stopped and discarded, but drops the gateway sprawl.
 
 ## Not Ported
 
@@ -126,10 +126,11 @@ sqlx migrate run
 Docker Compose runs the same migrations through the `db-migrate` service before
 starting the API.
 
-The demo seed includes AAVE, AUSD, BTC, USDS, ETH, FBTC, GHO, MNT, MPDAO, NEAR,
-STNEAR, USDC, USDT, USDT0, USDe, WBTC, WETH, cmETH, mETH, sUSDe, and Gold as
-assets. Bitcoin mainnet, Ethereum mainnet, Base, and Mantle are seeded as
-networks.
+The seed catalog is production-alpha data, even though the current migration
+filename still says `demo`. It includes AAVE, AUSD, BTC, USDS, ETH, FBTC, GHO,
+MNT, MPDAO, NEAR, STNEAR, USDC, USDT, USDT0, USDe, WBTC, WETH, cmETH, mETH,
+sUSDe, and Gold as assets. Bitcoin mainnet, Ethereum mainnet, Base, Arbitrum
+One, Mantle, and NEAR are seeded as networks.
 
 ## Local Run
 
@@ -154,29 +155,64 @@ docker compose up --build
 
 ## Production Deploy
 
-The production service attaches to an external Docker network named `iron-burrow-net` and exposes port `3000` only to that network. Caddy should reverse proxy to `iron-burrow-mother-api:3000`.
+Production uses two external Docker networks:
+
+- `iron-burrow-public-net`: shared only by Caddy and `iron-burrow-mother-api`.
+- `iron-burrow-net`: shared only by Postgres, migrations, and `iron-burrow-mother-api`.
+
+Caddy is the only public entrypoint and publishes ports `80` and `443`. The API
+joins both networks, exposes container port `3000` without publishing it to the
+host, and is reached by Caddy as `mother-api:3000` on `iron-burrow-public-net`.
+Postgres and `db-migrate` stay on `iron-burrow-net`.
 
 ```sh
 docker network create iron-burrow-net
+docker network create iron-burrow-public-net
 ```
 
 If the network already exists, Docker will report that and no action is needed.
 
 ```sh
-cp .env.example .env.production
+cp .env.production.example .env.production
 # Edit .env.production with production values.
 docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml up -d
 ```
+
+The initial production-alpha deploy uses the pinned image tag `v0.1.0`:
+
+```sh
+IRON_BURROW_MOTHER_API_TAG=v0.1.0
+```
+
+Do not deploy production from `latest`; keep deploys tied to explicit release
+tags so rollback and audit stay boring.
+
+Before assigning the canonical `iron-burrow-mother-api` container and
+`mother-api` network alias to Rust, stop and remove the old TypeScript API. This
+repo does not maintain a side-by-side old/new naming strategy.
 
 Production verification:
 
 ```sh
 curl -i https://api.ironburrow.com/health
+curl -i https://api.ironburrow.com/v1/status
+curl -i 'https://api.ironburrow.com/v1/assets?limit=1'
+curl -i 'https://api.ironburrow.com/v1/resolve?q=usdc'
 ```
 
 `IRON_BURROW_MOTHER_API_TAG` controls both published production images:
 `ghcr.io/iron-burrow/iron-burrow-mother-api-rs` and
 `ghcr.io/iron-burrow/iron-burrow-mother-api-db-migrate`.
+
+Before cutover on the VPS, verify that `api.ironburrow.com` points to the VPS,
+that Caddy serves only the intended Rust routes (`/health` and `/v1/*`), and
+that old TypeScript routes are gone or return `404`.
+
+Render the effective production config before deploying:
+
+```sh
+docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml config
+```
 
 ## Development Checks
 
