@@ -10,3 +10,8 @@ The first Rust shape is now in place: a tiny Axum Mother API with only `/health`
 and `/v1/status`, plus Docker and Compose files that preserve the production
 container/network assumptions. The old TypeScript app stays as reference, but no
 gateway routes, indexers, database checks, auth, or price logic were ported.
+
+## 2026-05-25
+
+Added `GET /v1/assets` for listing active global assets with a default limit of
+100 and a clamped maximum of 1000.

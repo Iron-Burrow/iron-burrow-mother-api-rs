@@ -29,6 +29,14 @@ impl ApiError {
         }
     }
 
+    pub fn invalid_limit() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "invalid_limit",
+            message: "Query parameter `limit` must be a positive integer.",
+        }
+    }
+
     pub fn database_unavailable() -> Self {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,

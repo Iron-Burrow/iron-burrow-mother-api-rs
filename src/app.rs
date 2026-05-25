@@ -2,7 +2,7 @@ use axum::{routing::get, Router};
 use tower_http::trace::TraceLayer;
 
 use crate::{
-    routes::{health::health, resolve::resolve, status::status},
+    routes::{assets::assets, health::health, resolve::resolve, status::status},
     state::AppState,
 };
 
@@ -10,6 +10,7 @@ pub fn create_app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/v1/status", get(status))
+        .route("/v1/assets", get(assets))
         .route("/api/v1/resolve", get(resolve))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -97,6 +98,86 @@ mod tests {
         assert_eq!(json["checks"]["database"], "skipped");
         assert_eq!(json["checks"]["price_indexer"], "not_connected");
         assert_eq!(json["checks"]["evm_indexer"], "not_connected");
+    }
+
+    #[tokio::test]
+    async fn assets_returns_default_limited_list() {
+        let json = assets_json("/v1/assets").await;
+
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["type"], "assets");
+        assert_eq!(json["limit"], 100);
+        assert_eq!(json["count"], 21);
+        assert_eq!(json["assets"][0]["asset_id"], "bitcoin");
+        assert_eq!(json["assets"][0]["canonical_path"], "/assets/bitcoin");
+        assert!(json["assets"][0]["id"].is_null());
+        assert!(json["assets"][0]["aliases"].is_null());
+    }
+
+    #[tokio::test]
+    async fn assets_honors_limit_query_parameter() {
+        let json = assets_json("/v1/assets?limit=2").await;
+
+        assert_eq!(json["limit"], 2);
+        assert_eq!(json["count"], 2);
+        assert_eq!(json["assets"].as_array().unwrap().len(), 2);
+        assert_eq!(json["assets"][0]["asset_id"], "bitcoin");
+        assert_eq!(json["assets"][1]["asset_id"], "ethereum");
+    }
+
+    #[tokio::test]
+    async fn assets_clamps_limit_above_maximum() {
+        let json = assets_json("/v1/assets?limit=9999").await;
+
+        assert_eq!(json["limit"], 1000);
+        assert_eq!(json["count"], 21);
+    }
+
+    #[tokio::test]
+    async fn assets_rejects_invalid_limit() {
+        for uri in [
+            "/v1/assets?limit=0",
+            "/v1/assets?limit=-1",
+            "/v1/assets?limit=abc",
+        ] {
+            let response = test_app()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let json: Value = serde_json::from_slice(&body).unwrap();
+
+            assert_eq!(json["ok"], false);
+            assert_eq!(json["error"]["code"], "invalid_limit");
+        }
+    }
+
+    #[tokio::test]
+    async fn assets_reports_database_unavailable_when_repository_is_missing() {
+        let response = create_app(AppState::new(Config::default()))
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/assets")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["error"]["code"], "database_unavailable");
     }
 
     #[tokio::test]
@@ -275,6 +356,20 @@ mod tests {
     }
 
     async fn resolve_json(uri: &str) -> Value {
+        let response = test_app()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice(&body).unwrap()
+    }
+
+    async fn assets_json(uri: &str) -> Value {
         let response = test_app()
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
             .await

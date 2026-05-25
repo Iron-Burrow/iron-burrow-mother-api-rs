@@ -11,6 +11,7 @@ pub struct AppState {
 }
 
 impl AppState {
+    #[allow(dead_code)]
     pub fn new(config: Config) -> Self {
         Self::try_new(config).expect("app state should be created from config")
     }

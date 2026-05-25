@@ -54,6 +54,29 @@ Deployment-wise, the old service used the stable container name `iron-burrow-mot
 when `DATABASE_URL` is not configured, otherwise it runs a lightweight `select 1`
 and reports `reachable` or `unreachable`.
 
+`GET /v1/assets?limit=<limit>`
+
+Lists active Mother API-owned global assets. `limit` is optional, defaults to
+`100`, and is clamped to `1000`.
+
+```json
+{
+  "ok": true,
+  "type": "assets",
+  "limit": 100,
+  "count": 21,
+  "assets": [
+    {
+      "asset_id": "bitcoin",
+      "symbol": "BTC",
+      "name": "Bitcoin",
+      "category": "crypto",
+      "canonical_path": "/assets/bitcoin"
+    }
+  ]
+}
+```
+
 `GET /api/v1/resolve?q=<query>`
 
 Resolves broad Sentinel search queries against Mother API-owned global assets.
@@ -85,6 +108,7 @@ instead of forcing the frontend into a blind 404.
 
 Invalid query responses are stable:
 
+- invalid `limit`: `400 invalid_limit`
 - missing or empty `q`: `400 missing_query`
 - trimmed `q` over 128 characters: `400 query_too_long`
 - configured database unavailable: `503 database_unavailable`
@@ -134,6 +158,7 @@ cargo run
 ```sh
 curl -i http://localhost:3000/health
 curl -i http://localhost:3000/v1/status
+curl -i 'http://localhost:3000/v1/assets?limit=20'
 curl -i 'http://localhost:3000/api/v1/resolve?q=usdc%20coin%20usd'
 curl -i 'http://localhost:3000/api/v1/resolve?q=oro%20de%20ley'
 curl -i 'http://localhost:3000/api/v1/resolve?q=some%20unknown%20thing'

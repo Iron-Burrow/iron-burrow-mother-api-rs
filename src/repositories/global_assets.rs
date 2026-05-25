@@ -6,6 +6,7 @@ use sqlx::{FromRow, PgPool};
 #[derive(Clone, Debug)]
 pub enum GlobalAssetRepository {
     Database(PgPool),
+    #[allow(dead_code)]
     InMemory(Arc<Vec<GlobalAsset>>),
 }
 
@@ -14,6 +15,7 @@ impl GlobalAssetRepository {
         Self::Database(pool)
     }
 
+    #[allow(dead_code)]
     pub fn in_memory(assets: Vec<GlobalAsset>) -> Self {
         Self::InMemory(Arc::new(assets))
     }
@@ -39,6 +41,16 @@ impl GlobalAssetRepository {
                 assets,
                 normalized_query,
                 limit as usize,
+            )),
+        }
+    }
+
+    pub async fn list_assets(&self, limit: u64) -> Result<Vec<GlobalAsset>, RepositoryError> {
+        match self {
+            Self::Database(pool) => list_assets_db(pool, limit).await,
+            Self::InMemory(assets) => Ok(list_assets_in_memory(
+                assets,
+                usize::try_from(limit).unwrap_or(usize::MAX),
             )),
         }
     }
@@ -282,6 +294,32 @@ async fn list_recommendations_db(
     Ok(fallback_rows.into_iter().map(map_row).collect())
 }
 
+async fn list_assets_db(pool: &PgPool, limit: u64) -> Result<Vec<GlobalAsset>, RepositoryError> {
+    let rows = sqlx::query_as::<_, GlobalAssetRow>(
+        r#"
+        select
+          id::text,
+          slug,
+          symbol,
+          name,
+          coalesce(category, asset_kind) as category,
+          canonical_path,
+          aliases,
+          sort_order
+        from mother_api.global_asset
+        where status = 'active'
+        order by sort_order asc, lower(symbol) asc
+        limit $1
+        "#,
+    )
+    .bind(i64::try_from(limit).unwrap_or(i64::MAX))
+    .fetch_all(pool)
+    .await
+    .map_err(RepositoryError::new)?;
+
+    Ok(rows.into_iter().map(map_row).collect())
+}
+
 fn find_confident_match_in_memory(
     assets: &[GlobalAsset],
     normalized_query: &str,
@@ -346,6 +384,17 @@ fn list_recommendations_in_memory(
     matches
 }
 
+fn list_assets_in_memory(assets: &[GlobalAsset], limit: usize) -> Vec<GlobalAsset> {
+    let mut assets = assets.to_vec();
+    assets.sort_by(|left, right| {
+        left.sort_order
+            .cmp(&right.sort_order)
+            .then_with(|| left.symbol.to_lowercase().cmp(&right.symbol.to_lowercase()))
+    });
+    assets.truncate(limit);
+    assets
+}
+
 fn asset_contains(asset: &GlobalAsset, normalized_query: &str) -> bool {
     let query = normalized_query.to_ascii_lowercase();
     asset.slug.to_ascii_lowercase().contains(&query)
@@ -371,6 +420,41 @@ fn escape_like_pattern(value: &str) -> String {
         .replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn list_assets_returns_assets_in_stable_order() {
+        let repository = GlobalAssetRepository::in_memory(vec![
+            demo_asset("zeta", "ZZZ", "Zeta", "crypto", "/assets/zeta", &[], 20),
+            demo_asset("alpha", "BBB", "Alpha", "crypto", "/assets/alpha", &[], 10),
+            demo_asset("beta", "AAA", "Beta", "crypto", "/assets/beta", &[], 10),
+        ]);
+
+        let assets = repository.list_assets(10).await.unwrap();
+
+        assert_eq!(
+            assets
+                .into_iter()
+                .map(|asset| asset.slug)
+                .collect::<Vec<_>>(),
+            ["beta", "alpha", "zeta"]
+        );
+    }
+
+    #[tokio::test]
+    async fn list_assets_truncates_to_limit() {
+        let repository = GlobalAssetRepository::in_memory(demo_assets());
+
+        let assets = repository.list_assets(2).await.unwrap();
+
+        assert_eq!(assets.len(), 2);
+        assert_eq!(assets[0].slug, "bitcoin");
+        assert_eq!(assets[1].slug, "ethereum");
+    }
 }
 
 #[cfg(test)]
