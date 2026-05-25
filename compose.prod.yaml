@@ -1,4 +1,26 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: ibdb-postgres
+    ports: !reset []
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - ibdb-postgres-data:/var/lib/postgresql/data
+    networks:
+      iron-burrow-net:
+        aliases:
+          - postgres
+          - ibdb-postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   iron-burrow-mother-api:
     build: !reset null
     image: ghcr.io/iron-burrow/iron-burrow-mother-api-rs:${IRON_BURROW_MOTHER_API_TAG:?IRON_BURROW_MOTHER_API_TAG is required}
@@ -8,7 +30,8 @@ services:
       APP_ENV: ${APP_ENV:-production}
       HTTP_HOST: 0.0.0.0
       HTTP_PORT: 3000
-      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      RUST_LOG: ${RUST_LOG:-iron_burrow_mother_api_rs=info,tower_http=info}
     expose:
       - "3000"
     networks:

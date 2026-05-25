@@ -131,6 +131,7 @@ curl -i 'http://localhost:3000/api/v1/resolve?q=some%20unknown%20thing'
 With Docker:
 
 ```sh
+cp .env.example .env
 docker compose up --build
 ```
 
@@ -145,8 +146,9 @@ docker network create iron-burrow-net
 If the network already exists, Docker will report that and no action is needed.
 
 ```sh
-export IRON_BURROW_MOTHER_API_TAG=<release-tag>
-docker compose -f compose.yaml -f compose.prod.yaml up -d
+cp .env.example .env.production
+# Edit .env.production with production values.
+docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml up -d
 ```
 
 Production verification:
