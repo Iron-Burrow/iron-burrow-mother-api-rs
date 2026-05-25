@@ -56,6 +56,72 @@ Lists active Mother API-owned global assets. `limit` is optional, defaults to
 }
 ```
 
+`GET /v1/assets/{slug}`
+
+Returns one active asset plus the network-specific chain maps the UI can use to
+render asset detail pages.
+
+```json
+{
+  "ok": true,
+  "type": "asset",
+  "asset": {
+    "asset_id": "usdc",
+    "symbol": "USDC",
+    "name": "USD Coin",
+    "category": "crypto",
+    "canonical_path": "/assets/usdc"
+  },
+  "chain_maps": [
+    {
+      "network": {
+        "slug": "eth-mainnet",
+        "name": "Ethereum Mainnet",
+        "caip2": "eip155:1"
+      },
+      "is_native": false,
+      "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+    },
+    {
+      "network": {
+        "slug": "arbitrum-one",
+        "name": "Arbitrum One",
+        "caip2": "eip155:42161"
+      },
+      "is_native": false,
+      "address": "0xaf88d065e77c8cc2239327c5edb3a432268e5831"
+    },
+    {
+      "network": {
+        "slug": "base",
+        "name": "Base",
+        "caip2": "eip155:8453"
+      },
+      "is_native": false,
+      "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+    },
+    {
+      "network": {
+        "slug": "near",
+        "name": "NEAR Mainnet",
+        "caip2": "near:mainnet"
+      },
+      "is_native": false,
+      "address": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1"
+    },
+    {
+      "network": {
+        "slug": "mantle",
+        "name": "Mantle",
+        "caip2": "eip155:5000"
+      },
+      "is_native": false,
+      "address": "0x09bc4e0d864854c6afb6eb9a9cdf58ac190d0df9"
+    }
+  ]
+}
+```
+
 `GET /v1/resolve?q=<query>`
 
 Resolves broad Sentinel search queries against Mother API-owned global assets.
