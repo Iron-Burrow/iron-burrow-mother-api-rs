@@ -131,6 +131,8 @@ mod tests {
             ("btc", "/assets/bitcoin"),
             ("ethereum", "/assets/ethereum"),
             ("eth", "/assets/ethereum"),
+            ("wbtc", "/assets/wrapped-bitcoin"),
+            ("wrapped%20bitcoin", "/assets/wrapped-bitcoin"),
             ("mantle", "/assets/mantle"),
             ("mnt", "/assets/mantle"),
             ("near%20protocol", "/assets/near"),
@@ -139,6 +141,17 @@ mod tests {
 
             assert_eq!(json["resolved"], true);
             assert_eq!(json["result"]["canonical_path"], path);
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_does_not_treat_network_aliases_as_assets() {
+        for query in ["base", "base%20mainnet", "coinbase%20base"] {
+            let json = resolve_json(&format!("/api/v1/resolve?q={query}")).await;
+
+            assert_eq!(json["resolved"], false);
+            assert_eq!(json["result"]["kind"], "unknown");
+            assert!(json["result"]["recommendations"].as_array().unwrap().len() > 0);
         }
     }
 

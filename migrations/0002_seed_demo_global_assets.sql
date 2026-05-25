@@ -1,4 +1,4 @@
-insert into mother_api.global_assets (
+insert into mother_api.global_asset (
   slug,
   symbol,
   name,
@@ -60,6 +60,19 @@ values
     now()
   ),
   (
+    'wrapped-bitcoin',
+    'WBTC',
+    'Wrapped Bitcoin',
+    'crypto',
+    'crypto',
+    '/assets/wrapped-bitcoin',
+    array['wbtc', 'wrapped bitcoin', 'wrapped btc'],
+    '{"demo_seed": true}'::jsonb,
+    'active',
+    35,
+    now()
+  ),
+  (
     'gold',
     'XAU',
     'Gold',
@@ -86,7 +99,7 @@ values
     'crypto',
     'crypto',
     '/assets/mantle',
-    array['mnt', 'mantle', 'mantle network'],
+    array['mnt', 'mantle'],
     '{"demo_seed": true}'::jsonb,
     'active',
     50,
@@ -104,34 +117,8 @@ values
     'active',
     60,
     now()
-  ),
-  (
-    'base',
-    'BASE',
-    'Base',
-    'network',
-    'network',
-    '/networks/base',
-    array['base', 'base mainnet', 'coinbase base'],
-    '{"demo_seed": true}'::jsonb,
-    'active',
-    70,
-    now()
-  ),
-  (
-    'arbitrum',
-    'ARB',
-    'Arbitrum',
-    'network',
-    'network',
-    '/networks/arbitrum',
-    array['arb', 'arbitrum', 'arbitrum one', 'arbitrum mainnet'],
-    '{"demo_seed": true}'::jsonb,
-    'active',
-    80,
-    now()
   )
-on conflict ((lower(slug))) do update
+on conflict ((lower(slug))) where status = 'active' do update
 set
   symbol = excluded.symbol,
   name = excluded.name,
@@ -139,7 +126,203 @@ set
   category = excluded.category,
   canonical_path = excluded.canonical_path,
   aliases = excluded.aliases,
-  metadata = mother_api.global_assets.metadata || excluded.metadata,
+  metadata = mother_api.global_asset.metadata || excluded.metadata,
+  status = excluded.status,
+  sort_order = excluded.sort_order,
+  updated_at = now();
+
+insert into mother_api.network (
+  slug,
+  name,
+  family,
+  chain_id,
+  caip2,
+  aliases,
+  metadata,
+  status,
+  sort_order,
+  updated_at
+)
+values
+  (
+    'bitcoin-mainnet',
+    'Bitcoin Mainnet',
+    'bitcoin',
+    null,
+    'bip122:000000000019d6689c085ae165831e93',
+    array['bitcoin mainnet', 'btc mainnet'],
+    '{"demo_seed": true}'::jsonb,
+    'active',
+    10,
+    now()
+  ),
+  (
+    'eth-mainnet',
+    'Ethereum Mainnet',
+    'evm',
+    1,
+    'eip155:1',
+    array['ethereum mainnet', 'eth mainnet'],
+    '{"demo_seed": true}'::jsonb,
+    'active',
+    20,
+    now()
+  ),
+  (
+    'base',
+    'Base',
+    'evm',
+    8453,
+    'eip155:8453',
+    array['base', 'base mainnet', 'coinbase base'],
+    '{"demo_seed": true}'::jsonb,
+    'active',
+    30,
+    now()
+  ),
+  (
+    'mantle',
+    'Mantle',
+    'evm',
+    5000,
+    'eip155:5000',
+    array['mantle network', 'mantle mainnet'],
+    '{"demo_seed": true}'::jsonb,
+    'active',
+    40,
+    now()
+  )
+on conflict ((lower(slug))) where status = 'active' do update
+set
+  name = excluded.name,
+  family = excluded.family,
+  chain_id = excluded.chain_id,
+  caip2 = excluded.caip2,
+  aliases = excluded.aliases,
+  metadata = mother_api.network.metadata || excluded.metadata,
+  status = excluded.status,
+  sort_order = excluded.sort_order,
+  updated_at = now();
+
+with mappings as (
+  select *
+  from (
+    values
+      ('bitcoin', 'bitcoin-mainnet', true, null::text, null::bigint, 8, null::text, '{"demo_seed": true}'::jsonb, 10),
+      ('ethereum', 'eth-mainnet', true, null::text, null::bigint, 18, null::text, '{"demo_seed": true}'::jsonb, 20),
+      ('ethereum', 'base', true, null::text, null::bigint, 18, null::text, '{"demo_seed": true}'::jsonb, 30),
+      ('mantle', 'mantle', true, null::text, null::bigint, 18, null::text, '{"demo_seed": true}'::jsonb, 40)
+  ) as mapping(asset_slug, network_slug, is_native, deployment_address, deployment_block, decimals, token_standard, metadata, sort_order)
+)
+insert into mother_api.asset_chain_map (
+  asset_id,
+  network_id,
+  is_native,
+  deployment_address,
+  deployment_block,
+  decimals,
+  token_standard,
+  metadata,
+  status,
+  sort_order,
+  updated_at
+)
+select
+  asset.id,
+  network.id,
+  mappings.is_native,
+  mappings.deployment_address,
+  mappings.deployment_block,
+  mappings.decimals,
+  mappings.token_standard,
+  mappings.metadata,
+  'active',
+  mappings.sort_order,
+  now()
+from mappings
+join mother_api.global_asset asset
+  on asset.slug = mappings.asset_slug
+join mother_api.network network
+  on network.slug = mappings.network_slug
+on conflict (network_id) where status = 'active' and is_native = true do update
+set
+  asset_id = excluded.asset_id,
+  deployment_address = excluded.deployment_address,
+  deployment_block = excluded.deployment_block,
+  decimals = excluded.decimals,
+  token_standard = excluded.token_standard,
+  metadata = mother_api.asset_chain_map.metadata || excluded.metadata,
+  status = excluded.status,
+  sort_order = excluded.sort_order,
+  updated_at = now();
+
+with mappings as (
+  select *
+  from (
+    values
+      (
+        'usdc',
+        'base',
+        false,
+        '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+        null::bigint,
+        6,
+        'erc20',
+        '{"demo_seed": true, "source": "circle"}'::jsonb,
+        50
+      ),
+      (
+        'wrapped-bitcoin',
+        'base',
+        false,
+        '0x0555e30da8f98308edb960aa94c0db47230d2b9c',
+        null::bigint,
+        8,
+        'erc20',
+        '{"demo_seed": true, "source": "basescan"}'::jsonb,
+        60
+      )
+  ) as mapping(asset_slug, network_slug, is_native, deployment_address, deployment_block, decimals, token_standard, metadata, sort_order)
+)
+insert into mother_api.asset_chain_map (
+  asset_id,
+  network_id,
+  is_native,
+  deployment_address,
+  deployment_block,
+  decimals,
+  token_standard,
+  metadata,
+  status,
+  sort_order,
+  updated_at
+)
+select
+  asset.id,
+  network.id,
+  mappings.is_native,
+  mappings.deployment_address,
+  mappings.deployment_block,
+  mappings.decimals,
+  mappings.token_standard,
+  mappings.metadata,
+  'active',
+  mappings.sort_order,
+  now()
+from mappings
+join mother_api.global_asset asset
+  on asset.slug = mappings.asset_slug
+join mother_api.network network
+  on network.slug = mappings.network_slug
+on conflict (network_id, (lower(deployment_address)))
+  where status = 'active' and deployment_address is not null do update
+set
+  asset_id = excluded.asset_id,
+  is_native = excluded.is_native,
+  deployment_block = excluded.deployment_block,
+  decimals = excluded.decimals,
+  token_standard = excluded.token_standard,
+  metadata = mother_api.asset_chain_map.metadata || excluded.metadata,
   status = excluded.status,
   sort_order = excluded.sort_order,
   updated_at = now();

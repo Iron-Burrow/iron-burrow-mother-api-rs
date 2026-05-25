@@ -182,7 +182,7 @@ async fn find_confident_match_db(
             when lower(name) = $1 then 'name_exact'
             else 'alias_exact'
           end as match_kind
-        from mother_api.global_assets
+        from mother_api.global_asset
         where status = 'active'
           and (
             lower(slug) = $1
@@ -231,7 +231,7 @@ async fn list_recommendations_db(
           canonical_path,
           aliases,
           sort_order
-        from mother_api.global_assets
+        from mother_api.global_asset
         where status = 'active'
           and (
             lower(slug) like $1 escape '\'
@@ -268,7 +268,7 @@ async fn list_recommendations_db(
           canonical_path,
           aliases,
           sort_order
-        from mother_api.global_assets
+        from mother_api.global_asset
         where status = 'active'
         order by sort_order asc, lower(symbol) asc
         limit $1
@@ -412,6 +412,15 @@ pub fn demo_assets() -> Vec<GlobalAsset> {
             30,
         ),
         demo_asset(
+            "wrapped-bitcoin",
+            "WBTC",
+            "Wrapped Bitcoin",
+            "crypto",
+            "/assets/wrapped-bitcoin",
+            &["wbtc", "wrapped bitcoin", "wrapped btc"],
+            35,
+        ),
+        demo_asset(
             "gold",
             "XAU",
             "Gold",
@@ -433,7 +442,7 @@ pub fn demo_assets() -> Vec<GlobalAsset> {
             "Mantle",
             "crypto",
             "/assets/mantle",
-            &["mnt", "mantle", "mantle network"],
+            &["mnt", "mantle"],
             50,
         ),
         demo_asset(

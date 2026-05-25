@@ -96,14 +96,23 @@ Invalid query responses are stable:
 | `APP_ENV` | `development` | Public environment value returned by `/v1/status`. |
 | `HTTP_HOST` | `0.0.0.0` | Bind host. |
 | `HTTP_PORT` | `3000` | Bind port. |
-| `DATABASE_URL` | unset | Optional Postgres URL for `mother_api.global_assets` resolver reads. |
+| `DATABASE_URL` | unset | Optional Postgres URL for `mother_api.global_asset` resolver reads. |
 | `RUST_LOG` | `iron_burrow_mother_api_rs=info,tower_http=info` | Optional tracing filter. |
 
 ## Database
 
-Mother API owns a minimal `mother_api.global_assets` table for product-facing
-asset search and routing. Price-indexer, chain indexer, and infra-gateway tables
-remain out of scope for this service.
+Mother API owns a minimal global asset catalog for product-facing asset search
+and routing:
+
+- `mother_api.global_asset`: chain-agnostic assets such as Bitcoin, ETH, USDC,
+  WBTC, Mantle, NEAR, and Gold.
+- `mother_api.network`: networks such as Bitcoin mainnet, Ethereum mainnet,
+  Base, and Mantle.
+- `mother_api.asset_chain_map`: native assets and deployed token
+  representations on each network.
+
+Price-indexer, chain indexer, and infra-gateway tables remain out of scope for
+this service.
 
 Run migrations with `sqlx-cli` when `DATABASE_URL` points at the target database:
 
@@ -111,8 +120,9 @@ Run migrations with `sqlx-cli` when `DATABASE_URL` points at the target database
 sqlx migrate run
 ```
 
-The demo seed includes Bitcoin, Ethereum, USDC, Gold, Mantle, NEAR, Base, and
-Arbitrum search entries.
+The demo seed includes Bitcoin, Ethereum, USDC, WBTC, Gold, Mantle, and NEAR as
+assets. Bitcoin mainnet, Ethereum mainnet, Base, and Mantle are seeded as
+networks.
 
 ## Local Run
 

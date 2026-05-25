@@ -189,6 +189,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn resolves_wrapped_bitcoin_aliases() {
+        for query in ["wbtc", "wrapped bitcoin", "wrapped btc"] {
+            let response = service()
+                .resolve(parse_query(Some(query)).unwrap())
+                .await
+                .unwrap();
+            let json = serde_json::to_value(response).unwrap();
+
+            assert_eq!(json["resolved"], true);
+            assert_eq!(json["result"]["canonical_path"], "/assets/wrapped-bitcoin");
+        }
+    }
+
+    #[tokio::test]
+    async fn leaves_network_only_aliases_unresolved() {
+        for query in ["base", "base mainnet", "coinbase base"] {
+            let response = service()
+                .resolve(parse_query(Some(query)).unwrap())
+                .await
+                .unwrap();
+            let json = serde_json::to_value(response).unwrap();
+
+            assert_eq!(json["resolved"], false);
+            assert_eq!(json["result"]["kind"], "unknown");
+        }
+    }
+
+    #[tokio::test]
     async fn returns_unknown_with_recommendations() {
         let response = service()
             .resolve(parse_query(Some("some unknown thing")).unwrap())
