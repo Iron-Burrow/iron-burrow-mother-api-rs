@@ -1,6 +1,23 @@
 name: iron-burrow-mother-api-rs
 
 services:
+  caddy:
+    image: caddy:2
+    container_name: iron-burrow-caddy
+    profiles: ["app-dev"]
+    restart: unless-stopped
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - iron-burrow-public-net
+
   postgres:
     image: postgres:17-alpine
     container_name: ibdb-postgres
@@ -26,7 +43,7 @@ services:
   iron-burrow-mother-api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: infra/docker/Dockerfile.mother-api
     container_name: iron-burrow-mother-api
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -37,23 +54,45 @@ services:
     ports:
       - "${HOST_HTTP_PORT:-3000}:3000"
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
     networks:
       iron-burrow-net:
         aliases:
           - mother-api
           - iron-burrow-mother-api
+      iron-burrow-public-net:
+        aliases:
+          - mother-api
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
 
+  db-migrate:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.mother-api-db-migrate
+    container_name: iron-burrow-mother-api-db-migrate
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/ibdb}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - iron-burrow-net
+
 networks:
   iron-burrow-net:
     name: iron-burrow-net
+  iron-burrow-public-net:
+    name: iron-burrow-public-net
 
 volumes:
   ibdb-postgres-data:
     name: ibdb-postgres-data
+  caddy-data:
+    name: caddy-data
+  caddy-config:
+    name: caddy-config

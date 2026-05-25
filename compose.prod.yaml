@@ -1,4 +1,21 @@
 services:
+  caddy:
+    image: caddy:2
+    container_name: iron-burrow-caddy
+    profiles: !reset []
+    restart: unless-stopped
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN:?CADDY_DOMAIN is required}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - iron-burrow-public-net
+
   postgres:
     image: postgres:17-alpine
     container_name: ibdb-postgres
@@ -26,6 +43,9 @@ services:
     image: ghcr.io/iron-burrow/iron-burrow-mother-api-rs:${IRON_BURROW_MOTHER_API_TAG:?IRON_BURROW_MOTHER_API_TAG is required}
     restart: unless-stopped
     ports: !reset []
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
     environment:
       APP_ENV: ${APP_ENV:-production}
       HTTP_HOST: 0.0.0.0
@@ -40,7 +60,19 @@ services:
           - mother-api
           - iron-burrow-mother-api
 
+  db-migrate:
+    build: !reset null
+    image: ghcr.io/iron-burrow/iron-burrow-mother-api-db-migrate:${IRON_BURROW_MOTHER_API_TAG:?IRON_BURROW_MOTHER_API_TAG is required}
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 networks:
   iron-burrow-net:
     external: true
     name: iron-burrow-net
+  iron-burrow-public-net:
+    external: true
+    name: iron-burrow-public-net

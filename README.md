@@ -123,6 +123,9 @@ Run migrations with `sqlx-cli` when `DATABASE_URL` points at the target database
 sqlx migrate run
 ```
 
+Docker Compose runs the same migrations through the `db-migrate` service before
+starting the API.
+
 The demo seed includes AAVE, AUSD, BTC, USDS, ETH, FBTC, GHO, MNT, MPDAO, NEAR,
 STNEAR, USDC, USDT, USDT0, USDe, WBTC, WETH, cmETH, mETH, sUSDe, and Gold as
 assets. Bitcoin mainnet, Ethereum mainnet, Base, and Mantle are seeded as
@@ -170,6 +173,10 @@ Production verification:
 ```sh
 curl -i https://api.ironburrow.com/health
 ```
+
+`IRON_BURROW_MOTHER_API_TAG` controls both published production images:
+`ghcr.io/iron-burrow/iron-burrow-mother-api-rs` and
+`ghcr.io/iron-burrow/iron-burrow-mother-api-db-migrate`.
 
 ## Development Checks
 
