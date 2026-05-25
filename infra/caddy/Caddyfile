@@ -18,19 +18,11 @@
 		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 	}
 
-	@health {
+	@api {
 		method GET
-		path /health
+		path /health /v1/*
 	}
-	handle @health {
-		reverse_proxy mother-api:3000
-	}
-
-	@latestPrices {
-		method GET
-		path /v1/prices/latest
-	}
-	handle @latestPrices {
+	handle @api {
 		reverse_proxy mother-api:3000
 	}
 
