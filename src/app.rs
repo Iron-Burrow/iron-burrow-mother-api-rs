@@ -127,15 +127,29 @@ mod tests {
     #[tokio::test]
     async fn resolve_returns_core_crypto_assets() {
         for (query, path) in [
+            ("aave", "/assets/aave"),
+            ("ausd", "/assets/ausd"),
             ("bitcoin", "/assets/bitcoin"),
             ("btc", "/assets/bitcoin"),
+            ("usds", "/assets/usds"),
             ("ethereum", "/assets/ethereum"),
             ("eth", "/assets/ethereum"),
+            ("fbtc", "/assets/fbtc"),
+            ("gho", "/assets/gho"),
             ("wbtc", "/assets/wrapped-bitcoin"),
             ("wrapped%20bitcoin", "/assets/wrapped-bitcoin"),
             ("mantle", "/assets/mantle"),
             ("mnt", "/assets/mantle"),
+            ("mpdao", "/assets/mpdao"),
             ("near%20protocol", "/assets/near"),
+            ("stnear", "/assets/stnear"),
+            ("usdt", "/assets/usdt"),
+            ("usdt0", "/assets/usdt0"),
+            ("usde", "/assets/usde"),
+            ("weth", "/assets/wrapped-ether"),
+            ("cmeth", "/assets/cmeth"),
+            ("meth", "/assets/meth"),
+            ("susde", "/assets/susde"),
         ] {
             let json = resolve_json(&format!("/api/v1/resolve?q={query}")).await;
 

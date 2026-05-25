@@ -5,6 +5,21 @@ create schema if not exists mother_api;
 comment on schema mother_api is
   'Mother API owned application schema. Contains Sentinel-facing global asset catalog data, not indexer-owned runtime tables.';
 
+do $$
+begin
+  create type mother_api.global_asset_status as enum (
+    'active',
+    'inactive',
+    'deprecated',
+    'hidden',
+    'pending',
+    'unsupported',
+    'archived'
+  );
+exception
+  when duplicate_object then null;
+end $$;
+
 create table if not exists mother_api.global_asset (
   id uuid primary key default gen_random_uuid(),
   slug text not null,
@@ -15,7 +30,7 @@ create table if not exists mother_api.global_asset (
   canonical_path text not null,
   aliases text[] not null default '{}',
   metadata jsonb not null default '{}'::jsonb,
-  status text not null default 'active',
+  status mother_api.global_asset_status not null default 'active',
   sort_order integer not null default 1000,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -28,7 +43,6 @@ create table if not exists mother_api.network (
   family text not null,
   chain_id bigint,
   caip2 text,
-  aliases text[] not null default '{}',
   metadata jsonb not null default '{}'::jsonb,
   status text not null default 'active',
   sort_order integer not null default 1000,
@@ -86,9 +100,6 @@ create unique index if not exists uq_mother_api_network_caip2_lower
 create index if not exists idx_mother_api_network_status_sort
   on mother_api.network (status, sort_order);
 
-create index if not exists idx_mother_api_network_aliases_gin
-  on mother_api.network using gin (aliases);
-
 create unique index if not exists uq_mother_api_asset_chain_map_active_native_network
   on mother_api.asset_chain_map (network_id)
   where status = 'active' and is_native = true;
@@ -111,6 +122,9 @@ comment on column mother_api.global_asset.slug is
 
 comment on column mother_api.global_asset.aliases is
   'Normalized query aliases for simple deterministic resolver matches.';
+
+comment on type mother_api.global_asset_status is
+  'Lifecycle state for chain-agnostic global assets.';
 
 comment on table mother_api.network is
   'Product-facing network catalog, for example bitcoin-mainnet, eth-mainnet, base, mantle.';

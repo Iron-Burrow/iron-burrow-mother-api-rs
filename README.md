@@ -120,7 +120,8 @@ Run migrations with `sqlx-cli` when `DATABASE_URL` points at the target database
 sqlx migrate run
 ```
 
-The demo seed includes Bitcoin, Ethereum, USDC, WBTC, Gold, Mantle, and NEAR as
+The demo seed includes AAVE, AUSD, BTC, USDS, ETH, FBTC, GHO, MNT, MPDAO, NEAR,
+STNEAR, USDC, USDT, USDT0, USDe, WBTC, WETH, cmETH, mETH, sUSDe, and Gold as
 assets. Bitcoin mainnet, Ethereum mainnet, Base, and Mantle are seeded as
 networks.
 
