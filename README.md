@@ -31,28 +31,7 @@ Deployment-wise, the old service used the stable container name `iron-burrow-mot
 }
 ```
 
-`GET /v1/status`
-
-```json
-{
-  "ok": true,
-  "service": "iron-burrow-mother-api",
-  "version": "<crate version>",
-  "environment": "<APP_ENV>",
-  "mascot": "Capitan Sousa",
-  "message": "Mother API is online.",
-  "checks": {
-    "app": "ok",
-    "database": "skipped",
-    "price_indexer": "not_connected",
-    "evm_indexer": "not_connected"
-  }
-}
-```
-
-`/health` is dependency-free. `/v1/status` reports `checks.database` as `skipped`
-when `DATABASE_URL` is not configured, otherwise it runs a lightweight `select 1`
-and reports `reachable` or `unreachable`.
+`/health` is dependency-free.
 
 `GET /v1/assets?limit=<limit>`
 
@@ -77,7 +56,7 @@ Lists active Mother API-owned global assets. `limit` is optional, defaults to
 }
 ```
 
-`GET /api/v1/resolve?q=<query>`
+`GET /v1/resolve?q=<query>`
 
 Resolves broad Sentinel search queries against Mother API-owned global assets.
 Unknown searches return a successful unresolved response with recommendations
@@ -117,7 +96,7 @@ Invalid query responses are stable:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `APP_ENV` | `development` | Public environment value returned by `/v1/status`. |
+| `APP_ENV` | `development` | Runtime environment label. |
 | `HTTP_HOST` | `0.0.0.0` | Bind host. |
 | `HTTP_PORT` | `3000` | Bind port. |
 | `DATABASE_URL` | unset | Optional Postgres URL for `mother_api.global_asset` resolver reads. |
@@ -157,11 +136,10 @@ cargo run
 
 ```sh
 curl -i http://localhost:3000/health
-curl -i http://localhost:3000/v1/status
 curl -i 'http://localhost:3000/v1/assets?limit=20'
-curl -i 'http://localhost:3000/api/v1/resolve?q=usdc%20coin%20usd'
-curl -i 'http://localhost:3000/api/v1/resolve?q=oro%20de%20ley'
-curl -i 'http://localhost:3000/api/v1/resolve?q=some%20unknown%20thing'
+curl -i 'http://localhost:3000/v1/resolve?q=usdc%20coin%20usd'
+curl -i 'http://localhost:3000/v1/resolve?q=oro%20de%20ley'
+curl -i 'http://localhost:3000/v1/resolve?q=some%20unknown%20thing'
 ```
 
 With Docker:
@@ -191,7 +169,6 @@ Production verification:
 
 ```sh
 curl -i https://api.ironburrow.com/health
-curl -i https://api.ironburrow.com/v1/status
 ```
 
 ## Development Checks

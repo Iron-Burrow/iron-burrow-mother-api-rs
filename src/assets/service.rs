@@ -1,6 +1,9 @@
 use serde::Serialize;
 
-use crate::repositories::global_assets::{GlobalAsset, GlobalAssetRepository, RepositoryError};
+use crate::repositories::global_assets::{
+    AssetChainMap, GlobalAsset, GlobalAssetDetail, GlobalAssetRepository, NetworkRef,
+    RepositoryError,
+};
 
 const DEFAULT_LIMIT: u64 = 100;
 const MAX_LIMIT: u64 = 1000;
@@ -24,17 +27,53 @@ impl AssetsService {
 
         Ok(AssetsResponse::new(limit, assets))
     }
+
+    pub async fn get_asset(&self, raw_slug: &str) -> Result<AssetResponse, AssetsServiceError> {
+        let slug = raw_slug.trim().to_ascii_lowercase();
+        let detail = self
+            .repository
+            .get_asset_detail_by_slug(&slug)
+            .await?
+            .ok_or(AssetsServiceError::AssetNotFound)?;
+
+        Ok(AssetResponse::new(detail))
+    }
 }
 
 #[derive(Debug)]
 pub enum AssetsServiceError {
     InvalidLimit,
+    AssetNotFound,
     Repository(RepositoryError),
 }
 
 impl From<RepositoryError> for AssetsServiceError {
     fn from(error: RepositoryError) -> Self {
         Self::Repository(error)
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct AssetResponse {
+    ok: bool,
+    #[serde(rename = "type")]
+    response_type: &'static str,
+    asset: AssetPayload,
+    chain_maps: Vec<ChainMapPayload>,
+}
+
+impl AssetResponse {
+    fn new(detail: GlobalAssetDetail) -> Self {
+        Self {
+            ok: true,
+            response_type: "asset",
+            asset: AssetPayload::from(detail.asset),
+            chain_maps: detail
+                .chain_maps
+                .into_iter()
+                .map(ChainMapPayload::from)
+                .collect(),
+        }
     }
 }
 
@@ -82,6 +121,40 @@ impl From<GlobalAsset> for AssetPayload {
             name: asset.name,
             category: asset.category,
             canonical_path: asset.canonical_path,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ChainMapPayload {
+    network: NetworkPayload,
+    is_native: bool,
+    address: Option<String>,
+}
+
+impl From<AssetChainMap> for ChainMapPayload {
+    fn from(chain_map: AssetChainMap) -> Self {
+        Self {
+            network: NetworkPayload::from(chain_map.network),
+            is_native: chain_map.is_native,
+            address: chain_map.address,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct NetworkPayload {
+    slug: String,
+    name: String,
+    caip2: Option<String>,
+}
+
+impl From<NetworkRef> for NetworkPayload {
+    fn from(network: NetworkRef) -> Self {
+        Self {
+            slug: network.slug,
+            name: network.name,
+            caip2: network.caip2,
         }
     }
 }
@@ -148,5 +221,26 @@ mod tests {
 
             assert!(matches!(error, AssetsServiceError::InvalidLimit));
         }
+    }
+
+    #[tokio::test]
+    async fn returns_asset_detail() {
+        let response = service().get_asset("bitcoin").await.unwrap();
+        let json = serde_json::to_value(response).unwrap();
+
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["type"], "asset");
+        assert_eq!(json["asset"]["asset_id"], "bitcoin");
+        assert_eq!(json["asset"]["canonical_path"], "/assets/bitcoin");
+        assert_eq!(json["chain_maps"][0]["network"]["slug"], "bitcoin-mainnet");
+        assert_eq!(json["chain_maps"][0]["is_native"], true);
+        assert!(json["chain_maps"][0]["address"].is_null());
+    }
+
+    #[tokio::test]
+    async fn reports_unknown_asset_detail() {
+        let error = service().get_asset("does-not-exist").await.unwrap_err();
+
+        assert!(matches!(error, AssetsServiceError::AssetNotFound));
     }
 }

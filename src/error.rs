@@ -37,6 +37,14 @@ impl ApiError {
         }
     }
 
+    pub fn asset_not_found() -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            code: "asset_not_found",
+            message: "Asset was not found.",
+        }
+    }
+
     pub fn database_unavailable() -> Self {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,

@@ -7,7 +7,7 @@ use sqlx::{FromRow, PgPool};
 pub enum GlobalAssetRepository {
     Database(PgPool),
     #[allow(dead_code)]
-    InMemory(Arc<Vec<GlobalAsset>>),
+    InMemory(Arc<InMemoryGlobalAssets>),
 }
 
 impl GlobalAssetRepository {
@@ -17,7 +17,15 @@ impl GlobalAssetRepository {
 
     #[allow(dead_code)]
     pub fn in_memory(assets: Vec<GlobalAsset>) -> Self {
-        Self::InMemory(Arc::new(assets))
+        Self::InMemory(Arc::new(InMemoryGlobalAssets::new(assets)))
+    }
+
+    #[cfg(test)]
+    fn in_memory_with_chain_maps(
+        assets: Vec<GlobalAsset>,
+        chain_maps: Vec<InMemoryAssetChainMap>,
+    ) -> Self {
+        Self::InMemory(Arc::new(InMemoryGlobalAssets { assets, chain_maps }))
     }
 
     pub async fn find_confident_match(
@@ -26,7 +34,10 @@ impl GlobalAssetRepository {
     ) -> Result<Option<AssetMatch>, RepositoryError> {
         match self {
             Self::Database(pool) => find_confident_match_db(pool, normalized_query).await,
-            Self::InMemory(assets) => Ok(find_confident_match_in_memory(assets, normalized_query)),
+            Self::InMemory(catalog) => Ok(find_confident_match_in_memory(
+                &catalog.assets,
+                normalized_query,
+            )),
         }
     }
 
@@ -37,8 +48,8 @@ impl GlobalAssetRepository {
     ) -> Result<Vec<GlobalAsset>, RepositoryError> {
         match self {
             Self::Database(pool) => list_recommendations_db(pool, normalized_query, limit).await,
-            Self::InMemory(assets) => Ok(list_recommendations_in_memory(
-                assets,
+            Self::InMemory(catalog) => Ok(list_recommendations_in_memory(
+                &catalog.assets,
                 normalized_query,
                 limit as usize,
             )),
@@ -48,10 +59,20 @@ impl GlobalAssetRepository {
     pub async fn list_assets(&self, limit: u64) -> Result<Vec<GlobalAsset>, RepositoryError> {
         match self {
             Self::Database(pool) => list_assets_db(pool, limit).await,
-            Self::InMemory(assets) => Ok(list_assets_in_memory(
-                assets,
+            Self::InMemory(catalog) => Ok(list_assets_in_memory(
+                &catalog.assets,
                 usize::try_from(limit).unwrap_or(usize::MAX),
             )),
+        }
+    }
+
+    pub async fn get_asset_detail_by_slug(
+        &self,
+        slug: &str,
+    ) -> Result<Option<GlobalAssetDetail>, RepositoryError> {
+        match self {
+            Self::Database(pool) => get_asset_detail_by_slug_db(pool, slug).await,
+            Self::InMemory(catalog) => Ok(get_asset_detail_by_slug_in_memory(catalog, slug)),
         }
     }
 }
@@ -66,6 +87,26 @@ pub struct GlobalAsset {
     pub canonical_path: String,
     pub aliases: Vec<String>,
     pub sort_order: i32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GlobalAssetDetail {
+    pub asset: GlobalAsset,
+    pub chain_maps: Vec<AssetChainMap>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssetChainMap {
+    pub network: NetworkRef,
+    pub is_native: bool,
+    pub address: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NetworkRef {
+    pub slug: String,
+    pub name: String,
+    pub caip2: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -91,6 +132,27 @@ impl MatchConfidence {
             Self::AliasExact => "alias_exact",
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct InMemoryGlobalAssets {
+    assets: Vec<GlobalAsset>,
+    chain_maps: Vec<InMemoryAssetChainMap>,
+}
+
+impl InMemoryGlobalAssets {
+    fn new(assets: Vec<GlobalAsset>) -> Self {
+        let chain_maps = demo_chain_maps_for_assets(&assets);
+
+        Self { assets, chain_maps }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct InMemoryAssetChainMap {
+    asset_slug: String,
+    chain_map: AssetChainMap,
+    sort_order: i32,
 }
 
 #[derive(Debug)]
@@ -137,6 +199,15 @@ struct AssetMatchRow {
     match_kind: String,
 }
 
+#[derive(FromRow)]
+struct AssetChainMapRow {
+    network_slug: String,
+    network_name: String,
+    network_caip2: Option<String>,
+    is_native: bool,
+    address: Option<String>,
+}
+
 fn map_row(row: GlobalAssetRow) -> GlobalAsset {
     GlobalAsset {
         id: row.id,
@@ -147,6 +218,18 @@ fn map_row(row: GlobalAssetRow) -> GlobalAsset {
         canonical_path: row.canonical_path,
         aliases: row.aliases,
         sort_order: row.sort_order,
+    }
+}
+
+fn map_chain_map_row(row: AssetChainMapRow) -> AssetChainMap {
+    AssetChainMap {
+        network: NetworkRef {
+            slug: row.network_slug,
+            name: row.network_name,
+            caip2: row.network_caip2,
+        },
+        is_native: row.is_native,
+        address: row.address,
     }
 }
 
@@ -320,6 +403,65 @@ async fn list_assets_db(pool: &PgPool, limit: u64) -> Result<Vec<GlobalAsset>, R
     Ok(rows.into_iter().map(map_row).collect())
 }
 
+async fn get_asset_detail_by_slug_db(
+    pool: &PgPool,
+    slug: &str,
+) -> Result<Option<GlobalAssetDetail>, RepositoryError> {
+    let asset = sqlx::query_as::<_, GlobalAssetRow>(
+        r#"
+        select
+          id::text,
+          slug,
+          symbol,
+          name,
+          coalesce(category, asset_kind) as category,
+          canonical_path,
+          aliases,
+          sort_order
+        from mother_api.global_asset
+        where status = 'active'
+          and lower(slug) = lower($1)
+        limit 1
+        "#,
+    )
+    .bind(slug)
+    .fetch_optional(pool)
+    .await
+    .map_err(RepositoryError::new)?
+    .map(map_row);
+
+    let Some(asset) = asset else {
+        return Ok(None);
+    };
+
+    let chain_maps = sqlx::query_as::<_, AssetChainMapRow>(
+        r#"
+        select
+          network.slug as network_slug,
+          network.name as network_name,
+          network.caip2 as network_caip2,
+          asset_chain_map.is_native,
+          asset_chain_map.deployment_address as address
+        from mother_api.asset_chain_map
+        join mother_api.network network
+          on network.id = asset_chain_map.network_id
+        where asset_chain_map.status = 'active'
+          and network.status = 'active'
+          and asset_chain_map.asset_id = $1::uuid
+        order by asset_chain_map.sort_order asc, lower(network.slug) asc
+        "#,
+    )
+    .bind(&asset.id)
+    .fetch_all(pool)
+    .await
+    .map_err(RepositoryError::new)?
+    .into_iter()
+    .map(map_chain_map_row)
+    .collect();
+
+    Ok(Some(GlobalAssetDetail { asset, chain_maps }))
+}
+
 fn find_confident_match_in_memory(
     assets: &[GlobalAsset],
     normalized_query: &str,
@@ -358,6 +500,134 @@ fn find_confident_match_in_memory(
     });
 
     candidates.into_iter().next()
+}
+
+fn get_asset_detail_by_slug_in_memory(
+    catalog: &InMemoryGlobalAssets,
+    slug: &str,
+) -> Option<GlobalAssetDetail> {
+    let asset = catalog
+        .assets
+        .iter()
+        .find(|asset| asset.slug.eq_ignore_ascii_case(slug))?
+        .clone();
+
+    let mut chain_maps = catalog
+        .chain_maps
+        .iter()
+        .filter(|chain_map| chain_map.asset_slug.eq_ignore_ascii_case(&asset.slug))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    chain_maps.sort_by(|left, right| {
+        left.sort_order.cmp(&right.sort_order).then_with(|| {
+            left.chain_map
+                .network
+                .slug
+                .to_lowercase()
+                .cmp(&right.chain_map.network.slug.to_lowercase())
+        })
+    });
+
+    Some(GlobalAssetDetail {
+        asset,
+        chain_maps: chain_maps
+            .into_iter()
+            .map(|chain_map| chain_map.chain_map)
+            .collect(),
+    })
+}
+
+fn demo_chain_maps_for_assets(assets: &[GlobalAsset]) -> Vec<InMemoryAssetChainMap> {
+    let mut chain_maps = Vec::new();
+
+    for asset in assets {
+        match asset.slug.as_str() {
+            "bitcoin" => chain_maps.push(in_memory_chain_map(
+                "bitcoin",
+                "bitcoin-mainnet",
+                "Bitcoin Mainnet",
+                Some("bip122:000000000019d6689c085ae165831e93"),
+                true,
+                None,
+                10,
+            )),
+            "usdc" => chain_maps.extend([
+                in_memory_chain_map(
+                    "usdc",
+                    "eth-mainnet",
+                    "Ethereum Mainnet",
+                    Some("eip155:1"),
+                    false,
+                    Some("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+                    240,
+                ),
+                in_memory_chain_map(
+                    "usdc",
+                    "arbitrum-one",
+                    "Arbitrum One",
+                    Some("eip155:42161"),
+                    false,
+                    Some("0xaf88d065e77c8cc2239327c5edb3a432268e5831"),
+                    250,
+                ),
+                in_memory_chain_map(
+                    "usdc",
+                    "base",
+                    "Base",
+                    Some("eip155:8453"),
+                    false,
+                    Some("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"),
+                    260,
+                ),
+                in_memory_chain_map(
+                    "usdc",
+                    "near",
+                    "NEAR Mainnet",
+                    Some("near:mainnet"),
+                    false,
+                    Some("17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1"),
+                    270,
+                ),
+                in_memory_chain_map(
+                    "usdc",
+                    "mantle",
+                    "Mantle",
+                    Some("eip155:5000"),
+                    false,
+                    Some("0x09bc4e0d864854c6afb6eb9a9cdf58ac190d0df9"),
+                    280,
+                ),
+            ]),
+            _ => {}
+        }
+    }
+
+    chain_maps
+}
+
+fn in_memory_chain_map(
+    asset_slug: &str,
+    network_slug: &str,
+    network_name: &str,
+    caip2: Option<&str>,
+    is_native: bool,
+    address: Option<&str>,
+    sort_order: i32,
+) -> InMemoryAssetChainMap {
+    InMemoryAssetChainMap {
+        asset_slug: asset_slug.to_string(),
+        chain_map: AssetChainMap {
+            network: NetworkRef {
+                slug: network_slug.to_string(),
+                name: network_name.to_string(),
+                caip2: caip2.map(str::to_string),
+            },
+            is_native,
+            address: address.map(str::to_string),
+        },
+        sort_order,
+    }
 }
 
 fn list_recommendations_in_memory(
@@ -454,6 +724,73 @@ mod tests {
         assert_eq!(assets.len(), 2);
         assert_eq!(assets[0].slug, "bitcoin");
         assert_eq!(assets[1].slug, "ethereum");
+    }
+
+    #[tokio::test]
+    async fn asset_detail_lookup_is_case_insensitive() {
+        let repository = GlobalAssetRepository::in_memory(demo_assets());
+
+        let detail = repository
+            .get_asset_detail_by_slug("BitCoin")
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(detail.asset.slug, "bitcoin");
+        assert_eq!(detail.chain_maps[0].network.slug, "bitcoin-mainnet");
+        assert!(detail.chain_maps[0].is_native);
+        assert_eq!(detail.chain_maps[0].address, None);
+    }
+
+    #[tokio::test]
+    async fn asset_detail_returns_chain_maps_in_stable_order() {
+        let repository = GlobalAssetRepository::in_memory_with_chain_maps(
+            vec![demo_asset(
+                "sample",
+                "SMP",
+                "Sample",
+                "crypto",
+                "/assets/sample",
+                &[],
+                10,
+            )],
+            vec![
+                in_memory_chain_map(
+                    "sample",
+                    "zeta",
+                    "Zeta",
+                    Some("eip155:999"),
+                    false,
+                    Some("0x02"),
+                    20,
+                ),
+                in_memory_chain_map(
+                    "sample",
+                    "alpha",
+                    "Alpha",
+                    Some("eip155:111"),
+                    false,
+                    Some("0x03"),
+                    20,
+                ),
+                in_memory_chain_map("sample", "beta", "Beta", Some("eip155:222"), true, None, 10),
+            ],
+        );
+
+        let detail = repository
+            .get_asset_detail_by_slug("sample")
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            detail
+                .chain_maps
+                .into_iter()
+                .map(|chain_map| chain_map.network.slug)
+                .collect::<Vec<_>>(),
+            ["beta", "alpha", "zeta"]
+        );
     }
 }
 

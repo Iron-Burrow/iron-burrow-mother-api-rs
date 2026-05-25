@@ -21,11 +21,3 @@ pub async fn health() -> Json<HealthResponse> {
         message: HEALTH_MESSAGE,
     })
 }
-
-pub(crate) fn service_name() -> &'static str {
-    SERVICE_NAME
-}
-
-pub(crate) fn mascot_name() -> &'static str {
-    MASCOT_NAME
-}

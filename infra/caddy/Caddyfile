@@ -15,14 +15,23 @@
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		X-Frame-Options "DENY"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 	}
 
-	@motherApi {
+	@health {
 		method GET
-		path /health /v1/status
+		path /health
 	}
-	handle @motherApi {
-		reverse_proxy iron-burrow-mother-api:3000
+	handle @health {
+		reverse_proxy mother-api:3000
+	}
+
+	@latestPrices {
+		method GET
+		path /v1/prices/latest
+	}
+	handle @latestPrices {
+		reverse_proxy mother-api:3000
 	}
 
 	handle {
