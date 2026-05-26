@@ -117,6 +117,7 @@ mod tests {
         assert_eq!(json["count"], 21);
         assert_eq!(json["assets"][0]["asset_id"], "bitcoin");
         assert_eq!(json["assets"][0]["canonical_path"], "/assets/bitcoin");
+        assert!(json["assets"][0]["price"].is_null());
         assert!(json["assets"][0]["id"].is_null());
         assert!(json["assets"][0]["aliases"].is_null());
     }
@@ -196,6 +197,8 @@ mod tests {
         assert_eq!(json["asset"]["asset_id"], "bitcoin");
         assert_eq!(json["asset"]["symbol"], "BTC");
         assert_eq!(json["asset"]["canonical_path"], "/assets/bitcoin");
+        assert_eq!(json["price"]["status"], "unavailable");
+        assert!(json["price"]["price"].is_null());
         assert_eq!(json["chain_maps"][0]["network"]["slug"], "bitcoin-mainnet");
         assert_eq!(json["chain_maps"][0]["network"]["name"], "Bitcoin Mainnet");
         assert_eq!(

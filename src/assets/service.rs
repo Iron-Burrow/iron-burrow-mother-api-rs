@@ -1,8 +1,12 @@
 use serde::Serialize;
+use tracing::{info, warn};
 
-use crate::repositories::global_assets::{
-    AssetChainMap, GlobalAsset, GlobalAssetDetail, GlobalAssetRepository, NetworkRef,
-    RepositoryError,
+use crate::{
+    price_indexer::{LatestAssetPrice, PriceIndexerClient, PriceLookupError},
+    repositories::global_assets::{
+        AssetChainMap, GlobalAsset, GlobalAssetDetail, GlobalAssetRepository, NetworkRef,
+        RepositoryError,
+    },
 };
 
 const DEFAULT_LIMIT: u64 = 100;
@@ -11,11 +15,18 @@ const MAX_LIMIT: u64 = 1000;
 #[derive(Clone, Debug)]
 pub struct AssetsService {
     repository: GlobalAssetRepository,
+    price_indexer_client: Option<PriceIndexerClient>,
 }
 
 impl AssetsService {
-    pub fn new(repository: GlobalAssetRepository) -> Self {
-        Self { repository }
+    pub fn new(
+        repository: GlobalAssetRepository,
+        price_indexer_client: Option<PriceIndexerClient>,
+    ) -> Self {
+        Self {
+            repository,
+            price_indexer_client,
+        }
     }
 
     pub async fn list_assets(
@@ -35,8 +46,39 @@ impl AssetsService {
             .get_asset_detail_by_slug(&slug)
             .await?
             .ok_or(AssetsServiceError::AssetNotFound)?;
+        let price = self.lookup_price(&slug, &detail.asset.symbol).await;
 
-        Ok(AssetResponse::new(detail))
+        Ok(AssetResponse::new(detail, price))
+    }
+
+    async fn lookup_price(&self, slug: &str, symbol: &str) -> LatestAssetPrice {
+        let Some(client) = &self.price_indexer_client else {
+            return LatestAssetPrice::unavailable();
+        };
+
+        info!(
+            asset_slug = slug,
+            symbol, "Price lookup attempted for asset detail"
+        );
+
+        match client.latest_by_symbol(symbol).await {
+            Ok(price) => {
+                info!(
+                    asset_slug = slug,
+                    symbol,
+                    status = price.status.as_str(),
+                    source_type = price.source_type.as_deref(),
+                    is_fallback = price.is_fallback,
+                    is_derived = price.is_derived,
+                    "Price lookup succeeded for asset detail"
+                );
+                price
+            }
+            Err(error) => {
+                log_price_lookup_error(slug, symbol, client, &error);
+                LatestAssetPrice::unavailable()
+            }
+        }
     }
 }
 
@@ -59,15 +101,17 @@ pub struct AssetResponse {
     #[serde(rename = "type")]
     response_type: &'static str,
     asset: AssetPayload,
+    price: LatestAssetPrice,
     chain_maps: Vec<ChainMapPayload>,
 }
 
 impl AssetResponse {
-    fn new(detail: GlobalAssetDetail) -> Self {
+    fn new(detail: GlobalAssetDetail, price: LatestAssetPrice) -> Self {
         Self {
             ok: true,
             response_type: "asset",
             asset: AssetPayload::from(detail.asset),
+            price,
             chain_maps: detail
                 .chain_maps
                 .into_iter()
@@ -176,13 +220,72 @@ fn parse_limit(raw_limit: Option<&str>) -> Result<u64, AssetsServiceError> {
     Ok(limit.min(MAX_LIMIT))
 }
 
+fn log_price_lookup_error(
+    slug: &str,
+    symbol: &str,
+    client: &PriceIndexerClient,
+    error: &PriceLookupError,
+) {
+    match error {
+        PriceLookupError::Disabled => {
+            warn!(
+                asset_slug = slug,
+                symbol, "Price lookup disabled for asset detail"
+            );
+        }
+        PriceLookupError::InvalidSymbol => {
+            warn!(
+                asset_slug = slug,
+                symbol, "Price lookup skipped because asset symbol was invalid"
+            );
+        }
+        PriceLookupError::Unavailable { status, code } => {
+            warn!(
+                asset_slug = slug,
+                symbol,
+                http_status = status,
+                error_code = code.as_deref(),
+                "Price lookup unavailable for asset detail"
+            );
+        }
+        PriceLookupError::Unauthorized => {
+            warn!(
+                asset_slug = slug,
+                symbol,
+                price_indexer_host = client.base_host(),
+                "Price lookup unauthorized for asset detail"
+            );
+        }
+        PriceLookupError::Timeout => {
+            warn!(
+                asset_slug = slug,
+                symbol,
+                timeout_ms = client.timeout_ms(),
+                "Price lookup timed out for asset detail"
+            );
+        }
+        PriceLookupError::Transport => {
+            warn!(
+                asset_slug = slug,
+                symbol, "Price lookup transport failure for asset detail"
+            );
+        }
+        PriceLookupError::MalformedResponse => {
+            warn!(
+                asset_slug = slug,
+                symbol, "Price lookup returned malformed response for asset detail"
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::repositories::global_assets::{demo_assets, GlobalAssetRepository};
 
     fn service() -> AssetsService {
-        AssetsService::new(GlobalAssetRepository::in_memory(demo_assets()))
+        AssetsService::new(GlobalAssetRepository::in_memory(demo_assets()), None)
     }
 
     #[tokio::test]
@@ -232,6 +335,8 @@ mod tests {
         assert_eq!(json["type"], "asset");
         assert_eq!(json["asset"]["asset_id"], "bitcoin");
         assert_eq!(json["asset"]["canonical_path"], "/assets/bitcoin");
+        assert_eq!(json["price"]["status"], "unavailable");
+        assert!(json["price"]["price"].is_null());
         assert_eq!(json["chain_maps"][0]["network"]["slug"], "bitcoin-mainnet");
         assert_eq!(json["chain_maps"][0]["is_native"], true);
         assert!(json["chain_maps"][0]["address"].is_null());

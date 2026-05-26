@@ -3,13 +3,17 @@ use std::{env, net::SocketAddr};
 const DEFAULT_APP_ENV: &str = "development";
 const DEFAULT_HTTP_HOST: &str = "0.0.0.0";
 const DEFAULT_HTTP_PORT: u16 = 3000;
+pub const DEFAULT_PRICE_INDEXER_TIMEOUT_MS: u64 = 2000;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Config {
     pub app_env: String,
     pub http_host: String,
     pub http_port: u16,
     pub database_url: Option<String>,
+    pub price_indexer_url: Option<String>,
+    pub price_ql_internal_token: Option<String>,
+    pub price_indexer_timeout_ms: u64,
 }
 
 impl Config {
@@ -24,6 +28,13 @@ impl Config {
                 Err(_) => DEFAULT_HTTP_PORT,
             },
             database_url: optional_env("DATABASE_URL"),
+            price_indexer_url: optional_env("PRICE_INDEXER_URL"),
+            price_ql_internal_token: optional_env("PRICE_QL_INTERNAL_TOKEN"),
+            price_indexer_timeout_ms: parse_optional_u64_env(
+                "PRICE_INDEXER_TIMEOUT_MS",
+                DEFAULT_PRICE_INDEXER_TIMEOUT_MS,
+            )
+            .map_err(ConfigError::InvalidPriceIndexerTimeout)?,
         })
     }
 
@@ -44,7 +55,28 @@ impl Default for Config {
             http_host: DEFAULT_HTTP_HOST.to_string(),
             http_port: DEFAULT_HTTP_PORT,
             database_url: None,
+            price_indexer_url: None,
+            price_ql_internal_token: None,
+            price_indexer_timeout_ms: DEFAULT_PRICE_INDEXER_TIMEOUT_MS,
         }
+    }
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Config")
+            .field("app_env", &self.app_env)
+            .field("http_host", &self.http_host)
+            .field("http_port", &self.http_port)
+            .field("database_url", &self.database_url)
+            .field("price_indexer_url", &self.price_indexer_url)
+            .field(
+                "price_ql_internal_token",
+                &self.price_ql_internal_token.as_ref().map(|_| "<redacted>"),
+            )
+            .field("price_indexer_timeout_ms", &self.price_indexer_timeout_ms)
+            .finish()
     }
 }
 
@@ -55,9 +87,25 @@ fn optional_env(key: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn parse_optional_u64_env(key: &str, default: u64) -> Result<u64, String> {
+    match env::var(key) {
+        Ok(value) => {
+            let trimmed = value.trim();
+
+            if trimmed.is_empty() {
+                return Ok(default);
+            }
+
+            trimmed.parse().map_err(|_| value)
+        }
+        Err(_) => Ok(default),
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum ConfigError {
     InvalidHttpPort(String),
+    InvalidPriceIndexerTimeout(String),
     InvalidSocketAddress { host: String, port: u16 },
 }
 
@@ -66,6 +114,12 @@ impl std::fmt::Display for ConfigError {
         match self {
             Self::InvalidHttpPort(value) => {
                 write!(formatter, "HTTP_PORT must be a valid u16, got {value:?}")
+            }
+            Self::InvalidPriceIndexerTimeout(value) => {
+                write!(
+                    formatter,
+                    "PRICE_INDEXER_TIMEOUT_MS must be a valid u64, got {value:?}"
+                )
             }
             Self::InvalidSocketAddress { host, port } => {
                 write!(
@@ -91,9 +145,54 @@ mod tests {
         assert_eq!(config.http_host, "0.0.0.0");
         assert_eq!(config.http_port, 3000);
         assert_eq!(config.database_url, None);
+        assert_eq!(config.price_indexer_url, None);
+        assert_eq!(config.price_ql_internal_token, None);
+        assert_eq!(config.price_indexer_timeout_ms, 2000);
         assert_eq!(
             config.socket_addr().unwrap(),
             "0.0.0.0:3000".parse::<SocketAddr>().unwrap()
         );
+    }
+
+    #[test]
+    fn price_indexer_timeout_defaults_when_env_is_missing_or_empty() {
+        assert_eq!(
+            parse_optional_u64_env("MISSING_PRICE_INDEXER_TIMEOUT", 2000).unwrap(),
+            2000
+        );
+
+        std::env::set_var("EMPTY_PRICE_INDEXER_TIMEOUT", "   ");
+        assert_eq!(
+            parse_optional_u64_env("EMPTY_PRICE_INDEXER_TIMEOUT", 2000).unwrap(),
+            2000
+        );
+        std::env::remove_var("EMPTY_PRICE_INDEXER_TIMEOUT");
+    }
+
+    #[test]
+    fn price_indexer_timeout_rejects_invalid_values() {
+        std::env::set_var("INVALID_PRICE_INDEXER_TIMEOUT", "soon");
+
+        assert_eq!(
+            parse_optional_u64_env("INVALID_PRICE_INDEXER_TIMEOUT", 2000),
+            Err("soon".to_string())
+        );
+
+        std::env::remove_var("INVALID_PRICE_INDEXER_TIMEOUT");
+    }
+
+    #[test]
+    fn optional_env_trims_values_and_treats_empty_as_missing() {
+        std::env::set_var("TRIMMED_PRICE_INDEXER_URL", "  http://price-indexer:3010  ");
+        std::env::set_var("EMPTY_PRICE_QL_INTERNAL_TOKEN", "   ");
+
+        assert_eq!(
+            optional_env("TRIMMED_PRICE_INDEXER_URL"),
+            Some("http://price-indexer:3010".to_string())
+        );
+        assert_eq!(optional_env("EMPTY_PRICE_QL_INTERNAL_TOKEN"), None);
+
+        std::env::remove_var("TRIMMED_PRICE_INDEXER_URL");
+        std::env::remove_var("EMPTY_PRICE_QL_INTERNAL_TOKEN");
     }
 }

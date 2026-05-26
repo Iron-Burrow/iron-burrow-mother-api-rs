@@ -23,7 +23,7 @@ pub async fn list_assets(
         .asset_repository
         .clone()
         .ok_or_else(ApiError::database_unavailable)?;
-    let service = AssetsService::new(repository);
+    let service = AssetsService::new(repository, None);
     let response = service
         .list_assets(params.limit.as_deref())
         .await
@@ -40,7 +40,7 @@ pub async fn get_asset(
         .asset_repository
         .clone()
         .ok_or_else(ApiError::database_unavailable)?;
-    let service = AssetsService::new(repository);
+    let service = AssetsService::new(repository, state.price_indexer_client.clone());
     let response = service
         .get_asset(&slug)
         .await
