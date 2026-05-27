@@ -1,7 +1,6 @@
 use std::time::Duration;
 
-use axum::http::StatusCode;
-use reqwest::Url;
+use reqwest::{StatusCode, Url};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
