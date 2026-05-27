@@ -27,6 +27,11 @@ pub fn create_app(state: AppState) -> Router {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+    };
+
     use axum::{
         body::Body,
         http::{Request, StatusCode},
@@ -37,7 +42,8 @@ mod tests {
     use super::*;
     use crate::{
         config::Config,
-        repositories::global_assets::{demo_assets, GlobalAssetRepository},
+        price_indexer::PriceIndexerClient,
+        repositories::global_assets::{demo_assets, GlobalAsset, GlobalAssetRepository},
     };
 
     fn test_app() -> Router {
@@ -227,6 +233,57 @@ mod tests {
         assert_eq!(chain_maps[2]["network"]["slug"], "base");
         assert_eq!(chain_maps[3]["network"]["slug"], "near");
         assert_eq!(chain_maps[4]["network"]["slug"], "mantle");
+    }
+
+    #[tokio::test]
+    async fn asset_detail_requests_price_enrichment_by_slug() {
+        let Some((price_indexer_url, request_handle)) = spawn_price_indexer() else {
+            return;
+        };
+        let price_indexer_client =
+            PriceIndexerClient::new(&price_indexer_url, "test-token", 2000).unwrap();
+        let repository = GlobalAssetRepository::in_memory(vec![GlobalAsset {
+            id: "test-usd-coin".to_string(),
+            slug: "usd-coin".to_string(),
+            symbol: "USDC".to_string(),
+            name: "USD Coin".to_string(),
+            category: "crypto".to_string(),
+            canonical_path: "/assets/usd-coin".to_string(),
+            aliases: vec!["usdc".to_string()],
+            sort_order: 10,
+        }]);
+        let app = create_app(AppState {
+            config: Config::default(),
+            version: env!("CARGO_PKG_VERSION"),
+            database_pool: None,
+            asset_repository: Some(repository),
+            price_indexer_client: Some(price_indexer_client),
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/assets/usd-coin")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["asset"]["asset_id"], "usd-coin");
+        assert_eq!(json["asset"]["symbol"], "USDC");
+        assert_eq!(json["price"]["status"], "available");
+
+        let request = request_handle.await.unwrap();
+        assert!(request.starts_with("GET /prices/latest?slug=usd-coin "));
+        assert!(!request.contains("symbol="));
     }
 
     #[tokio::test]
@@ -480,5 +537,68 @@ mod tests {
             .await
             .unwrap();
         serde_json::from_slice(&body).unwrap()
+    }
+
+    fn spawn_price_indexer() -> Option<(String, tokio::task::JoinHandle<String>)> {
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
+            Err(error) => panic!("failed to bind test price-indexer: {error}"),
+        };
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = tokio::task::spawn_blocking(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0; 1024];
+
+            loop {
+                let bytes_read = stream.read(&mut buffer).unwrap();
+                if bytes_read == 0 {
+                    break;
+                }
+
+                request.extend_from_slice(&buffer[..bytes_read]);
+
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+
+            let body = serde_json::json!({
+                "assetId": "usd-coin",
+                "symbol": "USDC",
+                "name": "USD Coin",
+                "quoteCurrency": "USD",
+                "price": "1.0001",
+                "sourceType": "coingecko",
+                "sourcePriority": 10,
+                "riskCategory": "normal",
+                "confidenceScore": 95,
+                "confidenceLabel": "high",
+                "publishedAt": "2026-05-26T12:00:00Z",
+                "recordedAt": "2026-05-26T12:00:05Z",
+                "freshnessStatus": "fresh",
+                "isFallback": false,
+                "isDerived": false,
+                "derivationPath": null,
+                "staleness": {
+                    "ageSeconds": 5,
+                    "isStale": false,
+                    "warningThresholdSeconds": 300
+                }
+            })
+            .to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+
+            stream.write_all(response.as_bytes()).unwrap();
+
+            String::from_utf8(request).unwrap()
+        });
+
+        Some((url, handle))
     }
 }

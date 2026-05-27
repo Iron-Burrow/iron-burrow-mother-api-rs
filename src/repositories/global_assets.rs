@@ -792,6 +792,71 @@ mod tests {
             ["beta", "alpha", "zeta"]
         );
     }
+
+    #[tokio::test]
+    async fn global_asset_slug_is_unique_in_database() {
+        let Ok(database_url) = std::env::var("DATABASE_URL") else {
+            return;
+        };
+
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+
+        let mut transaction = pool.begin().await.unwrap();
+        let slug = format!("slug-unique-test-{}", uuid::Uuid::new_v4());
+        let canonical_path = format!("/assets/{slug}");
+
+        sqlx::query(
+            r#"
+            insert into mother_api.global_asset (
+              slug,
+              symbol,
+              name,
+              canonical_path,
+              status
+            )
+            values ($1, $2, $3, $4, 'inactive'::mother_api.global_asset_status)
+            "#,
+        )
+        .bind(&slug)
+        .bind("SLUGUNIQUEA")
+        .bind("Slug Unique Test A")
+        .bind(&canonical_path)
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+
+        let duplicate_result = sqlx::query(
+            r#"
+            insert into mother_api.global_asset (
+              slug,
+              symbol,
+              name,
+              canonical_path,
+              status
+            )
+            values ($1, $2, $3, $4, 'inactive'::mother_api.global_asset_status)
+            "#,
+        )
+        .bind(&slug)
+        .bind("SLUGUNIQUEB")
+        .bind("Slug Unique Test B")
+        .bind(&canonical_path)
+        .execute(&mut *transaction)
+        .await;
+
+        let error = duplicate_result.expect_err("duplicate slug should violate constraint");
+        let sqlx::Error::Database(database_error) = error else {
+            panic!("expected database error for duplicate slug");
+        };
+
+        assert_eq!(
+            database_error.constraint(),
+            Some("global_asset_slug_unique")
+        );
+
+        transaction.rollback().await.unwrap();
+    }
 }
 
 #[cfg(test)]

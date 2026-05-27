@@ -61,7 +61,7 @@ impl AssetsService {
             symbol, "Price lookup attempted for asset detail"
         );
 
-        match client.latest_by_symbol(symbol).await {
+        match client.latest_by_slug(slug).await {
             Ok(price) => {
                 info!(
                     asset_slug = slug,
@@ -233,10 +233,10 @@ fn log_price_lookup_error(
                 symbol, "Price lookup disabled for asset detail"
             );
         }
-        PriceLookupError::InvalidSymbol => {
+        PriceLookupError::InvalidSlug => {
             warn!(
                 asset_slug = slug,
-                symbol, "Price lookup skipped because asset symbol was invalid"
+                symbol, "Price lookup skipped because asset slug was invalid"
             );
         }
         PriceLookupError::Unavailable { status, code } => {

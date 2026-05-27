@@ -61,7 +61,7 @@ Lists active Mother API-owned global assets. `limit` is optional, defaults to
 Returns one active asset plus the network-specific chain maps the UI can use to
 render asset detail pages. Asset detail always includes a stable `price` object.
 If the price-indexer Query Layer is not configured, unavailable, or has no price
-for the symbol, the asset response still succeeds with `price.status` set to
+for the slug, the asset response still succeeds with `price.status` set to
 `"unavailable"`.
 
 ```json

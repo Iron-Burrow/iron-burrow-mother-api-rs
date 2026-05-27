@@ -36,17 +36,14 @@ impl PriceIndexerClient {
         self.timeout.as_millis()
     }
 
-    pub async fn latest_by_symbol(
-        &self,
-        symbol: &str,
-    ) -> Result<LatestAssetPrice, PriceLookupError> {
-        let symbol = symbol.trim();
+    pub async fn latest_by_slug(&self, slug: &str) -> Result<LatestAssetPrice, PriceLookupError> {
+        let slug = slug.trim();
 
-        if symbol.is_empty() {
-            return Err(PriceLookupError::InvalidSymbol);
+        if slug.is_empty() {
+            return Err(PriceLookupError::InvalidSlug);
         }
 
-        let url = self.latest_price_url(symbol);
+        let url = self.latest_price_url(slug);
         let response = self
             .client
             .get(url)
@@ -69,12 +66,12 @@ impl PriceIndexerClient {
         Err(map_error_response(status, &body))
     }
 
-    fn latest_price_url(&self, symbol: &str) -> Url {
+    fn latest_price_url(&self, slug: &str) -> Url {
         let mut url = self.base_url.clone();
         let base_path = url.path().trim_end_matches('/');
         url.set_path(&format!("{base_path}/prices/latest"));
         url.set_query(None);
-        url.query_pairs_mut().append_pair("symbol", symbol);
+        url.query_pairs_mut().append_pair("slug", slug);
         url
     }
 }
@@ -201,7 +198,7 @@ impl PriceStatus {
 #[allow(dead_code)]
 pub enum PriceLookupError {
     Disabled,
-    InvalidSymbol,
+    InvalidSlug,
     Unavailable {
         status: Option<u16>,
         code: Option<String>,
@@ -281,7 +278,7 @@ fn map_error_response(status: StatusCode, body: &[u8]) -> PriceLookupError {
         .map(|envelope| envelope.error.code);
 
     match status {
-        StatusCode::BAD_REQUEST => PriceLookupError::InvalidSymbol,
+        StatusCode::BAD_REQUEST => PriceLookupError::InvalidSlug,
         StatusCode::UNAUTHORIZED => PriceLookupError::Unauthorized,
         _ => PriceLookupError::Unavailable {
             status: Some(status.as_u16()),
@@ -320,6 +317,24 @@ mod tests {
                 "warningThresholdSeconds": 300
             }
         })
+    }
+
+    #[test]
+    fn latest_price_url_identifies_asset_by_slug() {
+        let client = PriceIndexerClient::new("http://price-indexer:3010/api", "secret", 2000)
+            .expect("price indexer client should initialize");
+
+        let url = client.latest_price_url("usd-coin");
+        let query_pairs = url.query_pairs().collect::<Vec<_>>();
+
+        assert_eq!(
+            url.as_str(),
+            "http://price-indexer:3010/api/prices/latest?slug=usd-coin"
+        );
+        assert!(query_pairs
+            .iter()
+            .any(|(key, value)| key == "slug" && value == "usd-coin"));
+        assert!(!query_pairs.iter().any(|(key, _)| key == "symbol"));
     }
 
     #[test]
