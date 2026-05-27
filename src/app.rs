@@ -117,7 +117,7 @@ mod tests {
         assert_eq!(json["count"], 21);
         assert_eq!(json["assets"][0]["asset_id"], "bitcoin");
         assert_eq!(json["assets"][0]["canonical_path"], "/assets/bitcoin");
-        assert!(json["assets"][0]["price"].is_null());
+        assert!(json["assets"][0].get("price").is_none());
         assert!(json["assets"][0]["id"].is_null());
         assert!(json["assets"][0]["aliases"].is_null());
     }
