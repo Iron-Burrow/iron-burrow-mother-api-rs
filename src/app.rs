@@ -27,6 +27,11 @@ pub fn create_app(state: AppState) -> Router {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+    };
+
     use axum::{
         body::Body,
         http::{Request, StatusCode},
@@ -37,7 +42,8 @@ mod tests {
     use super::*;
     use crate::{
         config::Config,
-        repositories::global_assets::{demo_assets, GlobalAssetRepository},
+        price_indexer::PriceIndexerClient,
+        repositories::global_assets::{demo_assets, GlobalAsset, GlobalAssetRepository},
     };
 
     fn test_app() -> Router {
@@ -117,7 +123,8 @@ mod tests {
         assert_eq!(json["count"], 21);
         assert_eq!(json["assets"][0]["asset_id"], "bitcoin");
         assert_eq!(json["assets"][0]["canonical_path"], "/assets/bitcoin");
-        assert!(json["assets"][0].get("price").is_none());
+        assert_eq!(json["assets"][0]["price"]["status"], "unavailable");
+        assert!(json["assets"][0]["price"]["price"].is_null());
         assert!(json["assets"][0]["id"].is_null());
         assert!(json["assets"][0]["aliases"].is_null());
     }
@@ -131,6 +138,76 @@ mod tests {
         assert_eq!(json["assets"].as_array().unwrap().len(), 2);
         assert_eq!(json["assets"][0]["asset_id"], "bitcoin");
         assert_eq!(json["assets"][1]["asset_id"], "ethereum");
+    }
+
+    #[tokio::test]
+    async fn assets_list_requests_batch_price_enrichment_by_slug() {
+        let Some((price_indexer_url, request_handle)) = spawn_batch_price_indexer() else {
+            return;
+        };
+        let price_indexer_client =
+            PriceIndexerClient::new(&price_indexer_url, "test-token", 2000).unwrap();
+        let repository = GlobalAssetRepository::in_memory(vec![
+            GlobalAsset {
+                id: "test-bitcoin".to_string(),
+                slug: "bitcoin".to_string(),
+                symbol: "BTC".to_string(),
+                name: "Bitcoin".to_string(),
+                category: "crypto".to_string(),
+                canonical_path: "/assets/bitcoin".to_string(),
+                aliases: vec!["btc".to_string()],
+                sort_order: 1,
+            },
+            GlobalAsset {
+                id: "test-ethereum".to_string(),
+                slug: "ethereum".to_string(),
+                symbol: "ETH".to_string(),
+                name: "Ethereum".to_string(),
+                category: "crypto".to_string(),
+                canonical_path: "/assets/ethereum".to_string(),
+                aliases: vec!["eth".to_string()],
+                sort_order: 2,
+            },
+        ]);
+        let app = create_app(AppState {
+            config: Config::default(),
+            version: env!("CARGO_PKG_VERSION"),
+            database_pool: None,
+            asset_repository: Some(repository),
+            price_indexer_client: Some(price_indexer_client),
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/assets?limit=2")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["assets"][0]["asset_id"], "bitcoin");
+        assert_eq!(json["assets"][0]["price"]["status"], "unavailable");
+        assert!(json["assets"][0]["price"]["price"].is_null());
+        assert_eq!(json["assets"][1]["asset_id"], "ethereum");
+        assert_eq!(json["assets"][1]["price"]["status"], "available");
+        assert_eq!(json["assets"][1]["price"]["price"], "2500.123456");
+        assert_eq!(json["assets"][1]["price"]["quote_currency"], "USD");
+        assert_eq!(json["assets"][1]["price"]["source_type"], "chainlink");
+
+        let request = request_handle.await.unwrap();
+        assert!(request.starts_with("POST /prices/latest/batch "));
+        assert!(request.contains("\"slugs\":[\"bitcoin\",\"ethereum\"]"));
+        assert!(request.contains("\"quoteCurrency\":\"USD\""));
+        assert!(!request.contains("symbol"));
     }
 
     #[tokio::test]
@@ -227,6 +304,57 @@ mod tests {
         assert_eq!(chain_maps[2]["network"]["slug"], "base");
         assert_eq!(chain_maps[3]["network"]["slug"], "near");
         assert_eq!(chain_maps[4]["network"]["slug"], "mantle");
+    }
+
+    #[tokio::test]
+    async fn asset_detail_requests_price_enrichment_by_slug() {
+        let Some((price_indexer_url, request_handle)) = spawn_price_indexer() else {
+            return;
+        };
+        let price_indexer_client =
+            PriceIndexerClient::new(&price_indexer_url, "test-token", 2000).unwrap();
+        let repository = GlobalAssetRepository::in_memory(vec![GlobalAsset {
+            id: "test-usd-coin".to_string(),
+            slug: "usd-coin".to_string(),
+            symbol: "USDC".to_string(),
+            name: "USD Coin".to_string(),
+            category: "crypto".to_string(),
+            canonical_path: "/assets/usd-coin".to_string(),
+            aliases: vec!["usdc".to_string()],
+            sort_order: 10,
+        }]);
+        let app = create_app(AppState {
+            config: Config::default(),
+            version: env!("CARGO_PKG_VERSION"),
+            database_pool: None,
+            asset_repository: Some(repository),
+            price_indexer_client: Some(price_indexer_client),
+        });
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/assets/usd-coin")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["asset"]["asset_id"], "usd-coin");
+        assert_eq!(json["asset"]["symbol"], "USDC");
+        assert_eq!(json["price"]["status"], "available");
+
+        let request = request_handle.await.unwrap();
+        assert!(request.starts_with("GET /prices/latest?slug=usd-coin "));
+        assert!(!request.contains("symbol="));
     }
 
     #[tokio::test]
@@ -480,5 +608,162 @@ mod tests {
             .await
             .unwrap();
         serde_json::from_slice(&body).unwrap()
+    }
+
+    fn spawn_price_indexer() -> Option<(String, tokio::task::JoinHandle<String>)> {
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
+            Err(error) => panic!("failed to bind test price-indexer: {error}"),
+        };
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = tokio::task::spawn_blocking(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let request = read_http_request(&mut stream);
+
+            let body = serde_json::json!({
+                "assetId": "usd-coin",
+                "symbol": "USDC",
+                "name": "USD Coin",
+                "quoteCurrency": "USD",
+                "price": "1.0001",
+                "sourceType": "coingecko",
+                "sourcePriority": 10,
+                "riskCategory": "normal",
+                "confidenceScore": 95,
+                "confidenceLabel": "high",
+                "publishedAt": "2026-05-26T12:00:00Z",
+                "recordedAt": "2026-05-26T12:00:05Z",
+                "freshnessStatus": "fresh",
+                "isFallback": false,
+                "isDerived": false,
+                "derivationPath": null,
+                "staleness": {
+                    "ageSeconds": 5,
+                    "isStale": false,
+                    "warningThresholdSeconds": 300
+                }
+            })
+            .to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+
+            stream.write_all(response.as_bytes()).unwrap();
+
+            request
+        });
+
+        Some((url, handle))
+    }
+
+    fn spawn_batch_price_indexer() -> Option<(String, tokio::task::JoinHandle<String>)> {
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
+            Err(error) => panic!("failed to bind test price-indexer: {error}"),
+        };
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = tokio::task::spawn_blocking(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let request = read_http_request(&mut stream);
+
+            let body = serde_json::json!({
+                "quoteCurrency": "USD",
+                "requestedCount": 2,
+                "uniqueCount": 2,
+                "results": [
+                    {
+                        "requestedSlug": "ethereum",
+                        "normalizedSlug": "ethereum",
+                        "assetId": "ethereum",
+                        "slug": "ethereum",
+                        "name": "Ethereum",
+                        "status": "found",
+                        "freshnessStatus": "fresh",
+                        "price": {
+                            "assetId": "ethereum",
+                            "slug": "ethereum",
+                            "quoteCurrency": "USD",
+                            "price": "2500.123456",
+                            "sourceType": "chainlink",
+                            "publishedAt": "2026-05-20T12:00:00.000Z",
+                            "recordedAt": "2026-05-20T12:00:01.000Z",
+                            "freshnessStatus": "fresh",
+                            "staleness": {
+                                "ageSeconds": 30,
+                                "isStale": false,
+                                "warningThresholdSeconds": 300
+                            }
+                        },
+                        "error": null
+                    },
+                    {
+                        "requestedSlug": "bitcoin",
+                        "normalizedSlug": "bitcoin",
+                        "assetId": "bitcoin",
+                        "slug": "bitcoin",
+                        "name": "Bitcoin",
+                        "status": "unavailable",
+                        "freshnessStatus": "unavailable",
+                        "price": null,
+                        "error": null
+                    }
+                ]
+            })
+            .to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+
+            stream.write_all(response.as_bytes()).unwrap();
+
+            request
+        });
+
+        Some((url, handle))
+    }
+
+    fn read_http_request(stream: &mut impl Read) -> String {
+        let mut request = Vec::new();
+        let mut buffer = [0; 1024];
+
+        loop {
+            let bytes_read = stream.read(&mut buffer).unwrap();
+            if bytes_read == 0 {
+                break;
+            }
+
+            request.extend_from_slice(&buffer[..bytes_read]);
+
+            let Some(headers_end) = request.windows(4).position(|window| window == b"\r\n\r\n")
+            else {
+                continue;
+            };
+            let headers = String::from_utf8_lossy(&request[..headers_end]);
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+
+                    if name.eq_ignore_ascii_case("content-length") {
+                        value.trim().parse::<usize>().ok()
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(0);
+            let request_length = headers_end + 4 + content_length;
+
+            if request.len() >= request_length {
+                break;
+            }
+        }
+
+        String::from_utf8(request).unwrap()
     }
 }

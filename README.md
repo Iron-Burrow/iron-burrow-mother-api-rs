@@ -12,7 +12,7 @@ Deployment-wise, the old service used the stable container name `iron-burrow-mot
 
 ## Not Ported
 
-- Price-indexer logic
+- Public price routes
 - Event or holder indexing
 - Auth, API keys, billing, or x402 boundaries
 - Admin, explorer, account, tracked-token, and price routes
@@ -36,7 +36,9 @@ Deployment-wise, the old service used the stable container name `iron-burrow-mot
 `GET /v1/assets?limit=<limit>`
 
 Lists active Mother API-owned global assets. `limit` is optional, defaults to
-`100`, and is clamped to `1000`. List responses are not price-enriched.
+`100`, and is clamped to `1000`. List responses include USD price enrichment
+from the internal price-indexer Query Layer when configured; otherwise each
+asset returns a stable unavailable price object.
 
 ```json
 {
@@ -50,7 +52,18 @@ Lists active Mother API-owned global assets. `limit` is optional, defaults to
       "symbol": "BTC",
       "name": "Bitcoin",
       "category": "crypto",
-      "canonical_path": "/assets/bitcoin"
+      "canonical_path": "/assets/bitcoin",
+      "price": {
+        "status": "available",
+        "price": "2500.123456",
+        "quote_currency": "USD",
+        "source_type": "chainlink",
+        "confidence_label": null,
+        "is_fallback": false,
+        "is_derived": false,
+        "recorded_at": "2026-05-20T12:00:01.000Z",
+        "warning": null
+      }
     }
   ]
 }
@@ -61,7 +74,7 @@ Lists active Mother API-owned global assets. `limit` is optional, defaults to
 Returns one active asset plus the network-specific chain maps the UI can use to
 render asset detail pages. Asset detail always includes a stable `price` object.
 If the price-indexer Query Layer is not configured, unavailable, or has no price
-for the symbol, the asset response still succeeds with `price.status` set to
+for the slug, the asset response still succeeds with `price.status` set to
 `"unavailable"`.
 
 ```json

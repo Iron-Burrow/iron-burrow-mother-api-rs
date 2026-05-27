@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+
 use serde::Serialize;
 use tracing::{info, warn};
 
 use crate::{
-    price_indexer::{LatestAssetPrice, PriceIndexerClient, PriceLookupError},
+    price_indexer::{LatestAssetPrice, PriceIndexerClient, PriceLookupError, PriceStatus},
     repositories::global_assets::{
         AssetChainMap, GlobalAsset, GlobalAssetDetail, GlobalAssetRepository, NetworkRef,
         RepositoryError,
@@ -35,8 +37,9 @@ impl AssetsService {
     ) -> Result<AssetsResponse, AssetsServiceError> {
         let limit = parse_limit(raw_limit)?;
         let assets = self.repository.list_assets(limit).await?;
+        let prices = self.lookup_list_prices(&assets).await;
 
-        Ok(AssetsResponse::new(limit, assets))
+        Ok(AssetsResponse::new(limit, assets, prices))
     }
 
     pub async fn get_asset(&self, raw_slug: &str) -> Result<AssetResponse, AssetsServiceError> {
@@ -61,7 +64,7 @@ impl AssetsService {
             symbol, "Price lookup attempted for asset detail"
         );
 
-        match client.latest_by_symbol(symbol).await {
+        match client.latest_by_slug(slug).await {
             Ok(price) => {
                 info!(
                     asset_slug = slug,
@@ -79,6 +82,42 @@ impl AssetsService {
                 LatestAssetPrice::unavailable()
             }
         }
+    }
+
+    async fn lookup_list_prices(
+        &self,
+        assets: &[GlobalAsset],
+    ) -> HashMap<String, LatestAssetPrice> {
+        let Some(client) = &self.price_indexer_client else {
+            return HashMap::new();
+        };
+
+        let slugs = assets
+            .iter()
+            .map(|asset| asset.slug.clone())
+            .collect::<Vec<_>>();
+
+        if slugs.is_empty() {
+            return HashMap::new();
+        }
+
+        info!(
+            asset_count = slugs.len(),
+            "Batch price lookup attempted for asset list"
+        );
+
+        let prices = client.latest_by_slugs(&slugs, "USD").await;
+        let available_count = prices
+            .values()
+            .filter(|price| price.status != PriceStatus::Unavailable)
+            .count();
+
+        info!(
+            asset_count = slugs.len(),
+            available_count, "Batch price lookup completed for asset list"
+        );
+
+        prices
     }
 }
 
@@ -128,14 +167,25 @@ pub struct AssetsResponse {
     response_type: &'static str,
     limit: u64,
     count: usize,
-    assets: Vec<AssetPayload>,
+    assets: Vec<AssetListItemPayload>,
 }
 
 impl AssetsResponse {
-    fn new(limit: u64, assets: Vec<GlobalAsset>) -> Self {
+    fn new(
+        limit: u64,
+        assets: Vec<GlobalAsset>,
+        prices: HashMap<String, LatestAssetPrice>,
+    ) -> Self {
         let assets = assets
             .into_iter()
-            .map(AssetPayload::from)
+            .map(|asset| {
+                let normalized_slug = asset.slug.trim().to_ascii_lowercase();
+                let price = prices
+                    .get(&normalized_slug)
+                    .cloned()
+                    .unwrap_or_else(LatestAssetPrice::unavailable);
+                AssetListItemPayload::new(asset, price)
+            })
             .collect::<Vec<_>>();
 
         Self {
@@ -144,6 +194,29 @@ impl AssetsResponse {
             limit,
             count: assets.len(),
             assets,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct AssetListItemPayload {
+    asset_id: String,
+    symbol: String,
+    name: String,
+    category: String,
+    canonical_path: String,
+    price: LatestAssetPrice,
+}
+
+impl AssetListItemPayload {
+    fn new(asset: GlobalAsset, price: LatestAssetPrice) -> Self {
+        Self {
+            asset_id: asset.slug,
+            symbol: asset.symbol,
+            name: asset.name,
+            category: asset.category,
+            canonical_path: asset.canonical_path,
+            price,
         }
     }
 }
@@ -233,10 +306,10 @@ fn log_price_lookup_error(
                 symbol, "Price lookup disabled for asset detail"
             );
         }
-        PriceLookupError::InvalidSymbol => {
+        PriceLookupError::InvalidSlug => {
             warn!(
                 asset_slug = slug,
-                symbol, "Price lookup skipped because asset symbol was invalid"
+                symbol, "Price lookup skipped because asset slug was invalid"
             );
         }
         PriceLookupError::Unavailable { status, code } => {
@@ -282,7 +355,7 @@ fn log_price_lookup_error(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repositories::global_assets::{demo_assets, GlobalAssetRepository};
+    use crate::repositories::global_assets::{demo_assets, GlobalAsset, GlobalAssetRepository};
 
     fn service() -> AssetsService {
         AssetsService::new(GlobalAssetRepository::in_memory(demo_assets()), None)
@@ -297,6 +370,8 @@ mod tests {
         assert_eq!(json["type"], "assets");
         assert_eq!(json["limit"], 100);
         assert_eq!(json["count"], 21);
+        assert_eq!(json["assets"][0]["price"]["status"], "unavailable");
+        assert!(json["assets"][0]["price"]["price"].is_null());
     }
 
     #[tokio::test]
@@ -307,6 +382,39 @@ mod tests {
         assert_eq!(json["limit"], 2);
         assert_eq!(json["count"], 2);
         assert_eq!(json["assets"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn asset_list_prices_match_normalized_slugs_without_consuming_entries() {
+        let price = LatestAssetPrice {
+            status: PriceStatus::Available,
+            price: Some("2500.123456".to_string()),
+            quote_currency: Some("USD".to_string()),
+            source_type: Some("chainlink".to_string()),
+            confidence_label: Some("high".to_string()),
+            is_fallback: false,
+            is_derived: false,
+            recorded_at: Some("2026-05-20T12:00:01.000Z".to_string()),
+            warning: None,
+        };
+        let prices = HashMap::from([("ethereum".to_string(), price)]);
+
+        let response = AssetsResponse::new(
+            2,
+            vec![
+                test_asset(" Ethereum ", "ETH", 10),
+                test_asset("ethereum", "ETH2", 20),
+            ],
+            prices,
+        );
+        let json = serde_json::to_value(response).unwrap();
+
+        assert_eq!(json["assets"][0]["asset_id"], " Ethereum ");
+        assert_eq!(json["assets"][0]["price"]["status"], "available");
+        assert_eq!(json["assets"][0]["price"]["price"], "2500.123456");
+        assert_eq!(json["assets"][1]["asset_id"], "ethereum");
+        assert_eq!(json["assets"][1]["price"]["status"], "available");
+        assert_eq!(json["assets"][1]["price"]["price"], "2500.123456");
     }
 
     #[tokio::test]
@@ -347,5 +455,18 @@ mod tests {
         let error = service().get_asset("does-not-exist").await.unwrap_err();
 
         assert!(matches!(error, AssetsServiceError::AssetNotFound));
+    }
+
+    fn test_asset(slug: &str, symbol: &str, sort_order: i32) -> GlobalAsset {
+        GlobalAsset {
+            id: format!("test-{slug}"),
+            slug: slug.to_string(),
+            symbol: symbol.to_string(),
+            name: symbol.to_string(),
+            category: "crypto".to_string(),
+            canonical_path: format!("/assets/{}", slug.trim().to_ascii_lowercase()),
+            aliases: Vec::new(),
+            sort_order,
+        }
     }
 }

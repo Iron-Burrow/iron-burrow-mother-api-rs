@@ -33,7 +33,9 @@ create table if not exists mother_api.global_asset (
   status mother_api.global_asset_status not null default 'active',
   sort_order integer not null default 1000,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint global_asset_slug_normalized
+    check (slug = lower(btrim(slug)) and slug <> '')
 );
 
 create table if not exists mother_api.network (

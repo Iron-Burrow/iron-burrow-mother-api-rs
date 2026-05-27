@@ -1,3 +1,3 @@
 pub mod client;
 
-pub use client::{LatestAssetPrice, PriceIndexerClient, PriceLookupError};
+pub use client::{LatestAssetPrice, PriceIndexerClient, PriceLookupError, PriceStatus};
