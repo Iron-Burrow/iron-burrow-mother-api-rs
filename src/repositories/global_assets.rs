@@ -857,6 +857,48 @@ mod tests {
 
         transaction.rollback().await.unwrap();
     }
+
+    #[tokio::test]
+    async fn global_asset_slug_is_normalized_in_database() {
+        let Ok(database_url) = std::env::var("DATABASE_URL") else {
+            return;
+        };
+
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+
+        let mut transaction = pool.begin().await.unwrap();
+        let insert_result = sqlx::query(
+            r#"
+            insert into mother_api.global_asset (
+              slug,
+              symbol,
+              name,
+              canonical_path,
+              status
+            )
+            values ($1, $2, $3, $4, 'inactive'::mother_api.global_asset_status)
+            "#,
+        )
+        .bind("Slug-Normalized-Test")
+        .bind("SLUGNORMALIZED")
+        .bind("Slug Normalized Test")
+        .bind("/assets/slug-normalized-test")
+        .execute(&mut *transaction)
+        .await;
+
+        let error = insert_result.expect_err("mixed-case slug should violate constraint");
+        let sqlx::Error::Database(database_error) = error else {
+            panic!("expected database error for non-normalized slug");
+        };
+
+        assert_eq!(
+            database_error.constraint(),
+            Some("global_asset_slug_normalized")
+        );
+
+        transaction.rollback().await.unwrap();
+    }
 }
 
 #[cfg(test)]

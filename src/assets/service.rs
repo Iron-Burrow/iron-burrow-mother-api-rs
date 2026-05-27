@@ -174,13 +174,15 @@ impl AssetsResponse {
     fn new(
         limit: u64,
         assets: Vec<GlobalAsset>,
-        mut prices: HashMap<String, LatestAssetPrice>,
+        prices: HashMap<String, LatestAssetPrice>,
     ) -> Self {
         let assets = assets
             .into_iter()
             .map(|asset| {
+                let normalized_slug = asset.slug.trim().to_ascii_lowercase();
                 let price = prices
-                    .remove(&asset.slug)
+                    .get(&normalized_slug)
+                    .cloned()
                     .unwrap_or_else(LatestAssetPrice::unavailable);
                 AssetListItemPayload::new(asset, price)
             })
@@ -353,7 +355,7 @@ fn log_price_lookup_error(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repositories::global_assets::{demo_assets, GlobalAssetRepository};
+    use crate::repositories::global_assets::{demo_assets, GlobalAsset, GlobalAssetRepository};
 
     fn service() -> AssetsService {
         AssetsService::new(GlobalAssetRepository::in_memory(demo_assets()), None)
@@ -380,6 +382,39 @@ mod tests {
         assert_eq!(json["limit"], 2);
         assert_eq!(json["count"], 2);
         assert_eq!(json["assets"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn asset_list_prices_match_normalized_slugs_without_consuming_entries() {
+        let price = LatestAssetPrice {
+            status: PriceStatus::Available,
+            price: Some("2500.123456".to_string()),
+            quote_currency: Some("USD".to_string()),
+            source_type: Some("chainlink".to_string()),
+            confidence_label: Some("high".to_string()),
+            is_fallback: false,
+            is_derived: false,
+            recorded_at: Some("2026-05-20T12:00:01.000Z".to_string()),
+            warning: None,
+        };
+        let prices = HashMap::from([("ethereum".to_string(), price)]);
+
+        let response = AssetsResponse::new(
+            2,
+            vec![
+                test_asset(" Ethereum ", "ETH", 10),
+                test_asset("ethereum", "ETH2", 20),
+            ],
+            prices,
+        );
+        let json = serde_json::to_value(response).unwrap();
+
+        assert_eq!(json["assets"][0]["asset_id"], " Ethereum ");
+        assert_eq!(json["assets"][0]["price"]["status"], "available");
+        assert_eq!(json["assets"][0]["price"]["price"], "2500.123456");
+        assert_eq!(json["assets"][1]["asset_id"], "ethereum");
+        assert_eq!(json["assets"][1]["price"]["status"], "available");
+        assert_eq!(json["assets"][1]["price"]["price"], "2500.123456");
     }
 
     #[tokio::test]
@@ -420,5 +455,18 @@ mod tests {
         let error = service().get_asset("does-not-exist").await.unwrap_err();
 
         assert!(matches!(error, AssetsServiceError::AssetNotFound));
+    }
+
+    fn test_asset(slug: &str, symbol: &str, sort_order: i32) -> GlobalAsset {
+        GlobalAsset {
+            id: format!("test-{slug}"),
+            slug: slug.to_string(),
+            symbol: symbol.to_string(),
+            name: symbol.to_string(),
+            category: "crypto".to_string(),
+            canonical_path: format!("/assets/{}", slug.trim().to_ascii_lowercase()),
+            aliases: Vec::new(),
+            sort_order,
+        }
     }
 }
