@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+
 use serde::Serialize;
 use tracing::{info, warn};
 
 use crate::{
-    price_indexer::{LatestAssetPrice, PriceIndexerClient, PriceLookupError},
+    price_indexer::{LatestAssetPrice, PriceIndexerClient, PriceLookupError, PriceStatus},
     repositories::global_assets::{
         AssetChainMap, GlobalAsset, GlobalAssetDetail, GlobalAssetRepository, NetworkRef,
         RepositoryError,
@@ -35,8 +37,9 @@ impl AssetsService {
     ) -> Result<AssetsResponse, AssetsServiceError> {
         let limit = parse_limit(raw_limit)?;
         let assets = self.repository.list_assets(limit).await?;
+        let prices = self.lookup_list_prices(&assets).await;
 
-        Ok(AssetsResponse::new(limit, assets))
+        Ok(AssetsResponse::new(limit, assets, prices))
     }
 
     pub async fn get_asset(&self, raw_slug: &str) -> Result<AssetResponse, AssetsServiceError> {
@@ -79,6 +82,42 @@ impl AssetsService {
                 LatestAssetPrice::unavailable()
             }
         }
+    }
+
+    async fn lookup_list_prices(
+        &self,
+        assets: &[GlobalAsset],
+    ) -> HashMap<String, LatestAssetPrice> {
+        let Some(client) = &self.price_indexer_client else {
+            return HashMap::new();
+        };
+
+        let slugs = assets
+            .iter()
+            .map(|asset| asset.slug.clone())
+            .collect::<Vec<_>>();
+
+        if slugs.is_empty() {
+            return HashMap::new();
+        }
+
+        info!(
+            asset_count = slugs.len(),
+            "Batch price lookup attempted for asset list"
+        );
+
+        let prices = client.latest_by_slugs(&slugs, "USD").await;
+        let available_count = prices
+            .values()
+            .filter(|price| price.status != PriceStatus::Unavailable)
+            .count();
+
+        info!(
+            asset_count = slugs.len(),
+            available_count, "Batch price lookup completed for asset list"
+        );
+
+        prices
     }
 }
 
@@ -128,14 +167,23 @@ pub struct AssetsResponse {
     response_type: &'static str,
     limit: u64,
     count: usize,
-    assets: Vec<AssetPayload>,
+    assets: Vec<AssetListItemPayload>,
 }
 
 impl AssetsResponse {
-    fn new(limit: u64, assets: Vec<GlobalAsset>) -> Self {
+    fn new(
+        limit: u64,
+        assets: Vec<GlobalAsset>,
+        mut prices: HashMap<String, LatestAssetPrice>,
+    ) -> Self {
         let assets = assets
             .into_iter()
-            .map(AssetPayload::from)
+            .map(|asset| {
+                let price = prices
+                    .remove(&asset.slug)
+                    .unwrap_or_else(LatestAssetPrice::unavailable);
+                AssetListItemPayload::new(asset, price)
+            })
             .collect::<Vec<_>>();
 
         Self {
@@ -144,6 +192,29 @@ impl AssetsResponse {
             limit,
             count: assets.len(),
             assets,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct AssetListItemPayload {
+    asset_id: String,
+    symbol: String,
+    name: String,
+    category: String,
+    canonical_path: String,
+    price: LatestAssetPrice,
+}
+
+impl AssetListItemPayload {
+    fn new(asset: GlobalAsset, price: LatestAssetPrice) -> Self {
+        Self {
+            asset_id: asset.slug,
+            symbol: asset.symbol,
+            name: asset.name,
+            category: asset.category,
+            canonical_path: asset.canonical_path,
+            price,
         }
     }
 }
@@ -297,6 +368,8 @@ mod tests {
         assert_eq!(json["type"], "assets");
         assert_eq!(json["limit"], 100);
         assert_eq!(json["count"], 21);
+        assert_eq!(json["assets"][0]["price"]["status"], "unavailable");
+        assert!(json["assets"][0]["price"]["price"].is_null());
     }
 
     #[tokio::test]
