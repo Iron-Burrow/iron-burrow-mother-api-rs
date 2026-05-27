@@ -3,6 +3,7 @@ mod assets;
 mod config;
 mod db;
 mod error;
+mod price_indexer;
 mod repositories;
 mod resolve;
 mod routes;

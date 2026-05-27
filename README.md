@@ -36,7 +36,7 @@ Deployment-wise, the old service used the stable container name `iron-burrow-mot
 `GET /v1/assets?limit=<limit>`
 
 Lists active Mother API-owned global assets. `limit` is optional, defaults to
-`100`, and is clamped to `1000`.
+`100`, and is clamped to `1000`. List responses are not price-enriched.
 
 ```json
 {
@@ -59,7 +59,10 @@ Lists active Mother API-owned global assets. `limit` is optional, defaults to
 `GET /v1/assets/{slug}`
 
 Returns one active asset plus the network-specific chain maps the UI can use to
-render asset detail pages.
+render asset detail pages. Asset detail always includes a stable `price` object.
+If the price-indexer Query Layer is not configured, unavailable, or has no price
+for the symbol, the asset response still succeeds with `price.status` set to
+`"unavailable"`.
 
 ```json
 {
@@ -71,6 +74,17 @@ render asset detail pages.
     "name": "USD Coin",
     "category": "crypto",
     "canonical_path": "/assets/usdc"
+  },
+  "price": {
+    "status": "available",
+    "price": "1.0001",
+    "quote_currency": "USD",
+    "source_type": "coingecko",
+    "confidence_label": "high",
+    "is_fallback": false,
+    "is_derived": false,
+    "recorded_at": "2026-05-26T12:00:05Z",
+    "warning": null
   },
   "chain_maps": [
     {
@@ -167,7 +181,15 @@ Invalid query responses are stable:
 | `HTTP_HOST` | `0.0.0.0` | Bind host. |
 | `HTTP_PORT` | `3000` | Bind port. |
 | `DATABASE_URL` | unset | Optional Postgres URL for `mother_api.global_asset` resolver reads. |
+| `PRICE_INDEXER_URL` | unset | Optional price-indexer Query Layer base URL, for example `http://price-indexer:3010`. |
+| `PRICE_QL_INTERNAL_TOKEN` | unset | Optional internal bearer token for price-indexer Query Layer calls. |
+| `PRICE_INDEXER_TIMEOUT_MS` | `2000` | Optional timeout for asset detail price lookup. |
 | `RUST_LOG` | `iron_burrow_mother_api_rs=info,tower_http=info` | Optional tracing filter. |
+
+Price enrichment is enabled only when both `PRICE_INDEXER_URL` and
+`PRICE_QL_INTERNAL_TOKEN` are set. Missing or failing price configuration does
+not fail startup and does not fail asset detail pages; Mother API returns a
+stable unavailable price state instead.
 
 ## Database
 
@@ -182,7 +204,8 @@ and routing:
   representations on each network.
 
 Price-indexer, chain indexer, and infra-gateway tables remain out of scope for
-this service.
+this service. Mother API consumes price-indexer through its Query Layer and does
+not read price-indexer database tables directly.
 
 Run migrations with `sqlx-cli` when `DATABASE_URL` points at the target database:
 
@@ -231,6 +254,11 @@ Caddy is the only public entrypoint and publishes ports `80` and `443`. The API
 joins both networks, exposes container port `3000` without publishing it to the
 host, and is reached by Caddy as `mother-api:3000` on `iron-burrow-public-net`.
 Postgres and `db-migrate` stay on `iron-burrow-net`.
+
+The price-indexer service should also join `iron-burrow-net` when it runs from a
+separate Compose project. Mother API can then reach it by Docker DNS, commonly
+`http://price-indexer:3010`, and the price-indexer does not need to publish port
+`3010` to the host.
 
 ```sh
 docker network create iron-burrow-net
