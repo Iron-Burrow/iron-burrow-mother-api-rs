@@ -226,8 +226,9 @@ Run migrations with `sqlx-cli` when `DATABASE_URL` points at the target database
 sqlx migrate run
 ```
 
-Docker Compose runs the same migrations through the `db-migrate` service before
-starting the API.
+Docker Compose runs the same command through the `db-migrate` service. Local
+Compose keeps the convenience behavior of migrating before starting the API.
+Production deploys should run `db-migrate` explicitly before restarting the API.
 
 The seed catalog is production-alpha data, even though the current migration
 filename still says `demo`. It includes AAVE, AUSD, BTC, USDS, ETH, FBTC, GHO,
@@ -254,6 +255,34 @@ With Docker:
 ```sh
 cp .env.example .env
 docker compose up --build
+```
+
+To run the local migration service directly:
+
+```sh
+docker compose run --rm db-migrate
+```
+
+## Publishing
+
+Pushing an immutable release tag publishes one production image to GHCR:
+
+```sh
+git tag v0.1.2
+git push origin v0.1.2
+```
+
+The workflow publishes only:
+
+```text
+ghcr.io/iron-burrow/iron-burrow-mother-api-rs:v0.1.2
+```
+
+It does not publish `latest`. The same image contains the API binary and
+`sqlx-cli`; the `db-migrate` service runs:
+
+```sh
+sqlx migrate run
 ```
 
 ## Production Deploy
@@ -283,7 +312,6 @@ If the network already exists, Docker will report that and no action is needed.
 ```sh
 cp .env.production.example .env.production
 # Edit .env.production with production values.
-docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml up -d
 ```
 
 The initial production-alpha deploy uses the pinned image tag `v0.1.0`:
@@ -294,6 +322,34 @@ IRON_BURROW_MOTHER_API_TAG=v0.1.0
 
 Do not deploy production from `latest`; keep deploys tied to explicit release
 tags so rollback and audit stay boring.
+
+Pull the immutable image tag, run migrations explicitly, then start or restart
+the API:
+
+```sh
+docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml pull iron-burrow-mother-api db-migrate
+docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml run --rm db-migrate
+docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml up -d iron-burrow-mother-api
+docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml ps
+```
+
+Confirm both services resolve to the same image name and tag:
+
+```sh
+docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml config
+docker image ls ghcr.io/iron-burrow/iron-burrow-mother-api-rs
+```
+
+If migration fails, do not start the new API image. Keep or restore the previous
+`IRON_BURROW_MOTHER_API_TAG` in `.env.production`, pull that tag if needed, and
+start the API with the previous image:
+
+```sh
+docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml up -d iron-burrow-mother-api
+```
+
+Database rollback should be handled as a forward repair or backup restore unless
+a specific migration has an explicitly tested down path.
 
 Before assigning the canonical `iron-burrow-mother-api` container and
 `mother-api` network alias to Rust, stop and remove the old TypeScript API. This
@@ -308,9 +364,9 @@ curl -i 'https://api.ironburrow.com/v1/assets?limit=1'
 curl -i 'https://api.ironburrow.com/v1/resolve?q=usdc'
 ```
 
-`IRON_BURROW_MOTHER_API_TAG` controls both published production images:
-`ghcr.io/iron-burrow/iron-burrow-mother-api-rs` and
-`ghcr.io/iron-burrow/iron-burrow-mother-api-db-migrate`.
+`IRON_BURROW_MOTHER_API_TAG` controls the shared production image used by both
+`iron-burrow-mother-api` and `db-migrate`:
+`ghcr.io/iron-burrow/iron-burrow-mother-api-rs`.
 
 Before cutover on the VPS, verify that `api.ironburrow.com` points to the VPS,
 that Caddy serves only the intended Rust routes (`/health` and `/v1/*`), and

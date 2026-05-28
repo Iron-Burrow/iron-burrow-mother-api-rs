@@ -45,6 +45,7 @@ services:
       context: .
       dockerfile: infra/docker/Dockerfile.mother-api
     container_name: iron-burrow-mother-api
+    command: ["iron-burrow-mother-api-rs"]
     environment:
       APP_ENV: ${APP_ENV:-development}
       HTTP_HOST: 0.0.0.0
@@ -57,6 +58,8 @@ services:
     ports:
       - "${HOST_HTTP_PORT:-3000}:3000"
     depends_on:
+      postgres:
+        condition: service_healthy
       db-migrate:
         condition: service_completed_successfully
     networks:
@@ -76,8 +79,10 @@ services:
   db-migrate:
     build:
       context: .
-      dockerfile: infra/docker/Dockerfile.mother-api-db-migrate
-    container_name: iron-burrow-mother-api-db-migrate
+      dockerfile: infra/docker/Dockerfile.mother-api
+    container_name: iron-burrow-mother-api-migrate
+    command: ["sqlx", "migrate", "run"]
+    restart: "no"
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/ibdb}
     depends_on:

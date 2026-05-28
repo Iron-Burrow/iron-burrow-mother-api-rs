@@ -1,5 +1,7 @@
 FROM rust:1-bookworm AS builder
 
+RUN cargo install sqlx-cli --version 0.9.0 --locked --no-default-features --features rustls,postgres
+
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
@@ -18,6 +20,8 @@ RUN useradd --system --uid 10001 --home /nonexistent --shell /usr/sbin/nologin m
 WORKDIR /app
 
 COPY --from=builder /app/target/release/iron-burrow-mother-api-rs /usr/local/bin/iron-burrow-mother-api-rs
+COPY --from=builder /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
+COPY migrations ./migrations
 
 ENV APP_ENV=production
 ENV HTTP_HOST=0.0.0.0

@@ -41,11 +41,12 @@ services:
   iron-burrow-mother-api:
     build: !reset null
     image: ghcr.io/iron-burrow/iron-burrow-mother-api-rs:${IRON_BURROW_MOTHER_API_TAG:?IRON_BURROW_MOTHER_API_TAG is required}
+    command: ["iron-burrow-mother-api-rs"]
     restart: unless-stopped
     ports: !reset []
-    depends_on:
-      db-migrate:
-        condition: service_completed_successfully
+    depends_on: !override
+      postgres:
+        condition: service_healthy
     environment:
       APP_ENV: ${APP_ENV:-production}
       HTTP_HOST: 0.0.0.0
@@ -68,12 +69,16 @@ services:
 
   db-migrate:
     build: !reset null
-    image: ghcr.io/iron-burrow/iron-burrow-mother-api-db-migrate:${IRON_BURROW_MOTHER_API_TAG:?IRON_BURROW_MOTHER_API_TAG is required}
+    image: ghcr.io/iron-burrow/iron-burrow-mother-api-rs:${IRON_BURROW_MOTHER_API_TAG:?IRON_BURROW_MOTHER_API_TAG is required}
+    command: ["sqlx", "migrate", "run"]
+    restart: "no"
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
     depends_on:
       postgres:
         condition: service_healthy
+    networks: !override
+      - iron-burrow-net
 
 networks:
   iron-burrow-net:
