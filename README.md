@@ -69,6 +69,38 @@ asset returns a stable unavailable price object.
 }
 ```
 
+`GET /v1/assets/active`
+
+Returns the canonical refresh universe that `iron-burrow-read-model` uses before
+running latest price, price stats, and price trend jobs. The read-model service
+builds refresh attempts as `asset_slug × supported_quote_currency`; Mother API
+owns the active canonical asset universe, while price-indexer Query Layer owns
+price availability and derivation feasibility.
+
+The response is intentionally minimal and public-safe because current Caddy
+configuration exposes `/v1/*`. It is service-oriented rather than a public
+product endpoint, and avoids chain-specific addresses, chain maps, inactive
+assets, deprecated assets, and operational metadata beyond `generated_at`.
+
+```json
+{
+  "assets": [
+    {
+      "slug": "bitcoin",
+      "symbol": "BTC",
+      "name": "Bitcoin"
+    },
+    {
+      "slug": "staked-near",
+      "symbol": "STNEAR",
+      "name": "Staked NEAR"
+    }
+  ],
+  "supported_quote_currencies": ["USD", "USDC", "BTC", "MXN"],
+  "generated_at": "2026-05-30T00:00:00.000Z"
+}
+```
+
 `GET /v1/assets/{slug}`
 
 Returns one active asset plus the network-specific chain maps the UI can use to

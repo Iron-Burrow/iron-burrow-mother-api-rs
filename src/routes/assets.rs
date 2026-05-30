@@ -5,7 +5,9 @@ use axum::{
 use serde::Deserialize;
 
 use crate::{
-    assets::service::{AssetResponse, AssetsResponse, AssetsService, AssetsServiceError},
+    assets::service::{
+        ActiveAssetsResponse, AssetResponse, AssetsResponse, AssetsService, AssetsServiceError,
+    },
     error::ApiError,
     state::AppState,
 };
@@ -26,6 +28,22 @@ pub async fn list_assets(
     let service = AssetsService::new(repository, state.price_indexer_client.clone());
     let response = service
         .list_assets(params.limit.as_deref())
+        .await
+        .map_err(assets_error_to_api_error)?;
+
+    Ok(Json(response))
+}
+
+pub async fn list_active_assets(
+    State(state): State<AppState>,
+) -> Result<Json<ActiveAssetsResponse>, ApiError> {
+    let repository = state
+        .asset_repository
+        .clone()
+        .ok_or_else(ApiError::database_unavailable)?;
+    let service = AssetsService::new(repository, state.price_indexer_client.clone());
+    let response = service
+        .list_active_assets()
         .await
         .map_err(assets_error_to_api_error)?;
 

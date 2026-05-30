@@ -66,6 +66,13 @@ impl GlobalAssetRepository {
         }
     }
 
+    pub async fn list_active_assets(&self) -> Result<Vec<ActiveGlobalAsset>, RepositoryError> {
+        match self {
+            Self::Database(pool) => list_active_assets_db(pool).await,
+            Self::InMemory(catalog) => Ok(list_active_assets_in_memory(&catalog.assets)),
+        }
+    }
+
     pub async fn get_asset_detail_by_slug(
         &self,
         slug: &str,
@@ -87,6 +94,22 @@ pub struct GlobalAsset {
     pub canonical_path: String,
     pub aliases: Vec<String>,
     pub sort_order: i32,
+    pub status: GlobalAssetStatus,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ActiveGlobalAsset {
+    pub slug: String,
+    pub symbol: String,
+    pub name: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GlobalAssetStatus {
+    Active,
+    Inactive,
+    Deprecated,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -187,6 +210,13 @@ struct GlobalAssetRow {
 }
 
 #[derive(FromRow)]
+struct ActiveGlobalAssetRow {
+    slug: String,
+    symbol: String,
+    name: String,
+}
+
+#[derive(FromRow)]
 struct AssetMatchRow {
     id: String,
     slug: String,
@@ -218,6 +248,15 @@ fn map_row(row: GlobalAssetRow) -> GlobalAsset {
         canonical_path: row.canonical_path,
         aliases: row.aliases,
         sort_order: row.sort_order,
+        status: GlobalAssetStatus::Active,
+    }
+}
+
+fn map_active_row(row: ActiveGlobalAssetRow) -> ActiveGlobalAsset {
+    ActiveGlobalAsset {
+        slug: row.slug,
+        symbol: row.symbol,
+        name: row.name,
     }
 }
 
@@ -251,6 +290,7 @@ fn map_match_row(row: AssetMatchRow) -> AssetMatch {
             canonical_path: row.canonical_path,
             aliases: row.aliases,
             sort_order: row.sort_order,
+            status: GlobalAssetStatus::Active,
         },
         confidence,
     }
@@ -403,6 +443,25 @@ async fn list_assets_db(pool: &PgPool, limit: u64) -> Result<Vec<GlobalAsset>, R
     Ok(rows.into_iter().map(map_row).collect())
 }
 
+async fn list_active_assets_db(pool: &PgPool) -> Result<Vec<ActiveGlobalAsset>, RepositoryError> {
+    let assets = sqlx::query_as::<_, ActiveGlobalAssetRow>(
+        r#"
+        select
+          slug,
+          symbol,
+          name
+        from mother_api.global_asset
+        where status = 'active'
+        order by sort_order asc, lower(symbol) asc
+        "#,
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(RepositoryError::new)?;
+
+    Ok(assets.into_iter().map(map_active_row).collect())
+}
+
 async fn get_asset_detail_by_slug_db(
     pool: &PgPool,
     slug: &str,
@@ -468,6 +527,7 @@ fn find_confident_match_in_memory(
 ) -> Option<AssetMatch> {
     let mut candidates = assets
         .iter()
+        .filter(|asset| asset.status == GlobalAssetStatus::Active)
         .filter_map(|asset| {
             let confidence = if asset.slug.eq_ignore_ascii_case(normalized_query) {
                 MatchConfidence::SlugExact
@@ -509,6 +569,7 @@ fn get_asset_detail_by_slug_in_memory(
     let asset = catalog
         .assets
         .iter()
+        .filter(|asset| asset.status == GlobalAssetStatus::Active)
         .find(|asset| asset.slug.eq_ignore_ascii_case(slug))?
         .clone();
 
@@ -637,12 +698,17 @@ fn list_recommendations_in_memory(
 ) -> Vec<GlobalAsset> {
     let mut matches = assets
         .iter()
+        .filter(|asset| asset.status == GlobalAssetStatus::Active)
         .filter(|asset| asset_contains(asset, normalized_query))
         .cloned()
         .collect::<Vec<_>>();
 
     if matches.is_empty() {
-        matches = assets.to_vec();
+        matches = assets
+            .iter()
+            .filter(|asset| asset.status == GlobalAssetStatus::Active)
+            .cloned()
+            .collect();
     }
 
     matches.sort_by(|left, right| {
@@ -655,13 +721,35 @@ fn list_recommendations_in_memory(
 }
 
 fn list_assets_in_memory(assets: &[GlobalAsset], limit: usize) -> Vec<GlobalAsset> {
-    let mut assets = assets.to_vec();
+    let mut assets = sort_active_assets_in_memory(assets);
+    assets.truncate(limit);
+    assets
+}
+
+fn list_active_assets_in_memory(assets: &[GlobalAsset]) -> Vec<ActiveGlobalAsset> {
+    sort_active_assets_in_memory(assets)
+        .into_iter()
+        .map(|asset| ActiveGlobalAsset {
+            slug: asset.slug,
+            symbol: asset.symbol,
+            name: asset.name,
+        })
+        .collect()
+}
+
+fn sort_active_assets_in_memory(assets: &[GlobalAsset]) -> Vec<GlobalAsset> {
+    let mut assets = assets
+        .iter()
+        .filter(|asset| asset.status == GlobalAssetStatus::Active)
+        .cloned()
+        .collect::<Vec<_>>();
+
     assets.sort_by(|left, right| {
         left.sort_order
             .cmp(&right.sort_order)
             .then_with(|| left.symbol.to_lowercase().cmp(&right.symbol.to_lowercase()))
     });
-    assets.truncate(limit);
+
     assets
 }
 
@@ -724,6 +812,76 @@ mod tests {
         assert_eq!(assets.len(), 2);
         assert_eq!(assets[0].slug, "bitcoin");
         assert_eq!(assets[1].slug, "ethereum");
+    }
+
+    #[tokio::test]
+    async fn active_assets_return_only_public_fields_for_active_assets_in_stable_order() {
+        let repository = GlobalAssetRepository::in_memory(vec![
+            demo_asset_with_status(
+                "deprecated-token",
+                "AAA",
+                "Deprecated Token",
+                "crypto",
+                "/assets/deprecated-token",
+                &[],
+                5,
+                GlobalAssetStatus::Deprecated,
+            ),
+            demo_asset("zeta", "ZZZ", "Zeta", "crypto", "/assets/zeta", &[], 20),
+            demo_asset_with_status(
+                "inactive-token",
+                "BBB",
+                "Inactive Token",
+                "crypto",
+                "/assets/inactive-token",
+                &[],
+                5,
+                GlobalAssetStatus::Inactive,
+            ),
+            demo_asset("alpha", "BBB", "Alpha", "crypto", "/assets/alpha", &[], 10),
+            demo_asset("beta", "AAA", "Beta", "crypto", "/assets/beta", &[], 10),
+        ]);
+
+        let assets = repository.list_active_assets().await.unwrap();
+
+        assert_eq!(
+            assets,
+            [
+                ActiveGlobalAsset {
+                    slug: "beta".to_string(),
+                    symbol: "AAA".to_string(),
+                    name: "Beta".to_string(),
+                },
+                ActiveGlobalAsset {
+                    slug: "alpha".to_string(),
+                    symbol: "BBB".to_string(),
+                    name: "Alpha".to_string(),
+                },
+                ActiveGlobalAsset {
+                    slug: "zeta".to_string(),
+                    symbol: "ZZZ".to_string(),
+                    name: "Zeta".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn active_assets_can_be_empty() {
+        let repository = GlobalAssetRepository::in_memory(vec![demo_asset_with_status(
+            "inactive-token",
+            "ITK",
+            "Inactive Token",
+            "crypto",
+            "/assets/inactive-token",
+            &[],
+            10,
+            GlobalAssetStatus::Inactive,
+        )]);
+
+        let assets = repository.list_active_assets().await.unwrap();
+
+        assert!(assets.is_empty());
     }
 
     #[tokio::test]
@@ -1121,6 +1279,29 @@ fn demo_asset(
     aliases: &[&str],
     sort_order: i32,
 ) -> GlobalAsset {
+    demo_asset_with_status(
+        slug,
+        symbol,
+        name,
+        category,
+        canonical_path,
+        aliases,
+        sort_order,
+        GlobalAssetStatus::Active,
+    )
+}
+
+#[cfg(test)]
+fn demo_asset_with_status(
+    slug: &str,
+    symbol: &str,
+    name: &str,
+    category: &str,
+    canonical_path: &str,
+    aliases: &[&str],
+    sort_order: i32,
+    status: GlobalAssetStatus,
+) -> GlobalAsset {
     GlobalAsset {
         id: format!("test-{slug}"),
         slug: slug.to_string(),
@@ -1130,5 +1311,6 @@ fn demo_asset(
         canonical_path: canonical_path.to_string(),
         aliases: aliases.iter().map(|alias| alias.to_string()).collect(),
         sort_order,
+        status,
     }
 }

@@ -3,7 +3,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::{
     routes::{
-        assets::{get_asset, list_assets},
+        assets::{get_asset, list_active_assets, list_assets},
         health::health,
         resolve::resolve,
         status::status,
@@ -16,6 +16,7 @@ pub fn create_app(state: AppState) -> Router {
         .route("/status", get(status))
         .route("/resolve", get(resolve))
         .route("/assets", get(list_assets))
+        .route("/assets/active", get(list_active_assets))
         .route("/assets/{slug}", get(get_asset));
 
     Router::new()
@@ -43,7 +44,9 @@ mod tests {
     use crate::{
         config::Config,
         price_indexer::PriceIndexerClient,
-        repositories::global_assets::{demo_assets, GlobalAsset, GlobalAssetRepository},
+        repositories::global_assets::{
+            demo_assets, GlobalAsset, GlobalAssetRepository, GlobalAssetStatus,
+        },
     };
 
     fn test_app() -> Router {
@@ -141,6 +144,126 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn active_assets_returns_refresh_universe_contract() {
+        let json = assets_json("/v1/assets/active").await;
+
+        assert_eq!(json["assets"][0]["slug"], "bitcoin");
+        assert_eq!(json["assets"][0]["symbol"], "BTC");
+        assert_eq!(json["assets"][0]["name"], "Bitcoin");
+        assert_eq!(json["assets"][1]["slug"], "ethereum");
+        assert_eq!(json["assets"][1]["symbol"], "ETH");
+        assert_eq!(json["assets"][1]["name"], "Ethereum");
+        assert_eq!(json["assets"].as_array().unwrap().len(), 21);
+        assert_eq!(
+            json["supported_quote_currencies"],
+            serde_json::json!(["USD", "USDC", "BTC", "MXN"])
+        );
+        assert!(json["asset_slugs"].is_null());
+        assert!(json["assets"][0]["id"].is_null());
+        assert!(json["assets"][0]["asset_id"].is_null());
+        assert!(json["assets"][0]["price"].is_null());
+        assert!(json["assets"][0]["status"].is_null());
+        assert!(json["chain_maps"].is_null());
+        assert!(json["address"].is_null());
+        chrono::DateTime::parse_from_rfc3339(json["generated_at"].as_str().unwrap()).unwrap();
+    }
+
+    #[tokio::test]
+    async fn active_assets_excludes_inactive_and_deprecated_assets() {
+        let app = create_app(AppState::with_asset_repository(
+            Config::default(),
+            GlobalAssetRepository::in_memory(vec![
+                test_asset("zeta", "ZZZ", "Zeta", 20, GlobalAssetStatus::Active),
+                test_asset(
+                    "inactive-token",
+                    "ITK",
+                    "Inactive Token",
+                    5,
+                    GlobalAssetStatus::Inactive,
+                ),
+                test_asset("alpha", "AAA", "Alpha", 10, GlobalAssetStatus::Active),
+                test_asset(
+                    "deprecated-token",
+                    "DTK",
+                    "Deprecated Token",
+                    1,
+                    GlobalAssetStatus::Deprecated,
+                ),
+            ]),
+        ));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/assets/active")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(
+            json["assets"],
+            serde_json::json!([
+                {
+                    "slug": "alpha",
+                    "symbol": "AAA",
+                    "name": "Alpha",
+                },
+                {
+                    "slug": "zeta",
+                    "symbol": "ZZZ",
+                    "name": "Zeta",
+                }
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn active_assets_returns_empty_asset_array_when_no_active_assets_exist() {
+        let app = create_app(AppState::with_asset_repository(
+            Config::default(),
+            GlobalAssetRepository::in_memory(vec![test_asset(
+                "inactive-token",
+                "ITK",
+                "Inactive Token",
+                10,
+                GlobalAssetStatus::Inactive,
+            )]),
+        ));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/assets/active")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["assets"], serde_json::json!([]));
+        assert_eq!(
+            json["supported_quote_currencies"],
+            serde_json::json!(["USD", "USDC", "BTC", "MXN"])
+        );
+    }
+
+    #[tokio::test]
     async fn assets_list_requests_batch_price_enrichment_by_slug() {
         let Some((price_indexer_url, request_handle)) = spawn_batch_price_indexer() else {
             return;
@@ -157,6 +280,7 @@ mod tests {
                 canonical_path: "/assets/bitcoin".to_string(),
                 aliases: vec!["btc".to_string()],
                 sort_order: 1,
+                status: GlobalAssetStatus::Active,
             },
             GlobalAsset {
                 id: "test-ethereum".to_string(),
@@ -167,6 +291,7 @@ mod tests {
                 canonical_path: "/assets/ethereum".to_string(),
                 aliases: vec!["eth".to_string()],
                 sort_order: 2,
+                status: GlobalAssetStatus::Active,
             },
         ]);
         let app = create_app(AppState {
@@ -322,6 +447,7 @@ mod tests {
             canonical_path: "/assets/usd-coin".to_string(),
             aliases: vec!["usdc".to_string()],
             sort_order: 10,
+            status: GlobalAssetStatus::Active,
         }]);
         let app = create_app(AppState {
             config: Config::default(),
@@ -608,6 +734,26 @@ mod tests {
             .await
             .unwrap();
         serde_json::from_slice(&body).unwrap()
+    }
+
+    fn test_asset(
+        slug: &str,
+        symbol: &str,
+        name: &str,
+        sort_order: i32,
+        status: GlobalAssetStatus,
+    ) -> GlobalAsset {
+        GlobalAsset {
+            id: format!("test-{slug}"),
+            slug: slug.to_string(),
+            symbol: symbol.to_string(),
+            name: name.to_string(),
+            category: "crypto".to_string(),
+            canonical_path: format!("/assets/{slug}"),
+            aliases: Vec::new(),
+            sort_order,
+            status,
+        }
     }
 
     fn spawn_price_indexer() -> Option<(String, tokio::task::JoinHandle<String>)> {

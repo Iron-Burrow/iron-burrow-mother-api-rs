@@ -1,18 +1,20 @@
 use std::collections::HashMap;
 
+use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use tracing::{info, warn};
 
 use crate::{
     price_indexer::{LatestAssetPrice, PriceIndexerClient, PriceLookupError, PriceStatus},
     repositories::global_assets::{
-        AssetChainMap, GlobalAsset, GlobalAssetDetail, GlobalAssetRepository, NetworkRef,
-        RepositoryError,
+        ActiveGlobalAsset, AssetChainMap, GlobalAsset, GlobalAssetDetail, GlobalAssetRepository,
+        NetworkRef, RepositoryError,
     },
 };
 
 const DEFAULT_LIMIT: u64 = 100;
 const MAX_LIMIT: u64 = 1000;
+pub const SUPPORTED_QUOTE_CURRENCIES: [&str; 4] = ["USD", "USDC", "BTC", "MXN"];
 
 #[derive(Clone, Debug)]
 pub struct AssetsService {
@@ -52,6 +54,12 @@ impl AssetsService {
         let price = self.lookup_price(&slug, &detail.asset.symbol).await;
 
         Ok(AssetResponse::new(detail, price))
+    }
+
+    pub async fn list_active_assets(&self) -> Result<ActiveAssetsResponse, AssetsServiceError> {
+        let assets = self.repository.list_active_assets().await?;
+
+        Ok(ActiveAssetsResponse::new(assets))
     }
 
     async fn lookup_price(&self, slug: &str, symbol: &str) -> LatestAssetPrice {
@@ -118,6 +126,40 @@ impl AssetsService {
         );
 
         prices
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct ActiveAssetsResponse {
+    assets: Vec<ActiveAsset>,
+    supported_quote_currencies: Vec<&'static str>,
+    generated_at: String,
+}
+
+impl ActiveAssetsResponse {
+    fn new(assets: Vec<ActiveGlobalAsset>) -> Self {
+        Self {
+            assets: assets.into_iter().map(ActiveAsset::from).collect(),
+            supported_quote_currencies: SUPPORTED_QUOTE_CURRENCIES.to_vec(),
+            generated_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ActiveAsset {
+    slug: String,
+    symbol: String,
+    name: String,
+}
+
+impl From<ActiveGlobalAsset> for ActiveAsset {
+    fn from(asset: ActiveGlobalAsset) -> Self {
+        Self {
+            slug: asset.slug,
+            symbol: asset.symbol,
+            name: asset.name,
+        }
     }
 }
 
@@ -355,7 +397,9 @@ fn log_price_lookup_error(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repositories::global_assets::{demo_assets, GlobalAsset, GlobalAssetRepository};
+    use crate::repositories::global_assets::{
+        demo_assets, GlobalAsset, GlobalAssetRepository, GlobalAssetStatus,
+    };
 
     fn service() -> AssetsService {
         AssetsService::new(GlobalAssetRepository::in_memory(demo_assets()), None)
@@ -382,6 +426,25 @@ mod tests {
         assert_eq!(json["limit"], 2);
         assert_eq!(json["count"], 2);
         assert_eq!(json["assets"].as_array().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn active_assets_returns_assets_quotes_and_timestamp() {
+        let response = service().list_active_assets().await.unwrap();
+        let json = serde_json::to_value(response).unwrap();
+
+        assert_eq!(json["assets"][0]["slug"], "bitcoin");
+        assert_eq!(json["assets"][0]["symbol"], "BTC");
+        assert_eq!(json["assets"][0]["name"], "Bitcoin");
+        assert!(json["assets"][0]["id"].is_null());
+        assert!(json["assets"][0]["asset_id"].is_null());
+        assert!(json["assets"][0]["price"].is_null());
+        assert!(json["asset_slugs"].is_null());
+        assert_eq!(
+            json["supported_quote_currencies"],
+            serde_json::json!(["USD", "USDC", "BTC", "MXN"])
+        );
+        chrono::DateTime::parse_from_rfc3339(json["generated_at"].as_str().unwrap()).unwrap();
     }
 
     #[test]
@@ -467,6 +530,7 @@ mod tests {
             canonical_path: format!("/assets/{}", slug.trim().to_ascii_lowercase()),
             aliases: Vec::new(),
             sort_order,
+            status: GlobalAssetStatus::Active,
         }
     }
 }
