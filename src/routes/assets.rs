@@ -202,9 +202,9 @@ fn signal_error_to_api_error(
     warn!(
         ?error,
         signal_type,
-        asset_slug = request.slug,
-        quote_currency = request.quote_currency,
-        window = request.window,
+        asset_slug = request.slug.as_str(),
+        quote_currency = request.quote_currency.as_str(),
+        window = request.window.as_str(),
         granularity = request.granularity.as_deref(),
         price_indexer_host = client.base_host(),
         timeout_ms = client.timeout_ms(),
