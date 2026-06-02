@@ -294,7 +294,7 @@ parameters such as `range`, `resolution`, `from`, `to`, `interval`,
       ],
       "meta": {
         "expectedBucketCount": 24,
-        "sampleCount": 24
+        "sampleCount": 1
       }
     }
   },
