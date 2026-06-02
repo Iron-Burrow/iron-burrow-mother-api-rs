@@ -6,10 +6,15 @@ agent_edit_policy: update_when_relevant
 external_contract: iron-burrow-price-indexer/CONTRACTS.md@2026-06-02
 ---
 
-# SPEC-002 - Mother API Price Stats and Trend Integration
+# SPEC-003 - Price Signal Endpoints for MCP and Agents
 
-Mother API customer and agent-facing price signal endpoints backed by the
-`iron-burrow-price-indexer` Query Layer.
+Low-level, precise price signal endpoints for MCP tools and AI agents, backed
+by the `iron-burrow-price-indexer` Query Layer.
+
+This spec was split out of the original `SPEC-002` draft, which mixed two
+distinct consumers. The UI/demo asset-page enrichment use case now lives in
+`SPEC-002 - Asset Detail Enrichment for UI and Demo`. This spec covers only
+the dedicated `/v1/assets/{slug}/signal/*` endpoints for agents.
 
 This spec defines the Mother API -> price-indexer integration boundary only.
 It does not authorize Mother API to re-own, recalculate, or reinterpret
@@ -18,12 +23,17 @@ bucketization, statistics, trend formulas, confidence, and warning semantics.
 
 ## Purpose
 
-Mother API should expose stable price signal capabilities for consumers that
-need answers such as:
+MCP tools and agents need to request a single, specific signal without loading
+a full asset page. These endpoints let a caller ask exactly one question and
+receive exactly one deterministic answer:
 
 - How did an asset move over the last 24 hours?
 - What was its observed price range and coverage?
 - Is the deterministic trend up, down, or flat?
+
+Unlike asset-page enrichment (`SPEC-002`), these endpoints are precise and
+strict: if the requested signal cannot be fetched, the request fails rather
+than degrading to a partial response.
 
 The source of those answers is `price-indexer`, not Mother API. Mother API
 owns public routing, parameter validation, upstream orchestration, response
@@ -37,19 +47,32 @@ The upstream source documents for this spec are:
 
 ## Scope
 
-Mother API will expose two planned public endpoints:
+Mother API will expose two planned public signal endpoints:
 
 ```http
 GET /v1/assets/{slug}/signal/price-stats
 GET /v1/assets/{slug}/signal/price-trend
 ```
 
-These endpoints will call the existing private price-indexer endpoints:
+These endpoints call the existing private price-indexer endpoints:
 
 ```http
 GET /prices/stats
 GET /prices/trend
 ```
+
+A direct time-series endpoint is a future consideration:
+
+```http
+GET /v1/assets/{slug}/prices/series
+```
+
+If included, it would consume the upstream `GET /prices/series` endpoint.
+This endpoint is **out of scope for V0** unless implementation scope clearly
+allows it; the same parameter-mapping and error-mapping doctrine in this spec
+would apply, and the upstream `meta`/`points` shape would pass through. It is
+documented here only so agents do not invent a different path or parameter
+model later.
 
 This spec describes the intended public surface. It does not itself update
 `CONTRACTS.md`; the implementation PR that adds these endpoints must update
@@ -349,6 +372,10 @@ This spec explicitly does not cover:
 
 - Implementing code in this documentation change.
 - Updating `CONTRACTS.md` before routes exist.
+- Asset-page enrichment, the `include` query model, or UI composition
+  (owned by `SPEC-002`).
+- Partial-enrichment behavior. Signal endpoints fail when the signal cannot
+  be fetched.
 - Public `/v1/prices/*` routes.
 - Stablecoin depeg or stability endpoints.
 - Read-model caching or materialized views.
@@ -358,6 +385,7 @@ This spec explicitly does not cover:
 - Billing, rate-limit, API key, or x402 redesign.
 - Exposing upstream `asOf` in V0.
 - Extending the price-indexer `window` and `granularity` matrix.
+- Implementing the future `GET /v1/assets/{slug}/prices/series` endpoint in V0.
 
 ## Tests and definition of done
 

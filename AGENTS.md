@@ -31,7 +31,7 @@ Agents must respect the role of each document in this repo:
   surface for Mother API. It is **overdue** and must be authored, because
   Mother API already exposes reliable `/v1/*` endpoints documented in
   [README.md](README.md).
-- [docs/rfc/](docs/rfc/) contains proposals and design discussions. RFCs are
+- [docs/rfcs/](docs/rfcs/) contains proposals and design discussions. RFCs are
   not current truth unless explicitly accepted.
 - [docs/specs/](docs/specs/) contains accepted or draft implementation specs
   that follow accepted RFCs.
