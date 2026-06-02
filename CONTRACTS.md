@@ -230,7 +230,79 @@ Mother API does not expose `asOf` on asset detail and never forwards legacy
 parameters such as `range`, `resolution`, `from`, `to`, `interval`,
 `sourceType`, `limit`, or `beforeId` to price-indexer.
 
-**Response — `200 OK`:**
+**Response — `200 OK`, full enrichment happy path:**
+
+```json
+{
+  "ok": true,
+  "type": "asset",
+  "asset": {
+    "asset_id": "usdc",
+    "symbol": "USDC",
+    "name": "USD Coin",
+    "category": "crypto",
+    "canonical_path": "/assets/usdc"
+  },
+  "price": {
+    "status": "available",
+    "price": "1.0001",
+    "quote_currency": "USD",
+    "source_type": "coingecko",
+    "confidence_label": "high",
+    "is_fallback": false,
+    "is_derived": false,
+    "recorded_at": "2026-05-26T12:00:05Z",
+    "warning": null
+  },
+  "chain_maps": [
+    {
+      "network": {
+        "slug": "eth-mainnet",
+        "name": "Ethereum Mainnet",
+        "caip2": "eip155:1"
+      },
+      "is_native": false,
+      "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+    }
+  ],
+  "signals": {
+    "price_stats": {
+      "slug": "usdc",
+      "quoteCurrency": "USD",
+      "window": "24h",
+      "granularity": "1h",
+      "sampleCount": 24,
+      "percentChange": "0.000100",
+      "warnings": []
+    },
+    "price_trend": {
+      "slug": "usdc",
+      "quoteCurrency": "USD",
+      "window": "24h",
+      "granularity": "1h",
+      "direction": "flat",
+      "confidence": "high",
+      "warnings": []
+    },
+    "price_series": {
+      "points": [
+        {
+          "bucketStart": "2026-06-02T11:00:00.000Z",
+          "price": "1.0001",
+          "status": "observed"
+        }
+      ],
+      "meta": {
+        "expectedBucketCount": 24,
+        "sampleCount": 1
+      }
+    }
+  },
+  "enrichment_errors": []
+}
+```
+
+**Response — `200 OK`, partial enrichment failure:**
 
 ```json
 {
@@ -273,20 +345,51 @@ parameters such as `range`, `resolution`, `from`, `to`, `interval`,
       "granularity": "1h",
       "warnings": []
     },
-    "price_trend": null,
-    "price_series": {
-      "points": [],
-      "meta": {
-        "expectedBucketCount": 24,
-        "sampleCount": 0
-      }
-    }
+    "price_trend": null
   },
   "enrichment_errors": [
     {
       "source": "price_trend",
       "code": "signal_not_available",
       "message": "Price trend is not available."
+    }
+  ]
+}
+```
+
+**Response — `200 OK`, price-indexer disabled or unavailable:**
+
+```json
+{
+  "ok": true,
+  "type": "asset",
+  "asset": {
+    "asset_id": "usdc",
+    "symbol": "USDC",
+    "name": "USD Coin",
+    "category": "crypto",
+    "canonical_path": "/assets/usdc"
+  },
+  "price": {
+    "status": "unavailable",
+    "price": null,
+    "quote_currency": null,
+    "source_type": null,
+    "confidence_label": null,
+    "is_fallback": false,
+    "is_derived": false,
+    "recorded_at": null,
+    "warning": null
+  },
+  "chain_maps": [
+    {
+      "network": {
+        "slug": "eth-mainnet",
+        "name": "Ethereum Mainnet",
+        "caip2": "eip155:1"
+      },
+      "is_native": false,
+      "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
     }
   ]
 }

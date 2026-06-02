@@ -403,6 +403,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn asset_detail_without_requested_enrichments_survives_disabled_price_indexer() {
+        let json = assets_json("/v1/assets/usdc").await;
+
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["asset"]["asset_id"], "usdc");
+        assert_eq!(json["price"]["status"], "unavailable");
+        assert!(json["price"]["price"].is_null());
+        assert!(json["chain_maps"].as_array().unwrap().len() > 0);
+        assert!(json.get("signals").is_none());
+        assert!(json.get("enrichment_errors").is_none());
+    }
+
+    #[tokio::test]
     async fn asset_detail_treats_invalid_enrichment_params_as_partial_errors() {
         let json = assets_json(
             "/v1/assets/bitcoin?include=priceStats,priceSeries&window=1h&granularity=1h",
@@ -560,6 +573,86 @@ mod tests {
         assert_eq!(json["enrichment_errors"].as_array().unwrap().len(), 1);
         assert_eq!(json["enrichment_errors"][0]["source"], "price_trend");
         assert_eq!(json["enrichment_errors"][0]["code"], "price_indexer_error");
+        assert_ne!(
+            json["enrichment_errors"][0]["message"],
+            "Upstream-owned message."
+        );
+
+        let requests = request_handle.await.unwrap();
+        assert_eq!(requests.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn asset_detail_maps_malformed_enrichment_to_partial_invalid_response_error() {
+        let stats_body = serde_json::json!({
+            "slug": "bitcoin",
+            "quoteCurrency": "USD",
+            "window": "24h",
+            "granularity": "1h",
+            "warnings": []
+        })
+        .to_string();
+        let Some((price_indexer_url, request_handle)) = spawn_multi_price_indexer(vec![
+            (StatusCode::OK, latest_price_body()),
+            (StatusCode::OK, stats_body),
+            (StatusCode::OK, "[]".to_string()),
+        ]) else {
+            return;
+        };
+        let app = test_app_with_price_indexer(&price_indexer_url, 2000);
+
+        let (status, json) =
+            app_json(app, "/v1/assets/bitcoin?include=priceStats,priceTrend").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(json["signals"]["price_stats"].is_object());
+        assert!(json["signals"]["price_trend"].is_null());
+        assert_eq!(json["enrichment_errors"].as_array().unwrap().len(), 1);
+        assert_eq!(json["enrichment_errors"][0]["source"], "price_trend");
+        assert_eq!(
+            json["enrichment_errors"][0]["code"],
+            "upstream_invalid_response"
+        );
+
+        let requests = request_handle.await.unwrap();
+        assert_eq!(requests.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn asset_detail_maps_missing_signal_to_partial_not_available_error() {
+        let stats_body = serde_json::json!({
+            "slug": "bitcoin",
+            "quoteCurrency": "USD",
+            "window": "24h",
+            "granularity": "1h",
+            "warnings": []
+        })
+        .to_string();
+        let trend_error_body = serde_json::json!({
+            "error": {
+                "code": "NOT_FOUND",
+                "message": "Upstream-owned message."
+            }
+        })
+        .to_string();
+        let Some((price_indexer_url, request_handle)) = spawn_multi_price_indexer(vec![
+            (StatusCode::OK, latest_price_body()),
+            (StatusCode::OK, stats_body),
+            (StatusCode::NOT_FOUND, trend_error_body),
+        ]) else {
+            return;
+        };
+        let app = test_app_with_price_indexer(&price_indexer_url, 2000);
+
+        let (status, json) =
+            app_json(app, "/v1/assets/bitcoin?include=priceStats,priceTrend").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(json["signals"]["price_stats"].is_object());
+        assert!(json["signals"]["price_trend"].is_null());
+        assert_eq!(json["enrichment_errors"].as_array().unwrap().len(), 1);
+        assert_eq!(json["enrichment_errors"][0]["source"], "price_trend");
+        assert_eq!(json["enrichment_errors"][0]["code"], "signal_not_available");
         assert_ne!(
             json["enrichment_errors"][0]["message"],
             "Upstream-owned message."

@@ -179,12 +179,14 @@ impl AssetsService {
         let mut enrichments = AssetEnrichments::from_include(&enrichment_query.include);
 
         let Some(mut params) = enrichment_query.params else {
+            log_invalid_enrichment_request(slug, &enrichment_query.include);
             enrichments.fail_all_requested(EnrichmentErrorCode::InvalidRequest);
             return Some(enrichments);
         };
         params.slug = slug.to_string();
 
         let Some(client) = &self.price_indexer_client else {
+            log_disabled_enrichment_request(&params, &enrichment_query.include);
             enrichments.fail_all_requested(EnrichmentErrorCode::PriceIndexerUnavailable);
             return Some(enrichments);
         };
@@ -662,6 +664,32 @@ fn log_enrichment_error(
         timeout_ms = client.timeout_ms(),
         "Asset detail enrichment lookup failed"
     );
+}
+
+fn log_invalid_enrichment_request(slug: &str, include: &[AssetEnrichmentInclude]) {
+    warn!(
+        asset_slug = slug,
+        requested_sources = ?enrichment_sources(include),
+        "Asset detail enrichment request parameters are invalid"
+    );
+}
+
+fn log_disabled_enrichment_request(
+    params: &AssetEnrichmentParams,
+    include: &[AssetEnrichmentInclude],
+) {
+    warn!(
+        asset_slug = params.slug.as_str(),
+        requested_sources = ?enrichment_sources(include),
+        quote_currency = params.quote_currency.as_str(),
+        window = params.window.as_str(),
+        granularity = params.granularity.as_deref(),
+        "Asset detail enrichment unavailable because price-indexer client is disabled"
+    );
+}
+
+fn enrichment_sources(include: &[AssetEnrichmentInclude]) -> Vec<&'static str> {
+    include.iter().map(|include| include.source()).collect()
 }
 
 #[cfg(test)]
