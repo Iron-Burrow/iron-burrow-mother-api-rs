@@ -307,6 +307,8 @@ mod tests {
         assert!(json["chain_maps"][0]["address"].is_null());
         assert!(json["chain_maps"][0]["network"]["family"].is_null());
         assert!(json["chain_maps"][0]["network"]["chain_id"].is_null());
+        assert!(json["signals"].is_null());
+        assert!(json["enrichment_errors"].is_null());
     }
 
     #[tokio::test]
@@ -376,6 +378,191 @@ mod tests {
         let request = request_handle.await.unwrap();
         assert!(request.starts_with("GET /prices/latest?slug=usd-coin "));
         assert!(!request.contains("symbol="));
+    }
+
+    #[tokio::test]
+    async fn asset_detail_reports_disabled_requested_enrichments_without_failing_page() {
+        let json = assets_json(
+            "/v1/assets/bitcoin?include=priceStats,priceTrend,priceSeries&quoteCurrency=MXN",
+        )
+        .await;
+
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["asset"]["asset_id"], "bitcoin");
+        assert_eq!(json["price"]["status"], "unavailable");
+        assert!(json["signals"]["price_stats"].is_null());
+        assert!(json["signals"]["price_trend"].is_null());
+        assert!(json["signals"]["price_series"].is_null());
+        assert_eq!(json["enrichment_errors"].as_array().unwrap().len(), 3);
+        assert_eq!(
+            json["enrichment_errors"][0]["code"],
+            "price_indexer_unavailable"
+        );
+    }
+
+    #[tokio::test]
+    async fn asset_detail_treats_invalid_enrichment_params_as_partial_errors() {
+        let json = assets_json(
+            "/v1/assets/bitcoin?include=priceStats,priceSeries&window=1h&granularity=1h",
+        )
+        .await;
+
+        assert_eq!(json["ok"], true);
+        assert!(json["signals"]["price_stats"].is_null());
+        assert!(json["signals"]["price_series"].is_null());
+        assert!(json["signals"]["price_trend"].is_null());
+        assert_eq!(json["enrichment_errors"].as_array().unwrap().len(), 2);
+        assert_eq!(json["enrichment_errors"][0]["code"], "invalid_request");
+        assert_eq!(json["enrichment_errors"][0]["source"], "price_stats");
+        assert_eq!(json["enrichment_errors"][1]["source"], "price_series");
+    }
+
+    #[tokio::test]
+    async fn asset_detail_ignores_unknown_include_tokens() {
+        let json = assets_json("/v1/assets/bitcoin?include=unknown,alsoBad").await;
+
+        assert_eq!(json["ok"], true);
+        assert!(json["signals"].is_null());
+        assert!(json["enrichment_errors"].is_null());
+    }
+
+    #[tokio::test]
+    async fn asset_detail_includes_requested_price_signals() {
+        let stats_body = serde_json::json!({
+            "slug": "ethereum",
+            "assetId": "00000000-0000-0000-0000-000000000001",
+            "quoteCurrency": "MXN",
+            "window": "24h",
+            "granularity": "1h",
+            "percentChange": "0.020367",
+            "warnings": ["low_series_coverage"],
+            "futureInformationalField": {"preserved": true}
+        })
+        .to_string();
+        let trend_body = serde_json::json!({
+            "slug": "ethereum",
+            "assetId": "00000000-0000-0000-0000-000000000001",
+            "quoteCurrency": "MXN",
+            "window": "24h",
+            "granularity": "1h",
+            "direction": "up",
+            "confidence": "medium",
+            "warnings": []
+        })
+        .to_string();
+        let series_body = serde_json::json!({
+            "assetId": "00000000-0000-0000-0000-000000000001",
+            "quoteCurrency": "MXN",
+            "window": "24h",
+            "granularity": "1h",
+            "points": [
+                {
+                    "bucketStart": "2026-06-01T11:00:00.000Z",
+                    "price": "3812.45",
+                    "status": "observed"
+                }
+            ],
+            "meta": {
+                "expectedBucketCount": 24,
+                "sampleCount": 1
+            }
+        })
+        .to_string();
+        let Some((price_indexer_url, request_handle)) = spawn_multi_price_indexer(vec![
+            (StatusCode::OK, latest_price_body()),
+            (StatusCode::OK, stats_body),
+            (StatusCode::OK, trend_body),
+            (StatusCode::OK, series_body),
+        ]) else {
+            return;
+        };
+        let app = test_app_with_price_indexer(&price_indexer_url, 2000);
+
+        let (status, json) = app_json(
+            app,
+            "/v1/assets/ethereum?include=priceStats,priceTrend,priceSeries&quoteCurrency=mxn&window=24h&granularity=1h&range=legacy&resolution=bad&asOf=2026-06-02T00:00:00Z",
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["price"]["status"], "available");
+        assert_eq!(json["signals"]["price_stats"]["percentChange"], "0.020367");
+        assert_eq!(
+            json["signals"]["price_stats"]["warnings"][0],
+            "low_series_coverage"
+        );
+        assert_eq!(
+            json["signals"]["price_stats"]["futureInformationalField"]["preserved"],
+            true
+        );
+        assert_eq!(json["signals"]["price_trend"]["direction"], "up");
+        assert_eq!(
+            json["signals"]["price_series"]["points"][0]["price"],
+            "3812.45"
+        );
+        assert_eq!(json["signals"]["price_series"]["meta"]["sampleCount"], 1);
+        assert_eq!(json["enrichment_errors"].as_array().unwrap().len(), 0);
+
+        let requests = request_handle.await.unwrap();
+        assert_eq!(requests.len(), 4);
+        assert!(requests[0].starts_with("GET /prices/latest?slug=ethereum "));
+        assert!(requests[1].starts_with(
+            "GET /prices/stats?slug=ethereum&quoteCurrency=MXN&window=24h&granularity=1h "
+        ));
+        assert!(requests[2].starts_with(
+            "GET /prices/trend?slug=ethereum&quoteCurrency=MXN&window=24h&granularity=1h "
+        ));
+        assert!(requests[3].starts_with(
+            "GET /prices/series?slug=ethereum&quoteCurrency=MXN&window=24h&granularity=1h "
+        ));
+        for request in requests {
+            assert_no_legacy_signal_params(&request);
+        }
+    }
+
+    #[tokio::test]
+    async fn asset_detail_isolates_failed_enrichments() {
+        let stats_body = serde_json::json!({
+            "slug": "bitcoin",
+            "quoteCurrency": "USD",
+            "window": "24h",
+            "granularity": "1h",
+            "warnings": []
+        })
+        .to_string();
+        let trend_error_body = serde_json::json!({
+            "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "Upstream-owned message."
+            }
+        })
+        .to_string();
+        let Some((price_indexer_url, request_handle)) = spawn_multi_price_indexer(vec![
+            (StatusCode::OK, latest_price_body()),
+            (StatusCode::OK, stats_body),
+            (StatusCode::INTERNAL_SERVER_ERROR, trend_error_body),
+        ]) else {
+            return;
+        };
+        let app = test_app_with_price_indexer(&price_indexer_url, 2000);
+
+        let (status, json) =
+            app_json(app, "/v1/assets/bitcoin?include=priceStats,priceTrend").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(json["signals"]["price_stats"].is_object());
+        assert!(json["signals"]["price_trend"].is_null());
+        assert_eq!(json["enrichment_errors"].as_array().unwrap().len(), 1);
+        assert_eq!(json["enrichment_errors"][0]["source"], "price_trend");
+        assert_eq!(json["enrichment_errors"][0]["code"], "price_indexer_error");
+        assert_ne!(
+            json["enrichment_errors"][0]["message"],
+            "Upstream-owned message."
+        );
+
+        let requests = request_handle.await.unwrap();
+        assert_eq!(requests.len(), 3);
     }
 
     #[tokio::test]
@@ -941,6 +1128,67 @@ mod tests {
         });
 
         Some((url, handle))
+    }
+
+    fn spawn_multi_price_indexer(
+        responses: Vec<(StatusCode, String)>,
+    ) -> Option<(String, tokio::task::JoinHandle<Vec<String>>)> {
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
+            Err(error) => panic!("failed to bind test price-indexer: {error}"),
+        };
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = tokio::task::spawn_blocking(move || {
+            let mut requests = Vec::new();
+
+            for (status, body) in responses {
+                let (mut stream, _) = listener.accept().unwrap();
+                requests.push(read_http_request(&mut stream));
+
+                let reason = status.canonical_reason().unwrap_or("Unknown");
+                let response = format!(
+                    "HTTP/1.1 {} {}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    status.as_u16(),
+                    reason,
+                    body.len(),
+                    body
+                );
+
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+
+            requests
+        });
+
+        Some((url, handle))
+    }
+
+    fn latest_price_body() -> String {
+        serde_json::json!({
+            "assetId": "test-asset",
+            "symbol": "TEST",
+            "name": "Test Asset",
+            "quoteCurrency": "USD",
+            "price": "1.0001",
+            "sourceType": "coingecko",
+            "sourcePriority": 10,
+            "riskCategory": "normal",
+            "confidenceScore": 95,
+            "confidenceLabel": "high",
+            "publishedAt": "2026-05-26T12:00:00Z",
+            "recordedAt": "2026-05-26T12:00:05Z",
+            "freshnessStatus": "fresh",
+            "isFallback": false,
+            "isDerived": false,
+            "derivationPath": null,
+            "staleness": {
+                "ageSeconds": 5,
+                "isStale": false,
+                "warningThresholdSeconds": 300
+            }
+        })
+        .to_string()
     }
 
     fn spawn_batch_price_indexer() -> Option<(String, tokio::task::JoinHandle<String>)> {

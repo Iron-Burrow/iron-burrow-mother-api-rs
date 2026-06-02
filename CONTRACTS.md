@@ -199,13 +199,36 @@ Each asset list item:
 ### `GET /v1/assets/{slug}`
 
 Returns one active asset, the network-specific chain maps the UI can use
-to render asset detail pages, and a stable price block.
+to render asset detail pages, and a stable price block. Optional price
+signals can be requested for one-call asset-page rendering.
 
 **Path parameters:**
 
 | Name   | Type   | Required | Notes                                                          |
 | ------ | ------ | -------- | -------------------------------------------------------------- |
 | `slug` | string | Yes      | Asset slug. Compared case-insensitively after trimming.        |
+
+**Query parameters:**
+
+| Name            | Type   | Required | Default | Allowed values | Notes |
+| --------------- | ------ | -------- | ------- | -------------- | ----- |
+| `include`       | string | No       | none    | `priceStats`, `priceTrend`, `priceSeries` | Comma-separated. Tokens are trimmed and matched case-insensitively. Unknown tokens are ignored. |
+| `quoteCurrency` | string | No       | `USD`   | `USD`, `MXN`, `USDC`, `BTC` | Applies only when at least one known enrichment is requested. |
+| `window`        | string | No       | `24h`   | `1h`, `24h`, `7d`, `30d` | Applies only when at least one known enrichment is requested. |
+| `granularity`   | string | No       | upstream default | `5m`, `1h`, `1d` | Forwarded only when provided and only for requested enrichments. |
+
+Allowed `window` and `granularity` combinations for requested enrichments:
+
+| `window` | Allowed granularities |
+| -------- | --------------------- |
+| `1h`     | `5m`                  |
+| `24h`    | `5m`, `1h`            |
+| `7d`     | `1h`                  |
+| `30d`    | `1d`                  |
+
+Mother API does not expose `asOf` on asset detail and never forwards legacy
+parameters such as `range`, `resolution`, `from`, `to`, `interval`,
+`sourceType`, `limit`, or `beforeId` to price-indexer.
 
 **Response — `200 OK`:**
 
@@ -241,6 +264,30 @@ to render asset detail pages, and a stable price block.
       "is_native": false,
       "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
     }
+  ],
+  "signals": {
+    "price_stats": {
+      "slug": "usdc",
+      "quoteCurrency": "USD",
+      "window": "24h",
+      "granularity": "1h",
+      "warnings": []
+    },
+    "price_trend": null,
+    "price_series": {
+      "points": [],
+      "meta": {
+        "expectedBucketCount": 24,
+        "sampleCount": 0
+      }
+    }
+  },
+  "enrichment_errors": [
+    {
+      "source": "price_trend",
+      "code": "signal_not_available",
+      "message": "Price trend is not available."
+    }
   ]
 }
 ```
@@ -254,6 +301,8 @@ Top-level fields:
 | `asset`      | object | Asset summary (see below).                                  |
 | `price`      | object | Price block (see [Price block](#price-block)). Always present. |
 | `chain_maps` | array  | Chain map entries (see below). May be empty.                |
+| `signals`    | object | Present only when at least one known enrichment is requested. Contains only requested enrichment keys. |
+| `enrichment_errors` | array | Present only when at least one known enrichment is requested. Empty when all requested enrichments succeed. |
 
 Asset summary:
 
@@ -274,6 +323,42 @@ Chain map entry:
 | `network.caip2`   | string \| null  | CAIP-2 identifier when known.                                          |
 | `is_native`       | bool            | `true` when the asset is the network's native asset.                   |
 | `address`         | string \| null  | Token contract address. `null` for native assets or when not applicable. |
+
+Optional `signals` fields:
+
+| Field          | Type          | Notes |
+| -------------- | ------------- | ----- |
+| `price_stats`  | object \| null | Present only when `include` contains `priceStats`. Successful values are pass-through price-indexer stats JSON. |
+| `price_trend`  | object \| null | Present only when `include` contains `priceTrend`. Successful values are pass-through price-indexer trend JSON. |
+| `price_series` | object \| null | Present only when `include` contains `priceSeries`. Successful values are pass-through price-indexer series JSON, including `points` and `meta`. |
+
+Successful signal payloads preserve upstream fields and `warnings` exactly.
+Warnings are not failures and do not create `enrichment_errors` entries.
+Decimal values remain JSON strings.
+
+Each enrichment error entry:
+
+| Field     | Type   | Notes |
+| --------- | ------ | ----- |
+| `source`  | string | One of `price_stats`, `price_trend`, `price_series`. |
+| `code`    | string | Stable Mother API enrichment error code. |
+| `message` | string | Mother API-owned public message. Upstream messages are not propagated. |
+
+Enrichment error codes:
+
+| Code                         | Notes |
+| ---------------------------- | ----- |
+| `invalid_request`            | Enrichment query parameters are unsupported or the `window`/`granularity` combination is invalid. |
+| `signal_not_available`       | Price-indexer reported the requested signal is not available. |
+| `upstream_auth_failed`       | Mother API could not authenticate to price-indexer. |
+| `price_indexer_error`        | Price-indexer failed while handling a valid enrichment request. |
+| `price_indexer_unavailable`  | Price-indexer is unconfigured, unreachable, or timed out. |
+| `upstream_invalid_response`  | Price-indexer returned malformed JSON or an unexpected error envelope. |
+
+When the base asset exists, enrichment failures do not fail the endpoint.
+The requested signal value is `null`, one `enrichment_errors` entry is added,
+and the response remains `200 OK`. Invalid enrichment parameters follow this
+partial-response rule.
 
 **Errors:**
 

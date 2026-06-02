@@ -138,6 +138,14 @@ impl PriceIndexerClient {
         self.get_signal_json(url).await
     }
 
+    pub async fn price_series_raw(
+        &self,
+        request: &PriceSignalRequest,
+    ) -> Result<serde_json::Value, PriceSignalError> {
+        let url = self.price_series_url(request)?;
+        self.get_signal_json(url).await
+    }
+
     #[allow(dead_code)]
     pub async fn price_series(
         &self,

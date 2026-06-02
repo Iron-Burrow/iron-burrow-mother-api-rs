@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use crate::{
-    assets::service::{AssetResponse, AssetsResponse, AssetsService, AssetsServiceError},
+    assets::service::{
+        AssetEnrichmentInclude, AssetEnrichmentParams, AssetEnrichmentQuery, AssetResponse,
+        AssetsResponse, AssetsService, AssetsServiceError,
+    },
     error::ApiError,
     price_indexer::{PriceIndexerClient, PriceSignalError, PriceSignalRequest},
     state::AppState,
@@ -18,6 +21,15 @@ const DEFAULT_SIGNAL_WINDOW: &str = "24h";
 #[derive(Deserialize)]
 pub struct AssetsQuery {
     limit: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct AssetDetailQuery {
+    include: Option<String>,
+    #[serde(rename = "quoteCurrency")]
+    quote_currency: Option<String>,
+    window: Option<String>,
+    granularity: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -74,14 +86,16 @@ pub async fn list_assets(
 pub async fn get_asset(
     State(state): State<AppState>,
     Path(slug): Path<String>,
+    Query(params): Query<AssetDetailQuery>,
 ) -> Result<Json<AssetResponse>, ApiError> {
     let repository = state
         .asset_repository
         .clone()
         .ok_or_else(ApiError::database_unavailable)?;
     let service = AssetsService::new(repository, state.price_indexer_client.clone());
+    let enrichment_query = parse_asset_enrichment_query(&slug, params);
     let response = service
-        .get_asset(&slug)
+        .get_asset(&slug, enrichment_query)
         .await
         .map_err(assets_error_to_api_error)?;
 
@@ -122,6 +136,58 @@ pub async fn get_price_trend_signal(
         .map_err(|error| signal_error_to_api_error(client, &request, "price_trend", error))?;
 
     Ok(Json(PriceSignalResponse::price_trend(signal)))
+}
+
+fn parse_asset_enrichment_query(
+    slug: &str,
+    params: AssetDetailQuery,
+) -> Option<AssetEnrichmentQuery> {
+    let include = parse_asset_enrichment_include(params.include.as_deref());
+
+    if include.is_empty() {
+        return None;
+    }
+
+    let signal_params = PriceSignalQuery {
+        quote_currency: params.quote_currency,
+        window: params.window,
+        granularity: params.granularity,
+    };
+
+    let params = parse_signal_request(slug.to_string(), signal_params)
+        .map(|request| AssetEnrichmentParams {
+            slug: request.slug,
+            quote_currency: request.quote_currency,
+            window: request.window,
+            granularity: request.granularity,
+        })
+        .ok();
+
+    Some(AssetEnrichmentQuery { include, params })
+}
+
+fn parse_asset_enrichment_include(raw_include: Option<&str>) -> Vec<AssetEnrichmentInclude> {
+    let Some(raw_include) = raw_include else {
+        return Vec::new();
+    };
+
+    let mut include = Vec::new();
+
+    for token in raw_include.split(',') {
+        let normalized = token.trim().to_ascii_lowercase();
+        let parsed = match normalized.as_str() {
+            "pricestats" => Some(AssetEnrichmentInclude::PriceStats),
+            "pricetrend" => Some(AssetEnrichmentInclude::PriceTrend),
+            "priceseries" => Some(AssetEnrichmentInclude::PriceSeries),
+            _ => None,
+        };
+
+        if let Some(parsed) = parsed.filter(|parsed| !include.contains(parsed)) {
+            include.push(parsed);
+        }
+    }
+
+    include
 }
 
 fn assets_error_to_api_error(error: AssetsServiceError) -> ApiError {
