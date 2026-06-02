@@ -4,7 +4,10 @@ use serde::Serialize;
 use tracing::{info, warn};
 
 use crate::{
-    price_indexer::{LatestAssetPrice, PriceIndexerClient, PriceLookupError, PriceStatus},
+    price_indexer::{
+        LatestAssetPrice, PriceIndexerClient, PriceLookupError, PriceSignalError,
+        PriceSignalRequest, PriceStatus,
+    },
     repositories::global_assets::{
         AssetChainMap, GlobalAsset, GlobalAssetDetail, GlobalAssetRepository, NetworkRef,
         RepositoryError,
@@ -13,6 +16,48 @@ use crate::{
 
 const DEFAULT_LIMIT: u64 = 100;
 const MAX_LIMIT: u64 = 1000;
+
+#[derive(Clone, Debug)]
+pub struct AssetEnrichmentQuery {
+    pub include: Vec<AssetEnrichmentInclude>,
+    pub params: Option<AssetEnrichmentParams>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AssetEnrichmentInclude {
+    PriceStats,
+    PriceTrend,
+    PriceSeries,
+}
+
+impl AssetEnrichmentInclude {
+    fn source(self) -> &'static str {
+        match self {
+            Self::PriceStats => "price_stats",
+            Self::PriceTrend => "price_trend",
+            Self::PriceSeries => "price_series",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct AssetEnrichmentParams {
+    pub slug: String,
+    pub quote_currency: String,
+    pub window: String,
+    pub granularity: Option<String>,
+}
+
+impl From<AssetEnrichmentParams> for PriceSignalRequest {
+    fn from(params: AssetEnrichmentParams) -> Self {
+        Self {
+            slug: params.slug,
+            quote_currency: params.quote_currency,
+            window: params.window,
+            granularity: params.granularity,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct AssetsService {
@@ -42,7 +87,11 @@ impl AssetsService {
         Ok(AssetsResponse::new(limit, assets, prices))
     }
 
-    pub async fn get_asset(&self, raw_slug: &str) -> Result<AssetResponse, AssetsServiceError> {
+    pub async fn get_asset(
+        &self,
+        raw_slug: &str,
+        enrichment_query: Option<AssetEnrichmentQuery>,
+    ) -> Result<AssetResponse, AssetsServiceError> {
         let slug = raw_slug.trim().to_ascii_lowercase();
         let detail = self
             .repository
@@ -50,8 +99,9 @@ impl AssetsService {
             .await?
             .ok_or(AssetsServiceError::AssetNotFound)?;
         let price = self.lookup_price(&slug, &detail.asset.symbol).await;
+        let enrichments = self.lookup_enrichments(enrichment_query, &slug).await;
 
-        Ok(AssetResponse::new(detail, price))
+        Ok(AssetResponse::new(detail, price, enrichments))
     }
 
     async fn lookup_price(&self, slug: &str, symbol: &str) -> LatestAssetPrice {
@@ -119,6 +169,46 @@ impl AssetsService {
 
         prices
     }
+
+    async fn lookup_enrichments(
+        &self,
+        enrichment_query: Option<AssetEnrichmentQuery>,
+        slug: &str,
+    ) -> Option<AssetEnrichments> {
+        let enrichment_query = enrichment_query?;
+        let mut enrichments = AssetEnrichments::from_include(&enrichment_query.include);
+
+        let Some(mut params) = enrichment_query.params else {
+            enrichments.fail_all_requested(EnrichmentErrorCode::InvalidRequest);
+            return Some(enrichments);
+        };
+        params.slug = slug.to_string();
+
+        let Some(client) = &self.price_indexer_client else {
+            enrichments.fail_all_requested(EnrichmentErrorCode::PriceIndexerUnavailable);
+            return Some(enrichments);
+        };
+
+        let request = PriceSignalRequest::from(params);
+
+        for include in enrichment_query.include {
+            let result = match include {
+                AssetEnrichmentInclude::PriceStats => client.price_stats_raw(&request).await,
+                AssetEnrichmentInclude::PriceTrend => client.price_trend_raw(&request).await,
+                AssetEnrichmentInclude::PriceSeries => client.price_series_raw(&request).await,
+            };
+
+            match result {
+                Ok(signal) => enrichments.set_signal(include, Some(signal)),
+                Err(error) => {
+                    log_enrichment_error(client, &request, include, &error);
+                    enrichments.fail(include, EnrichmentErrorCode::from(error));
+                }
+            }
+        }
+
+        Some(enrichments)
+    }
 }
 
 #[derive(Debug)]
@@ -142,10 +232,27 @@ pub struct AssetResponse {
     asset: AssetPayload,
     price: LatestAssetPrice,
     chain_maps: Vec<ChainMapPayload>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signals: Option<AssetSignals>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enrichment_errors: Option<Vec<EnrichmentErrorPayload>>,
 }
 
 impl AssetResponse {
-    fn new(detail: GlobalAssetDetail, price: LatestAssetPrice) -> Self {
+    fn new(
+        detail: GlobalAssetDetail,
+        price: LatestAssetPrice,
+        enrichments: Option<AssetEnrichments>,
+    ) -> Self {
+        let (signals, enrichment_errors) = enrichments
+            .map(|enrichments| {
+                (
+                    Some(enrichments.signals),
+                    Some(enrichments.enrichment_errors),
+                )
+            })
+            .unwrap_or((None, None));
+
         Self {
             ok: true,
             response_type: "asset",
@@ -156,6 +263,192 @@ impl AssetResponse {
                 .into_iter()
                 .map(ChainMapPayload::from)
                 .collect(),
+            signals,
+            enrichment_errors,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct AssetEnrichments {
+    signals: AssetSignals,
+    enrichment_errors: Vec<EnrichmentErrorPayload>,
+}
+
+impl AssetEnrichments {
+    fn from_include(include: &[AssetEnrichmentInclude]) -> Self {
+        let mut signals = AssetSignals::default();
+
+        for include in include {
+            signals.set_requested(*include);
+        }
+
+        Self {
+            signals,
+            enrichment_errors: Vec::new(),
+        }
+    }
+
+    fn set_signal(&mut self, include: AssetEnrichmentInclude, signal: Option<serde_json::Value>) {
+        match include {
+            AssetEnrichmentInclude::PriceStats => self.signals.price_stats = Some(signal),
+            AssetEnrichmentInclude::PriceTrend => self.signals.price_trend = Some(signal),
+            AssetEnrichmentInclude::PriceSeries => self.signals.price_series = Some(signal),
+        }
+    }
+
+    fn fail(&mut self, include: AssetEnrichmentInclude, code: EnrichmentErrorCode) {
+        self.set_signal(include, None);
+        self.enrichment_errors
+            .push(EnrichmentErrorPayload::new(include.source(), code));
+    }
+
+    fn fail_all_requested(&mut self, code: EnrichmentErrorCode) {
+        for include in self.signals.requested() {
+            self.fail(include, code);
+        }
+    }
+}
+
+#[derive(Debug, Default, Serialize)]
+struct AssetSignals {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    price_stats: Option<Option<serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    price_trend: Option<Option<serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    price_series: Option<Option<serde_json::Value>>,
+}
+
+impl AssetSignals {
+    fn set_requested(&mut self, include: AssetEnrichmentInclude) {
+        match include {
+            AssetEnrichmentInclude::PriceStats => {
+                if self.price_stats.is_none() {
+                    self.price_stats = Some(None);
+                }
+            }
+            AssetEnrichmentInclude::PriceTrend => {
+                if self.price_trend.is_none() {
+                    self.price_trend = Some(None);
+                }
+            }
+            AssetEnrichmentInclude::PriceSeries => {
+                if self.price_series.is_none() {
+                    self.price_series = Some(None);
+                }
+            }
+        }
+    }
+
+    fn requested(&self) -> Vec<AssetEnrichmentInclude> {
+        let mut requested = Vec::new();
+
+        if self.price_stats.is_some() {
+            requested.push(AssetEnrichmentInclude::PriceStats);
+        }
+        if self.price_trend.is_some() {
+            requested.push(AssetEnrichmentInclude::PriceTrend);
+        }
+        if self.price_series.is_some() {
+            requested.push(AssetEnrichmentInclude::PriceSeries);
+        }
+
+        requested
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum EnrichmentErrorCode {
+    InvalidRequest,
+    SignalNotAvailable,
+    UpstreamAuthFailed,
+    PriceIndexerError,
+    PriceIndexerUnavailable,
+    UpstreamInvalidResponse,
+}
+
+impl EnrichmentErrorCode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidRequest => "invalid_request",
+            Self::SignalNotAvailable => "signal_not_available",
+            Self::UpstreamAuthFailed => "upstream_auth_failed",
+            Self::PriceIndexerError => "price_indexer_error",
+            Self::PriceIndexerUnavailable => "price_indexer_unavailable",
+            Self::UpstreamInvalidResponse => "upstream_invalid_response",
+        }
+    }
+
+    fn message(self, source: &str) -> &'static str {
+        match (source, self) {
+            ("price_stats", Self::InvalidRequest) => "Price stats request parameters are invalid.",
+            ("price_trend", Self::InvalidRequest) => "Price trend request parameters are invalid.",
+            ("price_series", Self::InvalidRequest) => {
+                "Price series request parameters are invalid."
+            }
+            ("price_stats", Self::SignalNotAvailable) => "Price stats are not available.",
+            ("price_trend", Self::SignalNotAvailable) => "Price trend is not available.",
+            ("price_series", Self::SignalNotAvailable) => "Price series is not available.",
+            ("price_stats", Self::UpstreamAuthFailed) => "Price stats are temporarily unavailable.",
+            ("price_trend", Self::UpstreamAuthFailed) => "Price trend is temporarily unavailable.",
+            ("price_series", Self::UpstreamAuthFailed) => {
+                "Price series is temporarily unavailable."
+            }
+            ("price_stats", Self::PriceIndexerError) => "Price stats are temporarily unavailable.",
+            ("price_trend", Self::PriceIndexerError) => "Price trend is temporarily unavailable.",
+            ("price_series", Self::PriceIndexerError) => "Price series is temporarily unavailable.",
+            ("price_stats", Self::PriceIndexerUnavailable) => {
+                "Price stats are temporarily unavailable."
+            }
+            ("price_trend", Self::PriceIndexerUnavailable) => {
+                "Price trend is temporarily unavailable."
+            }
+            ("price_series", Self::PriceIndexerUnavailable) => {
+                "Price series is temporarily unavailable."
+            }
+            ("price_stats", Self::UpstreamInvalidResponse) => {
+                "Price stats are temporarily unavailable."
+            }
+            ("price_trend", Self::UpstreamInvalidResponse) => {
+                "Price trend is temporarily unavailable."
+            }
+            ("price_series", Self::UpstreamInvalidResponse) => {
+                "Price series is temporarily unavailable."
+            }
+            _ => "Price enrichment is temporarily unavailable.",
+        }
+    }
+}
+
+impl From<PriceSignalError> for EnrichmentErrorCode {
+    fn from(error: PriceSignalError) -> Self {
+        match error {
+            PriceSignalError::InvalidRequest => Self::InvalidRequest,
+            PriceSignalError::NotFound => Self::SignalNotAvailable,
+            PriceSignalError::Unauthorized => Self::UpstreamAuthFailed,
+            PriceSignalError::UpstreamInternal => Self::PriceIndexerError,
+            PriceSignalError::Timeout | PriceSignalError::Transport => {
+                Self::PriceIndexerUnavailable
+            }
+            PriceSignalError::MalformedResponse => Self::UpstreamInvalidResponse,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct EnrichmentErrorPayload {
+    source: &'static str,
+    code: &'static str,
+    message: &'static str,
+}
+
+impl EnrichmentErrorPayload {
+    fn new(source: &'static str, code: EnrichmentErrorCode) -> Self {
+        Self {
+            source,
+            code: code.as_str(),
+            message: code.message(source),
         }
     }
 }
@@ -352,6 +645,25 @@ fn log_price_lookup_error(
     }
 }
 
+fn log_enrichment_error(
+    client: &PriceIndexerClient,
+    request: &PriceSignalRequest,
+    include: AssetEnrichmentInclude,
+    error: &PriceSignalError,
+) {
+    warn!(
+        ?error,
+        source = include.source(),
+        asset_slug = request.slug.as_str(),
+        quote_currency = request.quote_currency.as_str(),
+        window = request.window.as_str(),
+        granularity = request.granularity.as_deref(),
+        price_indexer_host = client.base_host(),
+        timeout_ms = client.timeout_ms(),
+        "Asset detail enrichment lookup failed"
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -436,7 +748,7 @@ mod tests {
 
     #[tokio::test]
     async fn returns_asset_detail() {
-        let response = service().get_asset("bitcoin").await.unwrap();
+        let response = service().get_asset("bitcoin", None).await.unwrap();
         let json = serde_json::to_value(response).unwrap();
 
         assert_eq!(json["ok"], true);
@@ -452,7 +764,10 @@ mod tests {
 
     #[tokio::test]
     async fn reports_unknown_asset_detail() {
-        let error = service().get_asset("does-not-exist").await.unwrap_err();
+        let error = service()
+            .get_asset("does-not-exist", None)
+            .await
+            .unwrap_err();
 
         assert!(matches!(error, AssetsServiceError::AssetNotFound));
     }
