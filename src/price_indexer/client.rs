@@ -202,10 +202,12 @@ impl PriceIndexerClient {
         endpoint_path: &str,
         request: &PriceSignalRequest,
     ) -> Result<Url, PriceSignalError> {
-        if request.slug.trim().is_empty()
-            || request.quote_currency.trim().is_empty()
-            || request.window.trim().is_empty()
-        {
+        let slug = request.slug.trim();
+        let quote_currency = request.quote_currency.trim();
+        let window = request.window.trim();
+        let granularity = request.granularity.as_deref().map(str::trim);
+
+        if slug.is_empty() || quote_currency.is_empty() || window.is_empty() {
             return Err(PriceSignalError::InvalidRequest);
         }
 
@@ -215,11 +217,11 @@ impl PriceIndexerClient {
         url.set_query(None);
         {
             let mut query = url.query_pairs_mut();
-            query.append_pair("slug", &request.slug);
-            query.append_pair("quoteCurrency", &request.quote_currency);
-            query.append_pair("window", &request.window);
-            if let Some(granularity) = request.granularity.as_deref() {
-                if granularity.trim().is_empty() {
+            query.append_pair("slug", slug);
+            query.append_pair("quoteCurrency", quote_currency);
+            query.append_pair("window", window);
+            if let Some(granularity) = granularity {
+                if granularity.is_empty() {
                     return Err(PriceSignalError::InvalidRequest);
                 }
                 query.append_pair("granularity", granularity);
@@ -902,6 +904,25 @@ mod tests {
         );
         assert!(!query_pairs.iter().any(|(key, _)| key == "granularity"));
         assert_no_legacy_signal_params(&url);
+    }
+
+    #[test]
+    fn price_signal_url_uses_trimmed_query_values() {
+        let client = PriceIndexerClient::new("http://price-indexer:3010/api", "secret", 2000)
+            .expect("price indexer client should initialize");
+        let request = PriceSignalRequest {
+            slug: " ethereum ".to_string(),
+            quote_currency: " USD ".to_string(),
+            window: " 24h ".to_string(),
+            granularity: Some(" 1h ".to_string()),
+        };
+
+        let url = client.price_stats_url(&request).unwrap();
+
+        assert_eq!(
+            url.as_str(),
+            "http://price-indexer:3010/api/prices/stats?slug=ethereum&quoteCurrency=USD&window=24h&granularity=1h"
+        );
     }
 
     #[test]
