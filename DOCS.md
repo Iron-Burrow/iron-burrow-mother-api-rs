@@ -31,9 +31,9 @@ Mother API recognizes the following kinds of documents:
 - **Specs**: accepted or draft implementation specs under
   [docs/specs/](docs/specs/). Specs follow accepted RFCs and describe how a
   feature is built.
-- **RFCs (proposals)**: design discussions under [docs/rfc/](docs/rfc/). RFCs
+- **RFCs (proposals)**: design discussions under [docs/rfcs/](docs/rfcs/). RFCs
   are not truth unless their status is `accepted`.
-- **Rejected RFCs**: kept under [docs/rfc/](docs/rfc/) with `status: rejected`.
+- **Rejected RFCs**: kept under [docs/rfcs/](docs/rfcs/) with `status: rejected`.
   They remain valuable as decision records.
 - **Superseded documents**: previously authoritative documents replaced by
   newer ones. Marked `status: superseded` and, when applicable, link the
@@ -87,16 +87,15 @@ README.md                         Repo entrance and short navigation guide
 DOCS.md                           Documentation policy
 AGENTS.md                         Agent instructions
 HISTORY.md                        Append-style project change log
-CONTRACTS.md                      Public and internal contract promises (overdue)
-docs/rfc/                         Proposals and design discussions
+CONTRACTS.md                      Public and internal contract promises
+docs/rfcs/                        Proposals and design discussions
 docs/specs/                       Accepted/draft implementation specs
 docs/adr/                         Accepted architectural decisions
 docs/archive/                     Historical memory
 ```
 
-The `docs/` tree does not yet exist. Each subdirectory will be created when
-its first child arrives. Mother API is greenfield Rust and carries no legacy
-v0 documentation.
+Documentation subdirectories are created when their first child arrives.
+Mother API is greenfield Rust and carries no legacy v0 documentation.
 
 ## Rules
 
@@ -115,15 +114,14 @@ v0 documentation.
 
 ## CONTRACTS.md
 
-`CONTRACTS.md` is **overdue**. Mother API already exposes reliable `/v1/*`
-endpoints (`/v1/assets`, `/v1/assets/active`, `/v1/assets/{slug}`,
-`/v1/resolve`) plus `/health`, documented in [README.md](README.md). Per the
-rules above, those promises must be captured in `CONTRACTS.md` with
-`status: contract` and `agent_edit_policy: update_only_if_contract_changes`.
+`CONTRACTS.md` captures the reliable `/v1/*` endpoints Mother API exposes
+plus `/health`. Per the rules above, those promises must remain captured in
+`CONTRACTS.md` with `status: contract` and
+`agent_edit_policy: update_only_if_contract_changes`.
 
-Until `CONTRACTS.md` is authored, [README.md](README.md)'s endpoint contract
-section is the de facto reference. Authoring it is the next required
-documentation task and should be done in a focused PR.
+The [README.md](README.md) endpoint section should stay brief and
+navigational. `CONTRACTS.md` is the authoritative reference for implemented
+Mother API endpoint promises.
 
 The first Mother API spec under [docs/specs/](docs/specs/) is
 `SPEC-001-dis-aave-v3-realized-yield.md`, which describes how Mother API

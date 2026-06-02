@@ -44,7 +44,6 @@ same change.
 | `GET`  | `/health`             | None | Dependency-free liveness probe.                             |
 | `GET`  | `/v1/status`          | None | Informational readiness with dependency checks.             |
 | `GET`  | `/v1/assets`          | None | Lists active global assets with optional price enrichment.  |
-| `GET`  | `/v1/assets/active`   | None | Canonical refresh universe consumed by `iron-burrow-read-model`. |
 | `GET`  | `/v1/assets/{slug}`   | None | Returns one active asset, its chain maps, and a price block. |
 | `GET`  | `/v1/resolve`         | None | Resolves a Sentinel search query against global assets.     |
 
@@ -194,52 +193,6 @@ Each asset list item:
 - `400 invalid_limit` — `limit` is not a positive integer or is `0`.
 - `503 database_unavailable` — `DATABASE_URL` is unset or Postgres is
   unreachable.
-
----
-
-### `GET /v1/assets/active`
-
-Returns the canonical refresh universe that `iron-burrow-read-model` uses
-when building refresh attempts (`asset_slug × supported_quote_currency`).
-
-This endpoint is intentionally minimal. It is service-oriented but
-public-safe because Caddy currently exposes `/v1/*`. It excludes
-chain-specific addresses, inactive assets, deprecated assets, price
-information, and operational metadata beyond `generated_at`.
-
-**Response — `200 OK`:**
-
-```json
-{
-  "assets": [
-    { "slug": "bitcoin", "symbol": "BTC", "name": "Bitcoin" },
-    { "slug": "staked-near", "symbol": "STNEAR", "name": "Staked NEAR" }
-  ],
-  "supported_quote_currencies": ["USD", "USDC", "BTC", "MXN"],
-  "generated_at": "2026-05-30T00:00:00.000Z"
-}
-```
-
-Fields:
-
-| Field                        | Type   | Notes                                                                  |
-| ---------------------------- | ------ | ---------------------------------------------------------------------- |
-| `assets`                     | array  | Active assets only. Sort order matches the underlying catalog.         |
-| `assets[].slug`              | string | Canonical asset slug.                                                  |
-| `assets[].symbol`            | string | Asset symbol.                                                          |
-| `assets[].name`              | string | Display name.                                                          |
-| `supported_quote_currencies` | array  | Always `["USD", "USDC", "BTC", "MXN"]` in this contract revision.      |
-| `generated_at`               | string | ISO-8601 UTC timestamp of response generation.                         |
-
-**Errors:**
-
-- `503 database_unavailable` — `DATABASE_URL` is unset or Postgres is
-  unreachable.
-
-`supported_quote_currencies` is part of the contract. Changes to the
-supported set require a CONTRACTS.md revision.
-
----
 
 ### `GET /v1/assets/{slug}`
 
@@ -555,6 +508,9 @@ not be assumed to exist or behave consistently if encountered:
 - API keys, bearer auth, billing, x402, or rate limiting on inbound
   requests.
 - In-process response caching headers (e.g., custom `X-Cache-*`).
+- Read-model asset sync feeds. A sync surface for
+  `iron-burrow-read-model` requires an accepted proposal, implementation,
+  and CONTRACTS.md revision before it becomes part of this surface.
 - Aave V3 realized yield or any other DeFi-protocol-specific endpoint.
   Mother API consumes
   [`iron-burrow-defi-intelligence-service`](docs/specs/SPEC-001-dis-aave-v3-realized-yield.md)
