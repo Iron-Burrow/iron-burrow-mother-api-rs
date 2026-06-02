@@ -250,6 +250,21 @@ curl -i 'http://localhost:3000/v1/resolve?q=oro%20de%20ley'
 curl -i 'http://localhost:3000/v1/resolve?q=some%20unknown%20thing'
 ```
 
+## Demo Smoke
+
+For the Maria UI demo path, point the UI at the local or deployed Mother API
+and confirm the asset page can use:
+
+```sh
+curl -i 'http://localhost:3000/v1/assets/usdc?include=priceStats,priceTrend,priceSeries&quoteCurrency=USD&window=24h&granularity=1h'
+```
+
+The response should be `200 OK`. Maria should render asset identity, latest
+price state, chain maps, stats/trend, and series data when available. If one
+enrichment fails, the page should stay visible and treat that signal as
+unavailable. If price-indexer is disabled, the base asset page should still
+render with unavailable price and signal states.
+
 With Docker:
 
 ```sh

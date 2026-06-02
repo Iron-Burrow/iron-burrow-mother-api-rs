@@ -20,3 +20,6 @@ implementation, and documentation changes.
   response when the asset exists.
 - Updated `CONTRACTS.md` with the new asset-detail query parameters, optional
   signal fields, and enrichment error codes.
+- Hardened the demo path with clearer asset-detail contract examples,
+  enrichment failure observability, partial-failure regression coverage, and a
+  Maria UI smoke checklist.
