@@ -1,3 +1,8 @@
 pub mod client;
 
-pub use client::{LatestAssetPrice, PriceIndexerClient, PriceLookupError, PriceStatus};
+#[allow(unused_imports)]
+pub use client::{
+    LatestAssetPrice, PriceIndexerClient, PriceLookupError, PriceSeriesMeta, PriceSeriesPoint,
+    PriceSeriesResponse, PriceSignalError, PriceSignalRequest, PriceStatsResponse, PriceStatus,
+    PriceTrendResponse,
+};

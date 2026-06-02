@@ -4,7 +4,7 @@ use std::{
 };
 
 use reqwest::{StatusCode, Url};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tracing::warn;
 
 const PRICE_BATCH_MAX_SLUGS: usize = 50;
@@ -104,6 +104,33 @@ impl PriceIndexerClient {
         prices
     }
 
+    #[allow(dead_code)]
+    pub async fn price_stats(
+        &self,
+        request: &PriceSignalRequest,
+    ) -> Result<PriceStatsResponse, PriceSignalError> {
+        let url = self.price_stats_url(request)?;
+        self.get_signal(url).await
+    }
+
+    #[allow(dead_code)]
+    pub async fn price_trend(
+        &self,
+        request: &PriceSignalRequest,
+    ) -> Result<PriceTrendResponse, PriceSignalError> {
+        let url = self.price_trend_url(request)?;
+        self.get_signal(url).await
+    }
+
+    #[allow(dead_code)]
+    pub async fn price_series(
+        &self,
+        request: &PriceSignalRequest,
+    ) -> Result<PriceSeriesResponse, PriceSignalError> {
+        let url = self.price_series_url(request)?;
+        self.get_signal(url).await
+    }
+
     async fn latest_by_slug_chunk(
         &self,
         slugs: &[String],
@@ -156,6 +183,74 @@ impl PriceIndexerClient {
         url.set_path(&format!("{base_path}/prices/latest/batch"));
         url.set_query(None);
         url
+    }
+
+    fn price_stats_url(&self, request: &PriceSignalRequest) -> Result<Url, PriceSignalError> {
+        self.price_signal_url("/prices/stats", request)
+    }
+
+    fn price_trend_url(&self, request: &PriceSignalRequest) -> Result<Url, PriceSignalError> {
+        self.price_signal_url("/prices/trend", request)
+    }
+
+    fn price_series_url(&self, request: &PriceSignalRequest) -> Result<Url, PriceSignalError> {
+        self.price_signal_url("/prices/series", request)
+    }
+
+    fn price_signal_url(
+        &self,
+        endpoint_path: &str,
+        request: &PriceSignalRequest,
+    ) -> Result<Url, PriceSignalError> {
+        if request.slug.trim().is_empty()
+            || request.quote_currency.trim().is_empty()
+            || request.window.trim().is_empty()
+        {
+            return Err(PriceSignalError::InvalidRequest);
+        }
+
+        let mut url = self.base_url.clone();
+        let base_path = url.path().trim_end_matches('/');
+        url.set_path(&format!("{base_path}{endpoint_path}"));
+        url.set_query(None);
+        {
+            let mut query = url.query_pairs_mut();
+            query.append_pair("slug", &request.slug);
+            query.append_pair("quoteCurrency", &request.quote_currency);
+            query.append_pair("window", &request.window);
+            if let Some(granularity) = request.granularity.as_deref() {
+                if granularity.trim().is_empty() {
+                    return Err(PriceSignalError::InvalidRequest);
+                }
+                query.append_pair("granularity", granularity);
+            }
+        }
+        Ok(url)
+    }
+
+    #[allow(dead_code)]
+    async fn get_signal<T>(&self, url: Url) -> Result<T, PriceSignalError>
+    where
+        T: DeserializeOwned,
+    {
+        let response = self
+            .client
+            .get(url)
+            .bearer_auth(&self.token)
+            .timeout(self.timeout)
+            .send()
+            .await
+            .map_err(map_signal_reqwest_error)?;
+
+        let status = response.status();
+        let body = response.bytes().await.map_err(map_signal_reqwest_error)?;
+
+        if status.is_success() {
+            return serde_json::from_slice::<T>(&body)
+                .map_err(|_| PriceSignalError::MalformedResponse);
+        }
+
+        Err(map_signal_error_response(status, &body))
     }
 }
 
@@ -279,6 +374,120 @@ pub enum PriceLookupError {
     Timeout,
     Transport,
     MalformedResponse,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PriceSignalRequest {
+    pub slug: String,
+    pub quote_currency: String,
+    pub window: String,
+    pub granularity: Option<String>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+#[allow(dead_code)]
+pub enum PriceSignalError {
+    InvalidRequest,
+    NotFound,
+    Unauthorized,
+    UpstreamInternal,
+    Timeout,
+    Transport,
+    MalformedResponse,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceStatsResponse {
+    pub slug: String,
+    pub asset_id: String,
+    pub quote_currency: String,
+    pub window: String,
+    pub granularity: String,
+    pub from: String,
+    pub to: String,
+    pub as_of: Option<String>,
+    pub expected_bucket_count: u32,
+    pub sample_count: u32,
+    pub carry_forward_bucket_count: u32,
+    pub missing_bucket_count: u32,
+    pub coverage_ratio: String,
+    pub first_price: Option<String>,
+    pub last_price: Option<String>,
+    pub min_price: Option<String>,
+    pub max_price: Option<String>,
+    pub mean_price: Option<String>,
+    pub median_price: Option<String>,
+    pub sample_std_dev: Option<String>,
+    pub coefficient_of_variation: Option<String>,
+    pub absolute_change: Option<String>,
+    pub percent_change: Option<String>,
+    pub min_timestamp: Option<String>,
+    pub max_timestamp: Option<String>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceTrendResponse {
+    pub slug: String,
+    pub asset_id: String,
+    pub quote_currency: String,
+    pub window: String,
+    pub granularity: String,
+    pub from: String,
+    pub to: String,
+    pub as_of: Option<String>,
+    pub expected_bucket_count: u32,
+    pub sample_count: u32,
+    pub carry_forward_bucket_count: u32,
+    pub missing_bucket_count: u32,
+    pub coverage_ratio: String,
+    pub first_price: Option<String>,
+    pub last_price: Option<String>,
+    pub percent_change: Option<String>,
+    pub direction: String,
+    pub slope: Option<String>,
+    pub slope_unit: String,
+    pub r_squared: Option<String>,
+    pub confidence: String,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceSeriesResponse {
+    pub asset_id: String,
+    pub quote_currency: String,
+    pub window: String,
+    pub granularity: String,
+    pub from: String,
+    pub to: String,
+    pub as_of: Option<String>,
+    pub points: Vec<PriceSeriesPoint>,
+    pub meta: PriceSeriesMeta,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceSeriesPoint {
+    pub bucket_start: String,
+    pub price: Option<String>,
+    pub status: String,
+    pub source_published_at: Option<String>,
+    pub source_type: Option<String>,
+    pub is_derived: Option<bool>,
+    pub derivation_path: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceSeriesMeta {
+    pub expected_bucket_count: u32,
+    pub sample_count: u32,
+    pub carry_forward_bucket_count: u32,
+    pub missing_bucket_count: u32,
+    pub latest_tick_published_at_used: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -506,6 +715,15 @@ fn map_reqwest_error(error: reqwest::Error) -> PriceLookupError {
     }
 }
 
+#[allow(dead_code)]
+fn map_signal_reqwest_error(error: reqwest::Error) -> PriceSignalError {
+    if error.is_timeout() {
+        PriceSignalError::Timeout
+    } else {
+        PriceSignalError::Transport
+    }
+}
+
 fn map_error_response(status: StatusCode, body: &[u8]) -> PriceLookupError {
     let code = serde_json::from_slice::<PriceIndexerErrorEnvelope>(body)
         .ok()
@@ -518,6 +736,21 @@ fn map_error_response(status: StatusCode, body: &[u8]) -> PriceLookupError {
             status: Some(status.as_u16()),
             code,
         },
+    }
+}
+
+fn map_signal_error_response(status: StatusCode, body: &[u8]) -> PriceSignalError {
+    let envelope = match serde_json::from_slice::<PriceIndexerErrorEnvelope>(body) {
+        Ok(envelope) => envelope,
+        Err(_) => return PriceSignalError::MalformedResponse,
+    };
+
+    match (status, envelope.error.code.as_str()) {
+        (StatusCode::BAD_REQUEST, "INVALID_REQUEST") => PriceSignalError::InvalidRequest,
+        (StatusCode::NOT_FOUND, "NOT_FOUND") => PriceSignalError::NotFound,
+        (StatusCode::UNAUTHORIZED, "UNAUTHORIZED") => PriceSignalError::Unauthorized,
+        (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR") => PriceSignalError::UpstreamInternal,
+        _ => PriceSignalError::MalformedResponse,
     }
 }
 
@@ -571,6 +804,36 @@ mod tests {
         })
     }
 
+    fn signal_request(granularity: Option<&str>) -> PriceSignalRequest {
+        PriceSignalRequest {
+            slug: "ethereum".to_string(),
+            quote_currency: "USD".to_string(),
+            window: "24h".to_string(),
+            granularity: granularity.map(str::to_string),
+        }
+    }
+
+    fn assert_no_legacy_signal_params(url: &Url) {
+        let query_pairs = url.query_pairs().collect::<Vec<_>>();
+
+        for legacy_param in [
+            "range",
+            "resolution",
+            "from",
+            "to",
+            "interval",
+            "sourceType",
+            "limit",
+            "beforeId",
+            "asOf",
+        ] {
+            assert!(
+                !query_pairs.iter().any(|(key, _)| key == legacy_param),
+                "unexpected legacy signal param {legacy_param}"
+            );
+        }
+    }
+
     #[test]
     fn latest_price_url_identifies_asset_by_slug() {
         let client = PriceIndexerClient::new("http://price-indexer:3010/api", "secret", 2000)
@@ -598,6 +861,85 @@ mod tests {
             client.latest_price_batch_url().as_str(),
             "http://price-indexer:3010/api/prices/latest/batch"
         );
+    }
+
+    #[test]
+    fn price_stats_url_uses_signal_query_model() {
+        let client = PriceIndexerClient::new("http://price-indexer:3010/api", "secret", 2000)
+            .expect("price indexer client should initialize");
+        let url = client.price_stats_url(&signal_request(Some("1h"))).unwrap();
+
+        assert_eq!(
+            url.as_str(),
+            "http://price-indexer:3010/api/prices/stats?slug=ethereum&quoteCurrency=USD&window=24h&granularity=1h"
+        );
+        assert_no_legacy_signal_params(&url);
+    }
+
+    #[test]
+    fn price_trend_url_uses_signal_query_model() {
+        let client = PriceIndexerClient::new("http://price-indexer:3010/api", "secret", 2000)
+            .expect("price indexer client should initialize");
+        let url = client.price_trend_url(&signal_request(Some("5m"))).unwrap();
+
+        assert_eq!(
+            url.as_str(),
+            "http://price-indexer:3010/api/prices/trend?slug=ethereum&quoteCurrency=USD&window=24h&granularity=5m"
+        );
+        assert_no_legacy_signal_params(&url);
+    }
+
+    #[test]
+    fn price_series_url_omits_granularity_when_not_provided() {
+        let client = PriceIndexerClient::new("http://price-indexer:3010/api", "secret", 2000)
+            .expect("price indexer client should initialize");
+        let url = client.price_series_url(&signal_request(None)).unwrap();
+        let query_pairs = url.query_pairs().collect::<Vec<_>>();
+
+        assert_eq!(
+            url.as_str(),
+            "http://price-indexer:3010/api/prices/series?slug=ethereum&quoteCurrency=USD&window=24h"
+        );
+        assert!(!query_pairs.iter().any(|(key, _)| key == "granularity"));
+        assert_no_legacy_signal_params(&url);
+    }
+
+    #[test]
+    fn price_signal_url_rejects_missing_required_values() {
+        let client = PriceIndexerClient::new("http://price-indexer:3010/api", "secret", 2000)
+            .expect("price indexer client should initialize");
+
+        for request in [
+            PriceSignalRequest {
+                slug: " ".to_string(),
+                quote_currency: "USD".to_string(),
+                window: "24h".to_string(),
+                granularity: None,
+            },
+            PriceSignalRequest {
+                slug: "ethereum".to_string(),
+                quote_currency: " ".to_string(),
+                window: "24h".to_string(),
+                granularity: None,
+            },
+            PriceSignalRequest {
+                slug: "ethereum".to_string(),
+                quote_currency: "USD".to_string(),
+                window: " ".to_string(),
+                granularity: None,
+            },
+            PriceSignalRequest {
+                slug: "ethereum".to_string(),
+                quote_currency: "USD".to_string(),
+                window: "24h".to_string(),
+                granularity: Some(" ".to_string()),
+            },
+        ] {
+            assert_eq!(
+                client.price_stats_url(&request),
+                Err(PriceSignalError::InvalidRequest)
+            );
+        }
     }
 
     #[test]
@@ -821,5 +1163,239 @@ mod tests {
                 code: None
             }
         );
+    }
+
+    #[test]
+    fn parses_price_stats_without_converting_decimals_or_warnings() {
+        let response = serde_json::from_value::<PriceStatsResponse>(json!({
+            "slug": "ethereum",
+            "assetId": "00000000-0000-0000-0000-000000000001",
+            "quoteCurrency": "USD",
+            "window": "24h",
+            "granularity": "1h",
+            "from": "2026-06-01T11:00:00.000Z",
+            "to": "2026-06-02T11:00:00.000Z",
+            "expectedBucketCount": 24,
+            "sampleCount": 1,
+            "carryForwardBucketCount": 2,
+            "missingBucketCount": 21,
+            "coverageRatio": "0.041667",
+            "firstPrice": "3812.45",
+            "lastPrice": "3812.45",
+            "minPrice": "3812.45",
+            "maxPrice": "3812.45",
+            "meanPrice": "3812.45",
+            "medianPrice": "3812.45",
+            "sampleStdDev": null,
+            "coefficientOfVariation": null,
+            "absoluteChange": "0",
+            "percentChange": null,
+            "minTimestamp": "2026-06-01T13:00:00.000Z",
+            "maxTimestamp": "2026-06-01T13:00:00.000Z",
+            "warnings": ["low_series_coverage", "custom_future_warning"],
+            "futureInformationalField": "ignored"
+        }))
+        .unwrap();
+
+        assert_eq!(response.coverage_ratio, "0.041667");
+        assert_eq!(response.first_price.as_deref(), Some("3812.45"));
+        assert_eq!(response.sample_std_dev, None);
+        assert_eq!(
+            response.warnings,
+            vec![
+                "low_series_coverage".to_string(),
+                "custom_future_warning".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_price_trend_without_converting_decimals_or_warnings() {
+        let response = serde_json::from_value::<PriceTrendResponse>(json!({
+            "slug": "ethereum",
+            "assetId": "00000000-0000-0000-0000-000000000001",
+            "quoteCurrency": "USD",
+            "window": "24h",
+            "granularity": "1h",
+            "from": "2026-06-01T11:00:00.000Z",
+            "to": "2026-06-02T11:00:00.000Z",
+            "expectedBucketCount": 24,
+            "sampleCount": 20,
+            "carryForwardBucketCount": 2,
+            "missingBucketCount": 2,
+            "coverageRatio": "0.833333",
+            "firstPrice": "3812.45",
+            "lastPrice": "3890.10",
+            "percentChange": "0.020367",
+            "direction": "up",
+            "slope": "0.000812",
+            "slopeUnit": "per_hour",
+            "rSquared": "0.640000",
+            "confidence": "medium",
+            "warnings": ["low_series_coverage", "missing_buckets_detected"],
+            "futureInformationalField": {"ignored": true}
+        }))
+        .unwrap();
+
+        assert_eq!(response.percent_change.as_deref(), Some("0.020367"));
+        assert_eq!(response.slope.as_deref(), Some("0.000812"));
+        assert_eq!(response.r_squared.as_deref(), Some("0.640000"));
+        assert_eq!(
+            response.warnings,
+            vec![
+                "low_series_coverage".to_string(),
+                "missing_buckets_detected".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_price_series_points_and_meta() {
+        let response = serde_json::from_value::<PriceSeriesResponse>(json!({
+            "assetId": "00000000-0000-0000-0000-000000000001",
+            "quoteCurrency": "BTC",
+            "window": "24h",
+            "granularity": "1h",
+            "from": "2026-06-01T11:00:00.000Z",
+            "to": "2026-06-02T11:00:00.000Z",
+            "points": [
+                {
+                    "bucketStart": "2026-06-01T11:00:00.000Z",
+                    "price": "0.025",
+                    "status": "observed",
+                    "sourcePublishedAt": "2026-06-01T11:39:00.000Z",
+                    "sourceType": "fx-derived",
+                    "isDerived": true,
+                    "derivationPath": ["ETH/USD", "BTC/USD"],
+                    "futureInformationalField": "ignored"
+                },
+                {
+                    "bucketStart": "2026-06-01T12:00:00.000Z",
+                    "price": null,
+                    "status": "missing",
+                    "sourcePublishedAt": null,
+                    "sourceType": null
+                }
+            ],
+            "meta": {
+                "expectedBucketCount": 24,
+                "sampleCount": 1,
+                "carryForwardBucketCount": 0,
+                "missingBucketCount": 23,
+                "latestTickPublishedAtUsed": "2026-06-01T11:39:00.000Z",
+                "futureInformationalField": "ignored"
+            },
+            "futureInformationalField": "ignored"
+        }))
+        .unwrap();
+
+        assert_eq!(response.points[0].price.as_deref(), Some("0.025"));
+        assert_eq!(response.points[0].is_derived, Some(true));
+        assert_eq!(
+            response.points[0].derivation_path,
+            Some(vec!["ETH/USD".to_string(), "BTC/USD".to_string()])
+        );
+        assert_eq!(response.points[1].price, None);
+        assert_eq!(response.points[1].is_derived, None);
+        assert_eq!(
+            response.meta.latest_tick_published_at_used.as_deref(),
+            Some("2026-06-01T11:39:00.000Z")
+        );
+    }
+
+    #[test]
+    fn maps_signal_error_envelopes_by_status_and_code() {
+        for (status, code, expected) in [
+            (
+                StatusCode::BAD_REQUEST,
+                "INVALID_REQUEST",
+                PriceSignalError::InvalidRequest,
+            ),
+            (
+                StatusCode::NOT_FOUND,
+                "NOT_FOUND",
+                PriceSignalError::NotFound,
+            ),
+            (
+                StatusCode::UNAUTHORIZED,
+                "UNAUTHORIZED",
+                PriceSignalError::Unauthorized,
+            ),
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                PriceSignalError::UpstreamInternal,
+            ),
+        ] {
+            let body = serde_json::to_vec(&json!({
+                "error": {
+                    "code": code,
+                    "message": "Upstream-owned message."
+                }
+            }))
+            .unwrap();
+
+            assert_eq!(map_signal_error_response(status, &body), expected);
+        }
+    }
+
+    #[test]
+    fn maps_malformed_signal_error_body_to_malformed_response() {
+        assert_eq!(
+            map_signal_error_response(StatusCode::INTERNAL_SERVER_ERROR, b"not-json"),
+            PriceSignalError::MalformedResponse
+        );
+        assert_eq!(
+            map_signal_error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                br#"{"error":{"code":"NOT_FOUND","message":"wrong status"}}"#
+            ),
+            PriceSignalError::MalformedResponse
+        );
+    }
+
+    #[test]
+    fn malformed_signal_success_body_is_not_accepted() {
+        assert!(serde_json::from_slice::<PriceStatsResponse>(b"not-json").is_err());
+    }
+
+    #[tokio::test]
+    async fn price_signal_request_maps_transport_failure() {
+        let Ok(listener) = std::net::TcpListener::bind("127.0.0.1:0") else {
+            return;
+        };
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        let client = PriceIndexerClient::new(&base_url, "secret", 2000)
+            .expect("price indexer client should initialize");
+
+        let error = client
+            .price_stats(&signal_request(None))
+            .await
+            .expect_err("closed listener should cause transport failure");
+
+        assert_eq!(error, PriceSignalError::Transport);
+    }
+
+    #[tokio::test]
+    async fn price_signal_request_maps_timeout() {
+        let Ok(listener) = std::net::TcpListener::bind("127.0.0.1:0") else {
+            return;
+        };
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = std::thread::spawn(move || {
+            let (_stream, _) = listener.accept().expect("test request should connect");
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        });
+        let client = PriceIndexerClient::new(&base_url, "secret", 10)
+            .expect("price indexer client should initialize");
+
+        let error = client
+            .price_stats(&signal_request(None))
+            .await
+            .expect_err("held connection should time out");
+
+        assert_eq!(error, PriceSignalError::Timeout);
+        handle.join().expect("test listener thread should finish");
     }
 }
