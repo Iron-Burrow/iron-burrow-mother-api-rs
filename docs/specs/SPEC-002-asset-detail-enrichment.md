@@ -1,5 +1,5 @@
 ---
-status: draft
+status: active
 owner: iron-burrow
 last_reviewed: 2026-06-02
 agent_edit_policy: update_when_relevant
