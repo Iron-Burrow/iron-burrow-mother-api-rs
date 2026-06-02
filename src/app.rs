@@ -307,8 +307,8 @@ mod tests {
         assert!(json["chain_maps"][0]["address"].is_null());
         assert!(json["chain_maps"][0]["network"]["family"].is_null());
         assert!(json["chain_maps"][0]["network"]["chain_id"].is_null());
-        assert!(json["signals"].is_null());
-        assert!(json["enrichment_errors"].is_null());
+        assert!(json.get("signals").is_none());
+        assert!(json.get("enrichment_errors").is_none());
     }
 
     #[tokio::test]
@@ -390,9 +390,11 @@ mod tests {
         assert_eq!(json["ok"], true);
         assert_eq!(json["asset"]["asset_id"], "bitcoin");
         assert_eq!(json["price"]["status"], "unavailable");
-        assert!(json["signals"]["price_stats"].is_null());
-        assert!(json["signals"]["price_trend"].is_null());
-        assert!(json["signals"]["price_series"].is_null());
+        let signals = json["signals"].as_object().unwrap();
+        assert!(signals.get("price_stats").unwrap().is_null());
+        assert!(signals.get("price_trend").unwrap().is_null());
+        assert!(signals.get("price_series").unwrap().is_null());
+        assert_eq!(signals.len(), 3);
         assert_eq!(json["enrichment_errors"].as_array().unwrap().len(), 3);
         assert_eq!(
             json["enrichment_errors"][0]["code"],
@@ -408,9 +410,11 @@ mod tests {
         .await;
 
         assert_eq!(json["ok"], true);
-        assert!(json["signals"]["price_stats"].is_null());
-        assert!(json["signals"]["price_series"].is_null());
-        assert!(json["signals"]["price_trend"].is_null());
+        let signals = json["signals"].as_object().unwrap();
+        assert!(signals.get("price_stats").unwrap().is_null());
+        assert!(signals.get("price_series").unwrap().is_null());
+        assert!(!signals.contains_key("price_trend"));
+        assert_eq!(signals.len(), 2);
         assert_eq!(json["enrichment_errors"].as_array().unwrap().len(), 2);
         assert_eq!(json["enrichment_errors"][0]["code"], "invalid_request");
         assert_eq!(json["enrichment_errors"][0]["source"], "price_stats");
@@ -422,8 +426,8 @@ mod tests {
         let json = assets_json("/v1/assets/bitcoin?include=unknown,alsoBad").await;
 
         assert_eq!(json["ok"], true);
-        assert!(json["signals"].is_null());
-        assert!(json["enrichment_errors"].is_null());
+        assert!(json.get("signals").is_none());
+        assert!(json.get("enrichment_errors").is_none());
     }
 
     #[tokio::test]
