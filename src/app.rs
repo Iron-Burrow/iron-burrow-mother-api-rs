@@ -3,7 +3,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::{
     routes::{
-        assets::{get_asset, list_assets},
+        assets::{get_asset, get_price_stats_signal, get_price_trend_signal, list_assets},
         health::health,
         resolve::resolve,
         status::status,
@@ -16,7 +16,15 @@ pub fn create_app(state: AppState) -> Router {
         .route("/status", get(status))
         .route("/resolve", get(resolve))
         .route("/assets", get(list_assets))
-        .route("/assets/{slug}", get(get_asset));
+        .route("/assets/{slug}", get(get_asset))
+        .route(
+            "/assets/{slug}/signal/price-stats",
+            get(get_price_stats_signal),
+        )
+        .route(
+            "/assets/{slug}/signal/price-trend",
+            get(get_price_trend_signal),
+        );
 
     Router::new()
         .route("/health", get(health))
@@ -51,6 +59,19 @@ mod tests {
             Config::default(),
             GlobalAssetRepository::in_memory(demo_assets()),
         ))
+    }
+
+    fn test_app_with_price_indexer(price_indexer_url: &str, timeout_ms: u64) -> Router {
+        let price_indexer_client =
+            PriceIndexerClient::new(price_indexer_url, "test-token", timeout_ms).unwrap();
+
+        create_app(AppState {
+            config: Config::default(),
+            version: env!("CARGO_PKG_VERSION"),
+            database_pool: None,
+            asset_repository: Some(GlobalAssetRepository::in_memory(demo_assets())),
+            price_indexer_client: Some(price_indexer_client),
+        })
     }
 
     #[tokio::test]
@@ -405,6 +426,255 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn price_stats_signal_maps_query_and_preserves_raw_response() {
+        let body = serde_json::json!({
+            "slug": "ethereum",
+            "assetId": "00000000-0000-0000-0000-000000000001",
+            "quoteCurrency": "MXN",
+            "window": "24h",
+            "granularity": "1h",
+            "from": "2026-06-01T11:00:00.000Z",
+            "to": "2026-06-02T11:00:00.000Z",
+            "expectedBucketCount": 24,
+            "sampleCount": 20,
+            "carryForwardBucketCount": 2,
+            "missingBucketCount": 2,
+            "coverageRatio": "0.833333",
+            "firstPrice": "3812.45",
+            "lastPrice": "3890.10",
+            "minPrice": "3812.45",
+            "maxPrice": "3890.10",
+            "meanPrice": "3845.55",
+            "medianPrice": "3840.00",
+            "sampleStdDev": "12.340000",
+            "coefficientOfVariation": "0.003210",
+            "absoluteChange": "77.65",
+            "percentChange": "0.020367",
+            "minTimestamp": "2026-06-01T13:00:00.000Z",
+            "maxTimestamp": "2026-06-02T10:00:00.000Z",
+            "warnings": ["low_series_coverage", "custom_future_warning"],
+            "futureInformationalField": {"preserved": true}
+        });
+        let Some((price_indexer_url, request_handle)) =
+            spawn_signal_price_indexer(StatusCode::OK, body.to_string())
+        else {
+            return;
+        };
+        let app = test_app_with_price_indexer(&price_indexer_url, 2000);
+
+        let (status, json) = app_json(
+            app,
+            "/v1/assets/ethereum/signal/price-stats?quoteCurrency=mxn&window=24h&granularity=1h&range=legacy&resolution=bad&asOf=2026-06-02T00:00:00Z",
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["type"], "price_stats");
+        assert_eq!(json["signal"]["percentChange"], "0.020367");
+        assert_eq!(
+            json["signal"]["warnings"],
+            serde_json::json!(["low_series_coverage", "custom_future_warning"])
+        );
+        assert_eq!(
+            json["signal"]["futureInformationalField"]["preserved"],
+            true
+        );
+
+        let request = request_handle.await.unwrap();
+        assert!(request.starts_with(
+            "GET /prices/stats?slug=ethereum&quoteCurrency=MXN&window=24h&granularity=1h "
+        ));
+        assert_no_legacy_signal_params(&request);
+    }
+
+    #[tokio::test]
+    async fn price_trend_signal_defaults_and_omits_granularity() {
+        let body = serde_json::json!({
+            "slug": "bitcoin",
+            "assetId": "00000000-0000-0000-0000-000000000002",
+            "quoteCurrency": "USD",
+            "window": "24h",
+            "granularity": "1h",
+            "from": "2026-06-01T11:00:00.000Z",
+            "to": "2026-06-02T11:00:00.000Z",
+            "expectedBucketCount": 24,
+            "sampleCount": 24,
+            "carryForwardBucketCount": 0,
+            "missingBucketCount": 0,
+            "coverageRatio": "1.000000",
+            "firstPrice": "68000.00",
+            "lastPrice": "68100.00",
+            "percentChange": "0.001471",
+            "direction": "up",
+            "slope": "0.000061",
+            "slopeUnit": "per_hour",
+            "rSquared": "0.640000",
+            "confidence": "medium",
+            "warnings": []
+        });
+        let Some((price_indexer_url, request_handle)) =
+            spawn_signal_price_indexer(StatusCode::OK, body.to_string())
+        else {
+            return;
+        };
+        let app = test_app_with_price_indexer(&price_indexer_url, 2000);
+
+        let (status, json) = app_json(app, "/v1/assets/bitcoin/signal/price-trend").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["type"], "price_trend");
+        assert_eq!(json["signal"]["direction"], "up");
+
+        let request = request_handle.await.unwrap();
+        assert!(request.starts_with("GET /prices/trend?slug=bitcoin&quoteCurrency=USD&window=24h "));
+        assert!(!request.contains("granularity="));
+        assert_no_legacy_signal_params(&request);
+    }
+
+    #[tokio::test]
+    async fn price_signal_routes_report_missing_price_indexer_config() {
+        let (status, json) = app_json(
+            create_app(AppState::new(Config::default())),
+            "/v1/assets/bitcoin/signal/price-stats",
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["error"]["code"], "price_indexer_unavailable");
+    }
+
+    #[tokio::test]
+    async fn price_signal_routes_validate_public_parameters_before_upstream() {
+        for uri in [
+            "/v1/assets/bitcoin/signal/price-stats?quoteCurrency=eur",
+            "/v1/assets/bitcoin/signal/price-stats?window=2h",
+            "/v1/assets/bitcoin/signal/price-stats?window=1h&granularity=1h",
+            "/v1/assets/bitcoin/signal/price-stats?granularity=",
+            "/v1/assets/bitcoin/signal/price-trend?window=30d&granularity=1h",
+            "/v1/assets/bitcoin/signal/price-trend?granularity=15m",
+        ] {
+            let (status, json) = app_json(test_app(), uri).await;
+
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert_eq!(json["ok"], false);
+            assert_eq!(json["error"]["code"], "invalid_request");
+        }
+    }
+
+    #[tokio::test]
+    async fn price_signal_routes_map_upstream_error_envelopes() {
+        for (upstream_status, upstream_code, expected_status, expected_code) in [
+            (
+                StatusCode::BAD_REQUEST,
+                "INVALID_REQUEST",
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+            ),
+            (
+                StatusCode::NOT_FOUND,
+                "NOT_FOUND",
+                StatusCode::NOT_FOUND,
+                "asset_not_found",
+            ),
+            (
+                StatusCode::UNAUTHORIZED,
+                "UNAUTHORIZED",
+                StatusCode::BAD_GATEWAY,
+                "upstream_auth_failed",
+            ),
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                StatusCode::BAD_GATEWAY,
+                "price_indexer_error",
+            ),
+        ] {
+            let body = serde_json::json!({
+                "error": {
+                    "code": upstream_code,
+                    "message": "Upstream-owned message."
+                }
+            });
+            let Some((price_indexer_url, _request_handle)) =
+                spawn_signal_price_indexer(upstream_status, body.to_string())
+            else {
+                return;
+            };
+            let app = test_app_with_price_indexer(&price_indexer_url, 2000);
+
+            let (status, json) = app_json(app, "/v1/assets/bitcoin/signal/price-stats").await;
+
+            assert_eq!(status, expected_status);
+            assert_eq!(json["ok"], false);
+            assert_eq!(json["error"]["code"], expected_code);
+            assert_ne!(json["error"]["message"], "Upstream-owned message.");
+        }
+    }
+
+    #[tokio::test]
+    async fn price_signal_routes_map_malformed_upstream_bodies() {
+        for body in ["not-json", "[]"] {
+            let Some((price_indexer_url, _request_handle)) =
+                spawn_signal_price_indexer(StatusCode::OK, body.to_string())
+            else {
+                return;
+            };
+            let app = test_app_with_price_indexer(&price_indexer_url, 2000);
+
+            let (status, json) = app_json(app, "/v1/assets/bitcoin/signal/price-trend").await;
+
+            assert_eq!(status, StatusCode::BAD_GATEWAY);
+            assert_eq!(json["error"]["code"], "upstream_invalid_response");
+        }
+
+        let Some((price_indexer_url, _request_handle)) =
+            spawn_signal_price_indexer(StatusCode::INTERNAL_SERVER_ERROR, "not-json".to_string())
+        else {
+            return;
+        };
+        let app = test_app_with_price_indexer(&price_indexer_url, 2000);
+
+        let (status, json) = app_json(app, "/v1/assets/bitcoin/signal/price-trend").await;
+
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_eq!(json["error"]["code"], "upstream_invalid_response");
+    }
+
+    #[tokio::test]
+    async fn price_signal_routes_map_transport_failure_and_timeout() {
+        let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
+            return;
+        };
+        let closed_url = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        let app = test_app_with_price_indexer(&closed_url, 2000);
+
+        let (status, json) = app_json(app, "/v1/assets/bitcoin/signal/price-stats").await;
+
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(json["error"]["code"], "price_indexer_unavailable");
+
+        let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
+            return;
+        };
+        let timeout_url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = tokio::task::spawn_blocking(move || {
+            let (_stream, _) = listener.accept().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        });
+        let app = test_app_with_price_indexer(&timeout_url, 10);
+
+        let (status, json) = app_json(app, "/v1/assets/bitcoin/signal/price-stats").await;
+
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(json["error"]["code"], "price_indexer_unavailable");
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn resolve_returns_usdc_for_aliases() {
         for query in ["usdc", "usdc%20coin%20usd", "usd%20coin"] {
             let json = resolve_json(&format!("/v1/resolve?q={query}")).await;
@@ -610,6 +880,20 @@ mod tests {
         serde_json::from_slice(&body).unwrap()
     }
 
+    async fn app_json(app: Router, uri: &str) -> (StatusCode, Value) {
+        let response = app
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json = serde_json::from_slice(&body).unwrap();
+
+        (status, json)
+    }
+
     fn spawn_price_indexer() -> Option<(String, tokio::task::JoinHandle<String>)> {
         let listener = match TcpListener::bind("127.0.0.1:0") {
             Ok(listener) => listener,
@@ -726,6 +1010,55 @@ mod tests {
         });
 
         Some((url, handle))
+    }
+
+    fn spawn_signal_price_indexer(
+        status: StatusCode,
+        body: String,
+    ) -> Option<(String, tokio::task::JoinHandle<String>)> {
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
+            Err(error) => panic!("failed to bind test price-indexer: {error}"),
+        };
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = tokio::task::spawn_blocking(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let request = read_http_request(&mut stream);
+            let reason = status.canonical_reason().unwrap_or("Unknown");
+            let response = format!(
+                "HTTP/1.1 {} {}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                status.as_u16(),
+                reason,
+                body.len(),
+                body
+            );
+
+            stream.write_all(response.as_bytes()).unwrap();
+
+            request
+        });
+
+        Some((url, handle))
+    }
+
+    fn assert_no_legacy_signal_params(request: &str) {
+        for legacy_param in [
+            "range=",
+            "resolution=",
+            "from=",
+            "to=",
+            "interval=",
+            "sourceType=",
+            "limit=",
+            "beforeId=",
+            "asOf=",
+        ] {
+            assert!(
+                !request.contains(legacy_param),
+                "unexpected legacy signal param {legacy_param}"
+            );
+        }
     }
 
     fn read_http_request(stream: &mut impl Read) -> String {

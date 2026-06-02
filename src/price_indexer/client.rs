@@ -122,6 +122,22 @@ impl PriceIndexerClient {
         self.get_signal(url).await
     }
 
+    pub async fn price_stats_raw(
+        &self,
+        request: &PriceSignalRequest,
+    ) -> Result<serde_json::Value, PriceSignalError> {
+        let url = self.price_stats_url(request)?;
+        self.get_signal_json(url).await
+    }
+
+    pub async fn price_trend_raw(
+        &self,
+        request: &PriceSignalRequest,
+    ) -> Result<serde_json::Value, PriceSignalError> {
+        let url = self.price_trend_url(request)?;
+        self.get_signal_json(url).await
+    }
+
     #[allow(dead_code)]
     pub async fn price_series(
         &self,
@@ -250,6 +266,33 @@ impl PriceIndexerClient {
         if status.is_success() {
             return serde_json::from_slice::<T>(&body)
                 .map_err(|_| PriceSignalError::MalformedResponse);
+        }
+
+        Err(map_signal_error_response(status, &body))
+    }
+
+    async fn get_signal_json(&self, url: Url) -> Result<serde_json::Value, PriceSignalError> {
+        let response = self
+            .client
+            .get(url)
+            .bearer_auth(&self.token)
+            .timeout(self.timeout)
+            .send()
+            .await
+            .map_err(map_signal_reqwest_error)?;
+
+        let status = response.status();
+        let body = response.bytes().await.map_err(map_signal_reqwest_error)?;
+
+        if status.is_success() {
+            let value = serde_json::from_slice::<serde_json::Value>(&body)
+                .map_err(|_| PriceSignalError::MalformedResponse)?;
+
+            if value.is_object() {
+                return Ok(value);
+            }
+
+            return Err(PriceSignalError::MalformedResponse);
         }
 
         Err(map_signal_error_response(status, &body))

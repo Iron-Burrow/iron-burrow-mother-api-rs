@@ -37,6 +37,14 @@ impl ApiError {
         }
     }
 
+    pub fn invalid_request() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "invalid_request",
+            message: "Request parameters are invalid.",
+        }
+    }
+
     pub fn asset_not_found() -> Self {
         Self {
             status: StatusCode::NOT_FOUND,
@@ -50,6 +58,38 @@ impl ApiError {
             status: StatusCode::SERVICE_UNAVAILABLE,
             code: "database_unavailable",
             message: "Asset resolution is temporarily unavailable.",
+        }
+    }
+
+    pub fn price_indexer_unavailable() -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: "price_indexer_unavailable",
+            message: "Price signals are temporarily unavailable.",
+        }
+    }
+
+    pub fn upstream_auth_failed() -> Self {
+        Self {
+            status: StatusCode::BAD_GATEWAY,
+            code: "upstream_auth_failed",
+            message: "Price signals are temporarily unavailable.",
+        }
+    }
+
+    pub fn price_indexer_error() -> Self {
+        Self {
+            status: StatusCode::BAD_GATEWAY,
+            code: "price_indexer_error",
+            message: "Price signals are temporarily unavailable.",
+        }
+    }
+
+    pub fn upstream_invalid_response() -> Self {
+        Self {
+            status: StatusCode::BAD_GATEWAY,
+            code: "upstream_invalid_response",
+            message: "Price signals are temporarily unavailable.",
         }
     }
 }

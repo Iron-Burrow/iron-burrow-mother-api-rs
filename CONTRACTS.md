@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-06-01
+last_reviewed: 2026-06-02
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -39,13 +39,15 @@ same change.
 
 ## Endpoints
 
-| Method | Path                  | Auth | Notes                                                       |
-| ------ | --------------------- | ---- | ----------------------------------------------------------- |
-| `GET`  | `/health`             | None | Dependency-free liveness probe.                             |
-| `GET`  | `/v1/status`          | None | Informational readiness with dependency checks.             |
-| `GET`  | `/v1/assets`          | None | Lists active global assets with optional price enrichment.  |
-| `GET`  | `/v1/assets/{slug}`   | None | Returns one active asset, its chain maps, and a price block. |
-| `GET`  | `/v1/resolve`         | None | Resolves a Sentinel search query against global assets.     |
+| Method | Path                                    | Auth | Notes                                                       |
+| ------ | --------------------------------------- | ---- | ----------------------------------------------------------- |
+| `GET`  | `/health`                               | None | Dependency-free liveness probe.                             |
+| `GET`  | `/v1/status`                            | None | Informational readiness with dependency checks.             |
+| `GET`  | `/v1/assets`                            | None | Lists active global assets with optional price enrichment.  |
+| `GET`  | `/v1/assets/{slug}`                     | None | Returns one active asset, its chain maps, and a price block. |
+| `GET`  | `/v1/assets/{slug}/signal/price-stats`  | None | Returns a strict price statistics signal for one asset.      |
+| `GET`  | `/v1/assets/{slug}/signal/price-trend`  | None | Returns a strict price trend signal for one asset.           |
+| `GET`  | `/v1/resolve`                           | None | Resolves a Sentinel search query against global assets.     |
 
 Mother API does not currently authenticate callers. API keys, rate
 limiting, billing, and x402 are explicitly out of scope.
@@ -281,6 +283,154 @@ Chain map entry:
 
 ---
 
+### `GET /v1/assets/{slug}/signal/price-stats`
+
+Returns one strict price statistics signal from the internal
+price-indexer Query Layer. This endpoint does not read Mother API's asset
+database and does not calculate statistics locally.
+
+**Path parameters:**
+
+| Name   | Type   | Required | Notes                              |
+| ------ | ------ | -------- | ---------------------------------- |
+| `slug` | string | Yes      | Asset slug forwarded as `slug`.    |
+
+**Query parameters:**
+
+| Name            | Type   | Required | Default | Allowed values              | Notes |
+| --------------- | ------ | -------- | ------- | --------------------------- | ----- |
+| `quoteCurrency` | string | No       | `USD`   | `USD`, `MXN`, `USDC`, `BTC` | Trimmed and uppercased before forwarding. |
+| `window`        | string | No       | `24h`   | `1h`, `24h`, `7d`, `30d`   | Uses the current window model. |
+| `granularity`   | string | No       | upstream default | `5m`, `1h`, `1d` | Forwarded only when provided. |
+
+Allowed `window` and `granularity` combinations:
+
+| `window` | Allowed granularities |
+| -------- | --------------------- |
+| `1h`     | `5m`                  |
+| `24h`    | `5m`, `1h`            |
+| `7d`     | `1h`                  |
+| `30d`    | `1d`                  |
+
+Mother API does not expose `asOf` and never forwards legacy parameters
+such as `range` or `resolution`.
+
+**Response — `200 OK`:**
+
+```json
+{
+  "ok": true,
+  "type": "price_stats",
+  "signal": {
+    "slug": "ethereum",
+    "assetId": "00000000-0000-0000-0000-000000000001",
+    "quoteCurrency": "USD",
+    "window": "24h",
+    "granularity": "1h",
+    "from": "2026-06-01T11:00:00.000Z",
+    "to": "2026-06-02T11:00:00.000Z",
+    "expectedBucketCount": 24,
+    "sampleCount": 20,
+    "carryForwardBucketCount": 2,
+    "missingBucketCount": 2,
+    "coverageRatio": "0.833333",
+    "firstPrice": "3812.45",
+    "lastPrice": "3890.10",
+    "minPrice": "3812.45",
+    "maxPrice": "3890.10",
+    "meanPrice": "3845.55",
+    "medianPrice": "3840.00",
+    "sampleStdDev": "12.340000",
+    "coefficientOfVariation": "0.003210",
+    "absoluteChange": "77.65",
+    "percentChange": "0.020367",
+    "minTimestamp": "2026-06-01T13:00:00.000Z",
+    "maxTimestamp": "2026-06-02T10:00:00.000Z",
+    "warnings": ["low_series_coverage"]
+  }
+}
+```
+
+Top-level fields:
+
+| Field    | Type   | Notes                                                       |
+| -------- | ------ | ----------------------------------------------------------- |
+| `ok`     | bool   | Always `true` on success.                                   |
+| `type`   | string | Always `"price_stats"`.                                     |
+| `signal` | object | Price-indexer statistics object. Upstream fields and warnings are preserved. |
+
+The price-indexer Query Layer owns the `signal` fields, decimal string
+formatting, bucket counts, coverage, warnings, and future informational
+field additions.
+
+**Errors:**
+
+- `400 invalid_request` — Query parameters are unsupported or the
+  `window`/`granularity` combination is invalid.
+- `404 asset_not_found` — The asset or requested price series is not
+  available for this signal.
+- `502 upstream_auth_failed` — Mother API could not authenticate to the
+  price-indexer Query Layer.
+- `502 price_indexer_error` — Price-indexer failed while handling a valid
+  request.
+- `502 upstream_invalid_response` — Price-indexer returned malformed JSON
+  or an unexpected error envelope.
+- `503 price_indexer_unavailable` — Price-indexer is unconfigured,
+  unreachable, or timed out.
+
+---
+
+### `GET /v1/assets/{slug}/signal/price-trend`
+
+Returns one strict price trend signal from the internal price-indexer
+Query Layer. Parameters, validation, ownership, and error behavior match
+`GET /v1/assets/{slug}/signal/price-stats`.
+
+**Response — `200 OK`:**
+
+```json
+{
+  "ok": true,
+  "type": "price_trend",
+  "signal": {
+    "slug": "ethereum",
+    "assetId": "00000000-0000-0000-0000-000000000001",
+    "quoteCurrency": "USD",
+    "window": "24h",
+    "granularity": "1h",
+    "from": "2026-06-01T11:00:00.000Z",
+    "to": "2026-06-02T11:00:00.000Z",
+    "expectedBucketCount": 24,
+    "sampleCount": 20,
+    "carryForwardBucketCount": 2,
+    "missingBucketCount": 2,
+    "coverageRatio": "0.833333",
+    "firstPrice": "3812.45",
+    "lastPrice": "3890.10",
+    "percentChange": "0.020367",
+    "direction": "up",
+    "slope": "0.000812",
+    "slopeUnit": "per_hour",
+    "rSquared": "0.640000",
+    "confidence": "medium",
+    "warnings": ["missing_buckets_detected"]
+  }
+}
+```
+
+Top-level fields:
+
+| Field    | Type   | Notes                                                       |
+| -------- | ------ | ----------------------------------------------------------- |
+| `ok`     | bool   | Always `true` on success.                                   |
+| `type`   | string | Always `"price_trend"`.                                     |
+| `signal` | object | Price-indexer trend object. Upstream fields and warnings are preserved. |
+
+The price-indexer Query Layer owns the `signal` fields, trend direction,
+confidence, warnings, and future informational field additions.
+
+---
+
 ### `GET /v1/resolve`
 
 Resolves broad Sentinel search queries against Mother API-owned global
@@ -485,11 +635,16 @@ Fields:
 
 | HTTP | `error.code`            | Trigger                                                                |
 | ---- | ----------------------- | ---------------------------------------------------------------------- |
+| 400  | `invalid_request`       | Price signal query parameters are unsupported or incompatible.         |
 | 400  | `invalid_limit`         | `limit` query parameter is not a positive integer.                     |
 | 400  | `missing_query`         | `q` query parameter is missing or empty after trimming.                |
 | 400  | `query_too_long`        | Trimmed `q` exceeds 128 characters.                                    |
-| 404  | `asset_not_found`       | `GET /v1/assets/{slug}` did not match any active asset.                |
+| 404  | `asset_not_found`       | Asset detail lookup failed, or price-indexer has no requested signal.  |
+| 502  | `upstream_auth_failed`  | Mother API could not authenticate to price-indexer.                    |
+| 502  | `price_indexer_error`   | Price-indexer failed while handling a valid signal request.            |
+| 502  | `upstream_invalid_response` | Price-indexer returned malformed or unexpected JSON.               |
 | 503  | `database_unavailable`  | `DATABASE_URL` is unset or Postgres is unreachable.                    |
+| 503  | `price_indexer_unavailable` | Price-indexer is unconfigured, unreachable, or timed out.          |
 
 `error.code` values listed above are stable. New codes may be added in
 future contract revisions. Clients must tolerate unknown codes by
@@ -502,7 +657,8 @@ falling back to the HTTP status.
 The following are explicitly **not** promised by this contract and must
 not be assumed to exist or behave consistently if encountered:
 
-- Public price routes (e.g., `/v1/prices/*`).
+- Public price routes outside the asset signal surface (e.g.,
+  `/v1/prices/*`).
 - Event, holder, or chain indexing endpoints.
 - Admin, explorer, account, or tracked-token routes.
 - API keys, bearer auth, billing, x402, or rate limiting on inbound
@@ -517,9 +673,10 @@ not be assumed to exist or behave consistently if encountered:
   internally for protocol intelligence; a public wrapper requires a
   separate accepted spec and a CONTRACTS.md revision before it becomes
   part of this surface.
-- Direct exposure of internal DIS, price-indexer Query Layer, or
-  read-model service shapes. Public responses are owned by this
-  contract, not by upstream services.
+- Direct exposure of internal DIS or read-model service shapes. Price
+  signal endpoints preserve price-indexer signal payload fields inside
+  Mother API envelopes; other public responses are owned by this contract,
+  not by upstream services.
 
 Adding any of the above to the public surface requires an accepted RFC
 or spec under [docs/](docs/) and a coordinated update to this file.
