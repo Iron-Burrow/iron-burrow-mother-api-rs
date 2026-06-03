@@ -45,8 +45,10 @@ pub fn create_app(state: AppState) -> Router {
 #[cfg(test)]
 mod tests {
     use std::{
+        io::ErrorKind,
         io::{Read, Write},
-        net::TcpListener,
+        net::{TcpListener, TcpStream},
+        time::{Duration, Instant},
     };
 
     use axum::{
@@ -63,6 +65,8 @@ mod tests {
         price_indexer::PriceIndexerClient,
         repositories::global_assets::{demo_assets, GlobalAsset, GlobalAssetRepository},
     };
+
+    const TEST_DIS_ACCEPT_TIMEOUT: Duration = Duration::from_secs(2);
 
     fn test_app() -> Router {
         create_app(AppState::with_asset_repository(
@@ -261,6 +265,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn prediction_winner_response_uses_contract_event_slug_not_dis_echo() {
+        let mut body = winner_prediction_body();
+        body["event_slug"] = serde_json::json!("wrong-upstream-echo");
+        let Some((dis_url, _request_handle)) = spawn_prediction_dis(vec![(StatusCode::OK, body)])
+        else {
+            return;
+        };
+        let app = test_app_with_dis(&dis_url);
+
+        let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["event_slug"], "fifa-world-cup-2026-winner");
+    }
+
+    #[tokio::test]
     async fn prediction_routes_report_missing_dis_client() {
         let (status, json) = app_json(test_app(), "/v1/predictions/fifa-world-cup/winner").await;
 
@@ -291,6 +311,61 @@ mod tests {
         assert_eq!(json["ok"], false);
         assert_eq!(json["error"]["code"], "unsupported_prediction_subject");
         assert_ne!(json["error"]["message"], "DIS-owned message.");
+    }
+
+    #[tokio::test]
+    async fn prediction_routes_reject_dis_ok_false_success_bodies() {
+        for (uri, body) in [
+            (
+                "/v1/predictions/fifa-world-cup/winner",
+                serde_json::json!({
+                    "ok": false,
+                    "event": "2026 FIFA World Cup Winner",
+                    "event_slug": "fifa-world-cup-2026-winner",
+                    "odds": [
+                        {
+                            "team": "France",
+                            "probability": "0.18",
+                            "price": "0.18",
+                            "currency": "USDC"
+                        }
+                    ],
+                    "source": "polymarket",
+                    "deterministic": true,
+                    "captured_at": "2026-06-03T18:20:00Z"
+                }),
+            ),
+            (
+                "/v1/predictions/fifa-world-cup/mexico",
+                serde_json::json!({
+                    "ok": false,
+                    "market": "Mexico to reach Round of 16",
+                    "country": {
+                        "slug": "mexico",
+                        "name": "Mexico"
+                    },
+                    "probability": "0.63",
+                    "price": "0.63",
+                    "currency": "USDC",
+                    "source": "polymarket",
+                    "deterministic": true,
+                    "captured_at": "2026-06-03T18:20:00Z"
+                }),
+            ),
+        ] {
+            let Some((dis_url, _request_handle)) =
+                spawn_prediction_dis(vec![(StatusCode::OK, body)])
+            else {
+                return;
+            };
+            let app = test_app_with_dis(&dis_url);
+
+            let (status, json) = app_json(app, uri).await;
+
+            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(json["ok"], false);
+            assert_eq!(json["error"]["code"], "prediction_resolver_unavailable");
+        }
     }
 
     #[tokio::test]
@@ -1556,12 +1631,15 @@ mod tests {
             Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
             Err(error) => panic!("failed to bind test DIS: {error}"),
         };
+        listener
+            .set_nonblocking(true)
+            .expect("test DIS listener should allow nonblocking mode");
         let url = format!("http://{}", listener.local_addr().unwrap());
         let handle = tokio::task::spawn_blocking(move || {
             let mut requests = Vec::new();
 
             for (status, body) in responses {
-                let (mut stream, _) = listener.accept().unwrap();
+                let mut stream = accept_prediction_connection(&listener);
                 requests.push(read_http_request(&mut stream));
 
                 let body = body.to_string();
@@ -1581,6 +1659,34 @@ mod tests {
         });
 
         Some((url, handle))
+    }
+
+    fn accept_prediction_connection(listener: &TcpListener) -> TcpStream {
+        let deadline = Instant::now() + TEST_DIS_ACCEPT_TIMEOUT;
+
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    stream
+                        .set_nonblocking(false)
+                        .expect("test DIS stream should allow blocking mode");
+                    stream
+                        .set_read_timeout(Some(TEST_DIS_ACCEPT_TIMEOUT))
+                        .expect("test DIS stream should allow read timeout");
+
+                    return stream;
+                }
+                Err(error)
+                    if error.kind() == ErrorKind::WouldBlock && Instant::now() < deadline =>
+                {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    panic!("timed out waiting for expected DIS test request");
+                }
+                Err(error) => panic!("failed to accept test DIS request: {error}"),
+            }
+        }
     }
 
     fn winner_prediction_body() -> Value {

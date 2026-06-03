@@ -109,14 +109,14 @@ async fn prediction_snapshot(
 fn winner_response(
     response: PolymarketSnapshotResponse,
 ) -> Result<WinnerPredictionResponse, ApiError> {
+    ensure_dis_success(response.ok)?;
+
     Ok(WinnerPredictionResponse {
         ok: true,
         event: response
             .event
             .ok_or_else(ApiError::prediction_resolver_unavailable)?,
-        event_slug: response
-            .event_slug
-            .ok_or_else(ApiError::prediction_resolver_unavailable)?,
+        event_slug: WINNER_EVENT_SLUG.to_string(),
         odds: response
             .odds
             .ok_or_else(ApiError::prediction_resolver_unavailable)?
@@ -132,6 +132,8 @@ fn winner_response(
 fn country_response(
     response: PolymarketSnapshotResponse,
 ) -> Result<CountryPredictionResponse, ApiError> {
+    ensure_dis_success(response.ok)?;
+
     Ok(CountryPredictionResponse {
         ok: true,
         market: response
@@ -154,6 +156,14 @@ fn country_response(
         deterministic: response.deterministic,
         captured_at: response.captured_at,
     })
+}
+
+fn ensure_dis_success(ok: bool) -> Result<(), ApiError> {
+    if ok {
+        Ok(())
+    } else {
+        Err(ApiError::prediction_resolver_unavailable())
+    }
 }
 
 fn prediction_odd(odd: PolymarketSnapshotOdd) -> PredictionOdd {
