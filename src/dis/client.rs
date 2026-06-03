@@ -212,6 +212,14 @@ fn map_reqwest_error(error: reqwest::Error) -> DisClientError {
 fn map_error_response(status: StatusCode, body: &[u8]) -> DisClientError {
     let envelope = match serde_json::from_slice::<DisErrorEnvelope>(body) {
         Ok(envelope) => envelope,
+        Err(_)
+            if matches!(
+                status,
+                StatusCode::SERVICE_UNAVAILABLE | StatusCode::GATEWAY_TIMEOUT
+            ) =>
+        {
+            return DisClientError::ResolverUnavailable;
+        }
         Err(_) => return DisClientError::MalformedResponse,
     };
 
@@ -372,9 +380,21 @@ mod tests {
     }
 
     #[test]
-    fn malformed_dis_error_body_maps_to_malformed_response() {
+    fn malformed_dis_availability_error_body_maps_to_resolver_unavailable() {
         assert_eq!(
             map_error_response(StatusCode::SERVICE_UNAVAILABLE, b"not-json"),
+            DisClientError::ResolverUnavailable
+        );
+        assert_eq!(
+            map_error_response(StatusCode::GATEWAY_TIMEOUT, b"not-json"),
+            DisClientError::ResolverUnavailable
+        );
+    }
+
+    #[test]
+    fn malformed_non_availability_error_body_maps_to_malformed_response() {
+        assert_eq!(
+            map_error_response(StatusCode::INTERNAL_SERVER_ERROR, b"not-json"),
             DisClientError::MalformedResponse
         );
     }
@@ -404,9 +424,9 @@ mod tests {
         let base_url = format!("http://{}", listener.local_addr().unwrap());
         let handle = thread::spawn(move || {
             let (_stream, _) = listener.accept().expect("test request should connect");
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(1000));
         });
-        let client = DisClient::new(&base_url, 10, 1).unwrap();
+        let client = DisClient::new(&base_url, 100, 1).unwrap();
 
         let error = client
             .get_polymarket_prediction_snapshot(winner_request())
