@@ -71,6 +71,7 @@ mod tests {
             database_pool: None,
             asset_repository: Some(GlobalAssetRepository::in_memory(demo_assets())),
             price_indexer_client: Some(price_indexer_client),
+            dis_client: None,
         })
     }
 
@@ -135,6 +136,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn prediction_routes_are_not_exposed_yet() {
+        let app = test_app();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/predictions/fifa-world-cup/winner")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
     async fn assets_returns_default_limited_list() {
         let json = assets_json("/v1/assets").await;
 
@@ -196,6 +214,7 @@ mod tests {
             database_pool: None,
             asset_repository: Some(repository),
             price_indexer_client: Some(price_indexer_client),
+            dis_client: None,
         });
 
         let response = app
@@ -352,6 +371,7 @@ mod tests {
             database_pool: None,
             asset_repository: Some(repository),
             price_indexer_client: Some(price_indexer_client),
+            dis_client: None,
         });
 
         let response = app

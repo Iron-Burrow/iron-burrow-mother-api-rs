@@ -2,6 +2,7 @@ mod app;
 mod assets;
 mod config;
 mod db;
+mod dis;
 mod error;
 mod price_indexer;
 mod repositories;

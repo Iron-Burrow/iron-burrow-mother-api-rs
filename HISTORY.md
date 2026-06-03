@@ -35,3 +35,7 @@ implementation, and documentation changes.
 - Kept the spec in `draft`; no public endpoint is implemented yet and
   `CONTRACTS.md` is intentionally unchanged until the spec is accepted and the
   routes are built.
+- Added the internal DIS prediction snapshot client slice: typed
+  Polymarket snapshot DTOs, DIS config/state wiring, bounded retry/timeout
+  behavior, and error classification without exposing public prediction
+  routes.
