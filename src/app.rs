@@ -260,6 +260,7 @@ mod tests {
         assert_eq!(winner_json["odds"][0]["team"], "France");
         assert!(winner_json["odds"][0]["probability"].is_string());
         assert!(winner_json["odds"][0]["price"].is_string());
+        assert_eq!(winner_json["odds"][0]["currency"], "USDC");
         assert_eq!(winner_json["source"], "polymarket");
         assert_eq!(winner_json["deterministic"], true);
         assert_eq!(winner_json["captured_at"], "2026-06-03T18:20:00Z");
@@ -273,6 +274,7 @@ mod tests {
         assert_eq!(country_json["country"]["name"], "Mexico");
         assert!(country_json["probability"].is_string());
         assert!(country_json["price"].is_string());
+        assert_eq!(country_json["currency"], "USDC");
         assert_eq!(country_json["source"], "polymarket");
         assert_eq!(country_json["deterministic"], true);
         assert_eq!(country_json["captured_at"], "2026-06-03T18:20:00Z");

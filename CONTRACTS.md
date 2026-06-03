@@ -639,7 +639,7 @@ curl http://localhost:3000/v1/predictions/fifa-world-cup/winner
 DIS is not configured or reachable, the
 `prediction_resolver_unavailable` example below is expected.
 
-**Response - `200 OK`:**
+**Response — `200 OK`:**
 
 ```json
 {
@@ -742,7 +742,7 @@ DIS is not configured or reachable, the
 | --------- | ------ | -------- | ----- |
 | `country` | string | Yes      | Case-insensitive country slug, for example `"mexico"`. |
 
-**Response - `200 OK`:**
+**Response — `200 OK`:**
 
 ```json
 {
