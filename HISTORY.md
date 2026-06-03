@@ -23,3 +23,15 @@ implementation, and documentation changes.
 - Hardened the demo path with clearer asset-detail contract examples,
   enrichment failure observability, partial-failure regression coverage, and a
   Maria UI smoke checklist.
+
+## 2026-06-03
+
+- Drafted `SPEC-004-dis-polymarket-prediction-routes.md`: DIS-backed Mother API
+  public/demo routes `GET /v1/predictions/fifa-world-cup/winner` and
+  `GET /v1/predictions/fifa-world-cup/{country}` for the World Cup 2026 demo.
+- Framed SPEC-004 as a sibling of SPEC-001: both are Mother API → DIS
+  integrations (Aave V3 realized yield vs. Polymarket World Cup predictions),
+  reusing the same DIS client foundation.
+- Kept the spec in `draft`; no public endpoint is implemented yet and
+  `CONTRACTS.md` is intentionally unchanged until the spec is accepted and the
+  routes are built.
