@@ -5,6 +5,7 @@ use crate::{
     routes::{
         assets::{get_asset, get_price_stats_signal, get_price_trend_signal, list_assets},
         health::health,
+        predictions::{get_world_cup_country_prediction, get_world_cup_winner_prediction},
         resolve::resolve,
         status::status,
     },
@@ -24,6 +25,14 @@ pub fn create_app(state: AppState) -> Router {
         .route(
             "/assets/{slug}/signal/price-trend",
             get(get_price_trend_signal),
+        )
+        .route(
+            "/predictions/fifa-world-cup/winner",
+            get(get_world_cup_winner_prediction),
+        )
+        .route(
+            "/predictions/fifa-world-cup/{country}",
+            get(get_world_cup_country_prediction),
         );
 
     Router::new()
@@ -36,8 +45,10 @@ pub fn create_app(state: AppState) -> Router {
 #[cfg(test)]
 mod tests {
     use std::{
+        io::ErrorKind,
         io::{Read, Write},
-        net::TcpListener,
+        net::{TcpListener, TcpStream},
+        time::{Duration, Instant},
     };
 
     use axum::{
@@ -50,9 +61,12 @@ mod tests {
     use super::*;
     use crate::{
         config::Config,
+        dis::DisClient,
         price_indexer::PriceIndexerClient,
         repositories::global_assets::{demo_assets, GlobalAsset, GlobalAssetRepository},
     };
+
+    const TEST_DIS_ACCEPT_TIMEOUT: Duration = Duration::from_secs(2);
 
     fn test_app() -> Router {
         create_app(AppState::with_asset_repository(
@@ -72,6 +86,19 @@ mod tests {
             asset_repository: Some(GlobalAssetRepository::in_memory(demo_assets())),
             price_indexer_client: Some(price_indexer_client),
             dis_client: None,
+        })
+    }
+
+    fn test_app_with_dis(dis_url: &str) -> Router {
+        let dis_client = DisClient::new(dis_url, 2000, 1).unwrap();
+
+        create_app(AppState {
+            config: Config::default(),
+            version: env!("CARGO_PKG_VERSION"),
+            database_pool: None,
+            asset_repository: Some(GlobalAssetRepository::in_memory(demo_assets())),
+            price_indexer_client: None,
+            dis_client: Some(dis_client),
         })
     }
 
@@ -136,20 +163,209 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prediction_routes_are_not_exposed_yet() {
-        let app = test_app();
+    async fn prediction_winner_route_calls_dis_and_sanitizes_response() {
+        let Some((dis_url, request_handle)) =
+            spawn_prediction_dis(vec![(StatusCode::OK, winner_prediction_body())])
+        else {
+            return;
+        };
+        let app = test_app_with_dis(&dis_url);
 
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/v1/predictions/fifa-world-cup/winner")
-                    .body(Body::empty())
-                    .unwrap(),
+        let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["event"], "2026 FIFA World Cup Winner");
+        assert_eq!(json["event_slug"], "fifa-world-cup-2026-winner");
+        assert_eq!(json["odds"][0]["team"], "France");
+        assert_eq!(json["odds"][0]["probability"], "0.180000000000000001");
+        assert_eq!(json["odds"][0]["price"], "0.18");
+        assert!(json["odds"][0]["probability"].is_string());
+        assert!(json["odds"][0]["price"].is_string());
+        assert!(json.get("provider_market").is_none());
+        assert!(json["odds"][0].get("provider_market").is_none());
+
+        let requests = request_handle.await.unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(
+            requests[0].starts_with("POST /internal/v1/prediction-markets/polymarket/snapshot ")
+        );
+        assert_eq!(
+            request_body_json(&requests[0]),
+            serde_json::json!({ "event_slug": "fifa-world-cup-2026-winner" })
+        );
+    }
+
+    #[tokio::test]
+    async fn prediction_country_route_calls_dis_with_normalized_country() {
+        let Some((dis_url, request_handle)) = spawn_prediction_dis(vec![
+            (StatusCode::OK, country_prediction_body("mexico")),
+            (StatusCode::OK, country_prediction_body("mexico")),
+            (StatusCode::OK, country_prediction_body("mexico")),
+        ]) else {
+            return;
+        };
+        let app = test_app_with_dis(&dis_url);
+
+        for country in ["Mexico", "mexico", "MEXICO"] {
+            let (status, json) = app_json(
+                app.clone(),
+                &format!("/v1/predictions/fifa-world-cup/{country}"),
             )
-            .await
-            .unwrap();
+            .await;
 
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(json["ok"], true);
+            assert_eq!(json["market"], "Mexico to reach Round of 16");
+            assert_eq!(json["country"]["slug"], "mexico");
+            assert_eq!(json["probability"], "0.630000000000000001");
+            assert_eq!(json["price"], "0.63");
+            assert!(json["probability"].is_string());
+            assert!(json["price"].is_string());
+            assert!(json.get("provider_market").is_none());
+        }
+
+        let requests = request_handle.await.unwrap();
+        assert_eq!(requests.len(), 3);
+        for request in requests {
+            assert_eq!(
+                request_body_json(&request),
+                serde_json::json!({
+                    "event_slug": "fifa-world-cup-2026-country-probability",
+                    "country": "mexico"
+                })
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn prediction_winner_ignores_unknown_query_params() {
+        let Some((dis_url, request_handle)) =
+            spawn_prediction_dis(vec![(StatusCode::OK, winner_prediction_body())])
+        else {
+            return;
+        };
+        let app = test_app_with_dis(&dis_url);
+
+        let (status, json) = app_json(
+            app,
+            "/v1/predictions/fifa-world-cup/winner?ignored=true&anything=else",
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["event_slug"], "fifa-world-cup-2026-winner");
+
+        let requests = request_handle.await.unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            request_body_json(&requests[0]),
+            serde_json::json!({ "event_slug": "fifa-world-cup-2026-winner" })
+        );
+    }
+
+    #[tokio::test]
+    async fn prediction_winner_response_uses_contract_event_slug_not_dis_echo() {
+        let mut body = winner_prediction_body();
+        body["event_slug"] = serde_json::json!("wrong-upstream-echo");
+        let Some((dis_url, _request_handle)) = spawn_prediction_dis(vec![(StatusCode::OK, body)])
+        else {
+            return;
+        };
+        let app = test_app_with_dis(&dis_url);
+
+        let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["event_slug"], "fifa-world-cup-2026-winner");
+    }
+
+    #[tokio::test]
+    async fn prediction_routes_report_missing_dis_client() {
+        let (status, json) = app_json(test_app(), "/v1/predictions/fifa-world-cup/winner").await;
+
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["error"]["code"], "prediction_resolver_unavailable");
+    }
+
+    #[tokio::test]
+    async fn prediction_routes_map_unsupported_subject_from_dis() {
+        let Some((dis_url, _request_handle)) = spawn_prediction_dis(vec![(
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({
+                "error": {
+                    "code": "unsupported_prediction_subject",
+                    "message": "DIS-owned message.",
+                    "details": { "provider_market": { "hidden": true } }
+                }
+            }),
+        )]) else {
+            return;
+        };
+        let app = test_app_with_dis(&dis_url);
+
+        let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/atlantis").await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["error"]["code"], "unsupported_prediction_subject");
+        assert_ne!(json["error"]["message"], "DIS-owned message.");
+    }
+
+    #[tokio::test]
+    async fn prediction_routes_reject_dis_ok_false_success_bodies() {
+        for (uri, body) in [
+            (
+                "/v1/predictions/fifa-world-cup/winner",
+                serde_json::json!({
+                    "ok": false,
+                    "event": "2026 FIFA World Cup Winner",
+                    "event_slug": "fifa-world-cup-2026-winner",
+                    "odds": [
+                        {
+                            "team": "France",
+                            "probability": "0.18",
+                            "price": "0.18",
+                            "currency": "USDC"
+                        }
+                    ],
+                    "source": "polymarket",
+                    "deterministic": true,
+                    "captured_at": "2026-06-03T18:20:00Z"
+                }),
+            ),
+            (
+                "/v1/predictions/fifa-world-cup/mexico",
+                serde_json::json!({
+                    "ok": false,
+                    "market": "Mexico to reach Round of 16",
+                    "country": {
+                        "slug": "mexico",
+                        "name": "Mexico"
+                    },
+                    "probability": "0.63",
+                    "price": "0.63",
+                    "currency": "USDC",
+                    "source": "polymarket",
+                    "deterministic": true,
+                    "captured_at": "2026-06-03T18:20:00Z"
+                }),
+            ),
+        ] {
+            let Some((dis_url, _request_handle)) =
+                spawn_prediction_dis(vec![(StatusCode::OK, body)])
+            else {
+                return;
+            };
+            let app = test_app_with_dis(&dis_url);
+
+            let (status, json) = app_json(app, uri).await;
+
+            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(json["ok"], false);
+            assert_eq!(json["error"]["code"], "prediction_resolver_unavailable");
+        }
     }
 
     #[tokio::test]
@@ -1405,6 +1621,128 @@ mod tests {
         });
 
         Some((url, handle))
+    }
+
+    fn spawn_prediction_dis(
+        responses: Vec<(StatusCode, Value)>,
+    ) -> Option<(String, tokio::task::JoinHandle<Vec<String>>)> {
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
+            Err(error) => panic!("failed to bind test DIS: {error}"),
+        };
+        listener
+            .set_nonblocking(true)
+            .expect("test DIS listener should allow nonblocking mode");
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = tokio::task::spawn_blocking(move || {
+            let mut requests = Vec::new();
+
+            for (status, body) in responses {
+                let mut stream = accept_prediction_connection(&listener);
+                requests.push(read_http_request(&mut stream));
+
+                let body = body.to_string();
+                let reason = status.canonical_reason().unwrap_or("Unknown");
+                let response = format!(
+                    "HTTP/1.1 {} {}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    status.as_u16(),
+                    reason,
+                    body.len(),
+                    body
+                );
+
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+
+            requests
+        });
+
+        Some((url, handle))
+    }
+
+    fn accept_prediction_connection(listener: &TcpListener) -> TcpStream {
+        let deadline = Instant::now() + TEST_DIS_ACCEPT_TIMEOUT;
+
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    stream
+                        .set_nonblocking(false)
+                        .expect("test DIS stream should allow blocking mode");
+                    stream
+                        .set_read_timeout(Some(TEST_DIS_ACCEPT_TIMEOUT))
+                        .expect("test DIS stream should allow read timeout");
+
+                    return stream;
+                }
+                Err(error)
+                    if error.kind() == ErrorKind::WouldBlock && Instant::now() < deadline =>
+                {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    panic!("timed out waiting for expected DIS test request");
+                }
+                Err(error) => panic!("failed to accept test DIS request: {error}"),
+            }
+        }
+    }
+
+    fn winner_prediction_body() -> Value {
+        serde_json::json!({
+            "ok": true,
+            "event": "2026 FIFA World Cup Winner",
+            "event_slug": "fifa-world-cup-2026-winner",
+            "odds": [
+                {
+                    "team": "France",
+                    "probability": "0.180000000000000001",
+                    "price": "0.18",
+                    "currency": "USDC",
+                    "provider_market": {
+                        "id": "hidden-winner-market"
+                    }
+                }
+            ],
+            "source": "polymarket",
+            "deterministic": true,
+            "captured_at": "2026-06-03T18:20:00Z",
+            "provider_market": {
+                "id": "hidden-top-level-market"
+            }
+        })
+    }
+
+    fn country_prediction_body(country_slug: &str) -> Value {
+        serde_json::json!({
+            "ok": true,
+            "market": "Mexico to reach Round of 16",
+            "country": {
+                "slug": country_slug,
+                "name": "Mexico",
+                "provider_market": {
+                    "id": "hidden-country-market"
+                }
+            },
+            "probability": "0.630000000000000001",
+            "price": "0.63",
+            "currency": "USDC",
+            "source": "polymarket",
+            "deterministic": true,
+            "captured_at": "2026-06-03T18:20:00Z",
+            "provider_market": {
+                "id": "hidden-country-top-level-market"
+            }
+        })
+    }
+
+    fn request_body_json(request: &str) -> Value {
+        let (_, body) = request
+            .split_once("\r\n\r\n")
+            .expect("test request should include a body separator");
+
+        serde_json::from_str(body).unwrap()
     }
 
     fn assert_no_legacy_signal_params(request: &str) {

@@ -182,6 +182,32 @@ impl std::error::Error for ConfigError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvVarSnapshot {
+        key: &'static str,
+        value: Option<String>,
+    }
+
+    impl EnvVarSnapshot {
+        fn capture(key: &'static str) -> Self {
+            Self {
+                key,
+                value: std::env::var(key).ok(),
+            }
+        }
+    }
+
+    impl Drop for EnvVarSnapshot {
+        fn drop(&mut self) {
+            match &self.value {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     #[test]
     fn default_config_matches_public_contract() {
@@ -265,6 +291,10 @@ mod tests {
 
     #[test]
     fn from_env_rejects_invalid_dis_timeout() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let _timeout_snapshot = EnvVarSnapshot::capture("DIS_REQUEST_TIMEOUT_MS");
+        let _retry_snapshot = EnvVarSnapshot::capture("DIS_RETRY_MAX_ATTEMPTS");
+        std::env::remove_var("DIS_RETRY_MAX_ATTEMPTS");
         std::env::set_var("DIS_REQUEST_TIMEOUT_MS", "eventually");
 
         assert_eq!(
@@ -273,20 +303,20 @@ mod tests {
                 "eventually".to_string()
             ))
         );
-
-        std::env::remove_var("DIS_REQUEST_TIMEOUT_MS");
     }
 
     #[test]
     fn from_env_rejects_zero_dis_retry_max_attempts() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let _timeout_snapshot = EnvVarSnapshot::capture("DIS_REQUEST_TIMEOUT_MS");
+        let _retry_snapshot = EnvVarSnapshot::capture("DIS_RETRY_MAX_ATTEMPTS");
+        std::env::remove_var("DIS_REQUEST_TIMEOUT_MS");
         std::env::set_var("DIS_RETRY_MAX_ATTEMPTS", "0");
 
         assert_eq!(
             Config::from_env(),
             Err(ConfigError::InvalidDisRetryMaxAttempts("0".to_string()))
         );
-
-        std::env::remove_var("DIS_RETRY_MAX_ATTEMPTS");
     }
 
     #[test]

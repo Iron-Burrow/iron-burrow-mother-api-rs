@@ -92,6 +92,38 @@ impl ApiError {
             message: "Price signals are temporarily unavailable.",
         }
     }
+
+    pub fn unsupported_prediction_subject() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "unsupported_prediction_subject",
+            message: "Prediction subject is not supported for this event.",
+        }
+    }
+
+    pub fn prediction_provider_unavailable() -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: "prediction_provider_unavailable",
+            message: "Prediction provider is temporarily unavailable.",
+        }
+    }
+
+    pub fn prediction_provider_timeout() -> Self {
+        Self {
+            status: StatusCode::GATEWAY_TIMEOUT,
+            code: "prediction_provider_timeout",
+            message: "Prediction provider timed out.",
+        }
+    }
+
+    pub fn prediction_resolver_unavailable() -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: "prediction_resolver_unavailable",
+            message: "Prediction resolver is temporarily unavailable.",
+        }
+    }
 }
 
 impl IntoResponse for ApiError {
