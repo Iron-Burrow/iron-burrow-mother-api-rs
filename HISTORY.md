@@ -50,3 +50,6 @@ implementation, and documentation changes.
 - Hardened SPEC-004 public error mapping with explicit provider
   unavailable/timeout coverage, sanitized DIS failure envelopes, missing-DIS
   graceful degradation, and the generic `internal_error` response constructor.
+- Finalized the SPEC-004 judge-demo contract path with live Polymarket-implied
+  wording, exact public error examples, local/dev curl smoke commands, and
+  implemented-status spec language.

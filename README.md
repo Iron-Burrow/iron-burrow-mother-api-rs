@@ -181,8 +181,9 @@ instead of forcing the frontend into a blind 404.
 
 `GET /v1/predictions/fifa-world-cup/winner`
 
-Returns a DIS-backed World Cup 2026 winner prediction snapshot. Mother API does
-not call Polymarket directly and does not expose DIS-internal provider fields.
+Returns a live Polymarket-implied, DIS-backed World Cup 2026 winner prediction
+snapshot. Mother API does not call Polymarket directly and does not expose
+DIS-internal provider fields.
 
 ```json
 {
@@ -205,8 +206,9 @@ not call Polymarket directly and does not expose DIS-internal provider fields.
 
 `GET /v1/predictions/fifa-world-cup/{country}`
 
-Returns a DIS-backed World Cup 2026 country prediction snapshot. The country
-path segment is trimmed and lowercased before being sent to DIS.
+Returns a live Polymarket-implied, DIS-backed World Cup 2026 country prediction
+snapshot. The country path segment is trimmed and lowercased before being sent
+to DIS.
 
 ```json
 {

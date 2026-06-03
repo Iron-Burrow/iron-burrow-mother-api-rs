@@ -623,11 +623,21 @@ confidence, warnings, and future informational field additions.
 
 ### `GET /v1/predictions/fifa-world-cup/winner`
 
-Returns a DIS-backed, public/demo-facing snapshot of the 2026 FIFA World Cup
-winner prediction market. Mother API calls DIS for every request and does not
-call Polymarket directly.
+Returns a live Polymarket-implied, DIS-backed, public/demo-facing snapshot of
+the 2026 FIFA World Cup winner prediction market. Mother API calls DIS for
+every request and does not call Polymarket directly.
 
 Unknown query parameters are ignored.
+
+Local/dev smoke:
+
+```sh
+curl http://localhost:3000/v1/predictions/fifa-world-cup/winner
+```
+
+`DIS_BASE_URL` must point at a running DIS instance for a success response. If
+DIS is not configured or reachable, the
+`prediction_resolver_unavailable` example below is expected.
 
 **Response - `200 OK`:**
 
@@ -675,13 +685,56 @@ Fields:
 - `503 prediction_resolver_unavailable` - DIS is unconfigured, unreachable,
   or returned an unexpected resolver response.
 
+Examples:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "prediction_provider_unavailable",
+    "message": "Prediction provider is temporarily unavailable."
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "prediction_provider_timeout",
+    "message": "Prediction provider timed out."
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "prediction_resolver_unavailable",
+    "message": "Prediction resolver is temporarily unavailable."
+  }
+}
+```
+
 ---
 
 ### `GET /v1/predictions/fifa-world-cup/{country}`
 
-Returns a DIS-backed, public/demo-facing prediction snapshot for one configured
-World Cup country market. Mother API trims and lowercases `{country}` before
-calling DIS; DIS is the source of truth for supported countries.
+Returns a live Polymarket-implied, DIS-backed, public/demo-facing prediction
+snapshot for one configured World Cup country market. Mother API calls DIS for
+every request, trims and lowercases `{country}` before calling DIS, and treats
+DIS as the source of truth for supported countries.
+
+Local/dev smoke:
+
+```sh
+curl http://localhost:3000/v1/predictions/fifa-world-cup/mexico
+```
+
+`DIS_BASE_URL` must point at a running DIS instance for a success response. If
+DIS is not configured or reachable, the
+`prediction_resolver_unavailable` example below is expected.
 
 **Path parameters:**
 
@@ -737,6 +790,48 @@ supported-country validation, and provider-specific failure details.
   timed out.
 - `503 prediction_resolver_unavailable` - DIS is unconfigured, unreachable,
   or returned an unexpected resolver response.
+
+Examples:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "unsupported_prediction_subject",
+    "message": "Prediction subject is not supported for this event."
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "prediction_provider_unavailable",
+    "message": "Prediction provider is temporarily unavailable."
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "prediction_provider_timeout",
+    "message": "Prediction provider timed out."
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "prediction_resolver_unavailable",
+    "message": "Prediction resolver is temporarily unavailable."
+  }
+}
+```
 
 ---
 
