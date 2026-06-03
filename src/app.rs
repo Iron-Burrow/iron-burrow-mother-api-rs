@@ -239,6 +239,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn prediction_demo_smoke_routes_return_contract_success_shapes() {
+        let Some((dis_url, request_handle)) = spawn_prediction_dis(vec![
+            (StatusCode::OK, winner_prediction_body()),
+            (StatusCode::OK, country_prediction_body("mexico")),
+        ]) else {
+            return;
+        };
+        let app = test_app_with_dis(&dis_url);
+
+        let (winner_status, winner_json) =
+            app_json(app.clone(), "/v1/predictions/fifa-world-cup/winner").await;
+        let (country_status, country_json) =
+            app_json(app, "/v1/predictions/fifa-world-cup/mexico").await;
+
+        assert_eq!(winner_status, StatusCode::OK);
+        assert_eq!(winner_json["ok"], true);
+        assert_eq!(winner_json["event"], "2026 FIFA World Cup Winner");
+        assert_eq!(winner_json["event_slug"], "fifa-world-cup-2026-winner");
+        assert_eq!(winner_json["odds"][0]["team"], "France");
+        assert!(winner_json["odds"][0]["probability"].is_string());
+        assert!(winner_json["odds"][0]["price"].is_string());
+        assert_eq!(winner_json["odds"][0]["currency"], "USDC");
+        assert_eq!(winner_json["source"], "polymarket");
+        assert_eq!(winner_json["deterministic"], true);
+        assert_eq!(winner_json["captured_at"], "2026-06-03T18:20:00Z");
+        assert!(winner_json.get("provider_market").is_none());
+        assert!(winner_json["odds"][0].get("provider_market").is_none());
+
+        assert_eq!(country_status, StatusCode::OK);
+        assert_eq!(country_json["ok"], true);
+        assert_eq!(country_json["market"], "Mexico to reach Round of 16");
+        assert_eq!(country_json["country"]["slug"], "mexico");
+        assert_eq!(country_json["country"]["name"], "Mexico");
+        assert!(country_json["probability"].is_string());
+        assert!(country_json["price"].is_string());
+        assert_eq!(country_json["currency"], "USDC");
+        assert_eq!(country_json["source"], "polymarket");
+        assert_eq!(country_json["deterministic"], true);
+        assert_eq!(country_json["captured_at"], "2026-06-03T18:20:00Z");
+        assert!(country_json.get("provider_market").is_none());
+        assert!(country_json["country"].get("provider_market").is_none());
+
+        let requests = request_handle.await.unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            request_body_json(&requests[0]),
+            serde_json::json!({ "event_slug": "fifa-world-cup-2026-winner" })
+        );
+        assert_eq!(
+            request_body_json(&requests[1]),
+            serde_json::json!({
+                "event_slug": "fifa-world-cup-2026-country-probability",
+                "country": "mexico"
+            })
+        );
+    }
+
+    #[tokio::test]
     async fn prediction_winner_ignores_unknown_query_params() {
         let Some((dis_url, request_handle)) =
             spawn_prediction_dis(vec![(StatusCode::OK, winner_prediction_body())])

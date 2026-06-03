@@ -19,7 +19,9 @@ any prediction-market storage.
 
 ## 1. Status
 
-Accepted. Not yet implemented.
+Accepted and implemented. The binding public route contract now lives in
+[CONTRACTS.md](../../CONTRACTS.md); this spec records the implementation
+intent and ownership boundaries behind that contract.
 
 This spec is a sibling of [SPEC-001](SPEC-001-dis-aave-v3-realized-yield.md).
 Both describe Mother API → DIS integrations for different features:
@@ -32,14 +34,10 @@ SPEC-004 reuses the DIS client foundation introduced by SPEC-001 (the
 graceful-degradation pattern). It is otherwise an independent integration and
 does not extend or modify the Aave work.
 
-Acceptance note: SPEC-004 is accepted but not implemented. Mother API owns only
-the public/demo route wrapper shape. DIS owns Polymarket access, provider
-parsing, provider normalization, and probability interpretation. Mother API
-must never call Polymarket directly.
-
-`CONTRACTS.md` is intentionally **not** updated by this acceptance gate. Once
-the routes are implemented, the public routes are added to `CONTRACTS.md` in
-that same change.
+Implementation note: Mother API owns only the public/demo route wrapper shape.
+DIS owns Polymarket access, provider parsing, provider normalization, and
+probability interpretation. Mother API must never call Polymarket directly.
+The implemented public route promises are documented in `CONTRACTS.md`.
 
 ## 2. Summary
 
@@ -240,5 +238,4 @@ prices, or retry aggressively.
 - The DIS client handle is added to `AppState` (`src/state.rs`), mirroring how
   `price_indexer_client` is held today, so handlers can reach DIS.
 
-These routes become part of `CONTRACTS.md` only when the code is implemented,
-in that same change.
+These routes are implemented and covered by `CONTRACTS.md`.
