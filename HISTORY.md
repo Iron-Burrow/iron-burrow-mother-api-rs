@@ -47,3 +47,6 @@ implementation, and documentation changes.
   decimal-string preservation, missing DIS config, and unsupported subjects.
 - Updated `CONTRACTS.md` and `README.md` with the new prediction endpoint
   shapes and public error codes.
+- Hardened SPEC-004 public error mapping with explicit provider
+  unavailable/timeout coverage, sanitized DIS failure envelopes, missing-DIS
+  graceful degradation, and the generic `internal_error` response constructor.
