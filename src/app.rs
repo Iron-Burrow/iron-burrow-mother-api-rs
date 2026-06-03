@@ -285,8 +285,7 @@ mod tests {
         let (status, json) = app_json(test_app(), "/v1/predictions/fifa-world-cup/winner").await;
 
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(json["ok"], false);
-        assert_eq!(json["error"]["code"], "prediction_resolver_unavailable");
+        assert_public_error(&json, "prediction_resolver_unavailable");
     }
 
     #[tokio::test]
@@ -308,9 +307,72 @@ mod tests {
         let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/atlantis").await;
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert_eq!(json["ok"], false);
-        assert_eq!(json["error"]["code"], "unsupported_prediction_subject");
-        assert_ne!(json["error"]["message"], "DIS-owned message.");
+        assert_public_error(&json, "unsupported_prediction_subject");
+    }
+
+    #[tokio::test]
+    async fn prediction_routes_map_provider_failures_from_dis() {
+        for (dis_status, dis_code, expected_status, expected_code) in [
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "prediction_provider_unavailable",
+                StatusCode::SERVICE_UNAVAILABLE,
+                "prediction_provider_unavailable",
+            ),
+            (
+                StatusCode::GATEWAY_TIMEOUT,
+                "prediction_provider_timeout",
+                StatusCode::GATEWAY_TIMEOUT,
+                "prediction_provider_timeout",
+            ),
+        ] {
+            let Some((dis_url, _request_handle)) = spawn_prediction_dis(vec![(
+                dis_status,
+                serde_json::json!({
+                    "error": {
+                        "code": dis_code,
+                        "message": "DIS-owned message.",
+                        "details": {
+                            "provider_market": { "hidden": true },
+                            "provider_body": "must not leak"
+                        }
+                    }
+                }),
+            )]) else {
+                return;
+            };
+            let app = test_app_with_dis(&dis_url);
+
+            let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
+
+            assert_eq!(status, expected_status);
+            assert_public_error(&json, expected_code);
+        }
+    }
+
+    #[tokio::test]
+    async fn prediction_routes_map_dis_internal_error_to_resolver_unavailable() {
+        let Some((dis_url, _request_handle)) = spawn_prediction_dis(vec![(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({
+                "error": {
+                    "code": "internal_error",
+                    "message": "DIS-owned message.",
+                    "details": {
+                        "provider_market": { "hidden": true },
+                        "transport": "internal stack trace"
+                    }
+                }
+            }),
+        )]) else {
+            return;
+        };
+        let app = test_app_with_dis(&dis_url);
+
+        let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
+
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_public_error(&json, "prediction_resolver_unavailable");
     }
 
     #[tokio::test]
@@ -363,8 +425,7 @@ mod tests {
             let (status, json) = app_json(app, uri).await;
 
             assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-            assert_eq!(json["ok"], false);
-            assert_eq!(json["error"]["code"], "prediction_resolver_unavailable");
+            assert_public_error(&json, "prediction_resolver_unavailable");
         }
     }
 
@@ -1412,6 +1473,42 @@ mod tests {
         let json = serde_json::from_slice(&body).unwrap();
 
         (status, json)
+    }
+
+    fn assert_public_error(json: &Value, expected_code: &str) {
+        let top_level = json
+            .as_object()
+            .expect("public error response should be an object");
+        assert_eq!(top_level.len(), 2);
+        assert!(top_level.contains_key("ok"));
+        assert!(top_level.contains_key("error"));
+
+        let error = json["error"]
+            .as_object()
+            .expect("public error body should be an object");
+        assert_eq!(error.len(), 2);
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["error"]["code"], expected_code);
+        assert!(json["error"]["message"]
+            .as_str()
+            .is_some_and(|message| !message.is_empty()));
+
+        let serialized = json.to_string();
+        for forbidden in [
+            "DIS-owned message",
+            "details",
+            "provider_market",
+            "provider_body",
+            "hidden",
+            "internal stack trace",
+            "reqwest",
+            "transport error",
+        ] {
+            assert!(
+                !serialized.contains(forbidden),
+                "public error leaked forbidden content: {forbidden}"
+            );
+        }
     }
 
     fn spawn_price_indexer() -> Option<(String, tokio::task::JoinHandle<String>)> {

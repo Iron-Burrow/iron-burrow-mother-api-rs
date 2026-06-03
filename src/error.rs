@@ -93,6 +93,14 @@ impl ApiError {
         }
     }
 
+    pub fn internal_error() -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            code: "internal_error",
+            message: "Mother API encountered an unexpected error.",
+        }
+    }
+
     pub fn unsupported_prediction_subject() -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
@@ -152,4 +160,46 @@ struct ErrorResponse {
 struct ErrorBody {
     code: &'static str,
     message: &'static str,
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::Value;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn internal_error_uses_public_error_envelope() {
+        let response = ApiError::internal_error().into_response();
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["error"]["code"], "internal_error");
+        assert_eq!(
+            json["error"]["message"],
+            "Mother API encountered an unexpected error."
+        );
+        assert_error_shape(&json);
+    }
+
+    fn assert_error_shape(json: &Value) {
+        let top_level = json
+            .as_object()
+            .expect("error response should be an object");
+        assert_eq!(top_level.len(), 2);
+        assert!(top_level.contains_key("ok"));
+        assert!(top_level.contains_key("error"));
+
+        let error = json["error"]
+            .as_object()
+            .expect("error body should be an object");
+        assert_eq!(error.len(), 2);
+        assert!(error.contains_key("code"));
+        assert!(error.contains_key("message"));
+    }
 }
