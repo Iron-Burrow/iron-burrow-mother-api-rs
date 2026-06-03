@@ -182,6 +182,9 @@ impl std::error::Error for ConfigError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn default_config_matches_public_contract() {
@@ -265,6 +268,8 @@ mod tests {
 
     #[test]
     fn from_env_rejects_invalid_dis_timeout() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("DIS_RETRY_MAX_ATTEMPTS");
         std::env::set_var("DIS_REQUEST_TIMEOUT_MS", "eventually");
 
         assert_eq!(
@@ -279,6 +284,8 @@ mod tests {
 
     #[test]
     fn from_env_rejects_zero_dis_retry_max_attempts() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("DIS_REQUEST_TIMEOUT_MS");
         std::env::set_var("DIS_RETRY_MAX_ATTEMPTS", "0");
 
         assert_eq!(

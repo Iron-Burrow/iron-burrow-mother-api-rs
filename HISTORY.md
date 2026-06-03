@@ -39,3 +39,11 @@ implementation, and documentation changes.
   Polymarket snapshot DTOs, DIS config/state wiring, bounded retry/timeout
   behavior, and error classification without exposing public prediction
   routes.
+- Implemented the SPEC-004 public/demo prediction routes:
+  `GET /v1/predictions/fifa-world-cup/winner` and
+  `GET /v1/predictions/fifa-world-cup/{country}`.
+- Added app-level fake-DIS route tests for winner success, country
+  normalization, unknown query parameter handling, sanitized public responses,
+  decimal-string preservation, missing DIS config, and unsupported subjects.
+- Updated `CONTRACTS.md` and `README.md` with the new prediction endpoint
+  shapes and public error codes.

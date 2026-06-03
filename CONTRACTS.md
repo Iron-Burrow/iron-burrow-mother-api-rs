@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-06-02
+last_reviewed: 2026-06-03
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -47,6 +47,8 @@ same change.
 | `GET`  | `/v1/assets/{slug}`                     | None | Returns one active asset, its chain maps, and a price block. |
 | `GET`  | `/v1/assets/{slug}/signal/price-stats`  | None | Returns a strict price statistics signal for one asset.      |
 | `GET`  | `/v1/assets/{slug}/signal/price-trend`  | None | Returns a strict price trend signal for one asset.           |
+| `GET`  | `/v1/predictions/fifa-world-cup/winner` | None | Returns a DIS-backed World Cup winner prediction snapshot.   |
+| `GET`  | `/v1/predictions/fifa-world-cup/{country}` | None | Returns a DIS-backed country prediction snapshot.         |
 | `GET`  | `/v1/resolve`                           | None | Resolves a Sentinel search query against global assets.     |
 
 Mother API does not currently authenticate callers. API keys, rate
@@ -619,6 +621,125 @@ confidence, warnings, and future informational field additions.
 
 ---
 
+### `GET /v1/predictions/fifa-world-cup/winner`
+
+Returns a DIS-backed, public/demo-facing snapshot of the 2026 FIFA World Cup
+winner prediction market. Mother API calls DIS for every request and does not
+call Polymarket directly.
+
+Unknown query parameters are ignored.
+
+**Response - `200 OK`:**
+
+```json
+{
+  "ok": true,
+  "event": "2026 FIFA World Cup Winner",
+  "event_slug": "fifa-world-cup-2026-winner",
+  "odds": [
+    {
+      "team": "France",
+      "probability": "0.18",
+      "price": "0.18",
+      "currency": "USDC"
+    }
+  ],
+  "source": "polymarket",
+  "deterministic": true,
+  "captured_at": "2026-06-03T18:20:00Z"
+}
+```
+
+Fields:
+
+| Field            | Type   | Notes |
+| ---------------- | ------ | ----- |
+| `ok`             | bool   | Always `true` on success. |
+| `event`          | string | Event display name from DIS. |
+| `event_slug`     | string | Always `"fifa-world-cup-2026-winner"` for this route. |
+| `odds`           | array  | Prediction odds entries. May be empty. |
+| `odds[].team`    | string | Team display name. |
+| `odds[].probability` | string | Decimal string. Clients must not parse as float. |
+| `odds[].price`   | string | Decimal string. Clients must not parse as float. |
+| `odds[].currency`| string | Quote currency, currently `"USDC"`. |
+| `source`         | string | Prediction source label, currently `"polymarket"`. |
+| `deterministic`  | bool   | DIS determinism metadata. |
+| `captured_at`    | string | ISO-8601 UTC snapshot timestamp. |
+
+**Errors:**
+
+- `503 prediction_provider_unavailable` - DIS reports the prediction provider
+  is unavailable or failed.
+- `504 prediction_provider_timeout` - DIS reports the prediction provider
+  timed out.
+- `503 prediction_resolver_unavailable` - DIS is unconfigured, unreachable,
+  or returned an unexpected resolver response.
+
+---
+
+### `GET /v1/predictions/fifa-world-cup/{country}`
+
+Returns a DIS-backed, public/demo-facing prediction snapshot for one configured
+World Cup country market. Mother API trims and lowercases `{country}` before
+calling DIS; DIS is the source of truth for supported countries.
+
+**Path parameters:**
+
+| Name      | Type   | Required | Notes |
+| --------- | ------ | -------- | ----- |
+| `country` | string | Yes      | Case-insensitive country slug, for example `"mexico"`. |
+
+**Response - `200 OK`:**
+
+```json
+{
+  "ok": true,
+  "market": "Mexico to reach Round of 16",
+  "country": {
+    "slug": "mexico",
+    "name": "Mexico"
+  },
+  "probability": "0.63",
+  "price": "0.63",
+  "currency": "USDC",
+  "source": "polymarket",
+  "deterministic": true,
+  "captured_at": "2026-06-03T18:20:00Z"
+}
+```
+
+Fields:
+
+| Field              | Type   | Notes |
+| ------------------ | ------ | ----- |
+| `ok`               | bool   | Always `true` on success. |
+| `market`           | string | Market display name from DIS. |
+| `country.slug`     | string | Normalized country slug. |
+| `country.name`     | string | Country display name. |
+| `probability`      | string | Decimal string. Clients must not parse as float. |
+| `price`            | string | Decimal string. Clients must not parse as float. |
+| `currency`         | string | Quote currency, currently `"USDC"`. |
+| `source`           | string | Prediction source label, currently `"polymarket"`. |
+| `deterministic`    | bool   | DIS determinism metadata. |
+| `captured_at`      | string | ISO-8601 UTC snapshot timestamp. |
+
+Mother API does not expose DIS-internal fields such as `provider_market`.
+DIS owns Polymarket access, provider parsing, probability normalization,
+supported-country validation, and provider-specific failure details.
+
+**Errors:**
+
+- `400 unsupported_prediction_subject` - The country is empty or not supported
+  for this event.
+- `503 prediction_provider_unavailable` - DIS reports the prediction provider
+  is unavailable or failed.
+- `504 prediction_provider_timeout` - DIS reports the prediction provider
+  timed out.
+- `503 prediction_resolver_unavailable` - DIS is unconfigured, unreachable,
+  or returned an unexpected resolver response.
+
+---
+
 ### `GET /v1/resolve`
 
 Resolves broad Sentinel search queries against Mother API-owned global
@@ -833,6 +954,10 @@ Fields:
 | 502  | `upstream_invalid_response` | Price-indexer returned malformed or unexpected JSON.               |
 | 503  | `database_unavailable`  | `DATABASE_URL` is unset or Postgres is unreachable.                    |
 | 503  | `price_indexer_unavailable` | Price-indexer is unconfigured, unreachable, or timed out.          |
+| 400  | `unsupported_prediction_subject` | Requested prediction country is unsupported for the event.    |
+| 503  | `prediction_provider_unavailable` | DIS reports the prediction provider is unavailable or failed. |
+| 504  | `prediction_provider_timeout` | DIS reports the prediction provider timed out.                    |
+| 503  | `prediction_resolver_unavailable` | DIS is unconfigured, unreachable, or returned an unexpected resolver response. |
 
 `error.code` values listed above are stable. New codes may be added in
 future contract revisions. Clients must tolerate unknown codes by
@@ -863,7 +988,8 @@ not be assumed to exist or behave consistently if encountered:
   part of this surface.
 - Direct exposure of internal DIS or read-model service shapes. Price
   signal endpoints preserve price-indexer signal payload fields inside
-  Mother API envelopes; other public responses are owned by this contract,
+  Mother API envelopes; prediction endpoints expose only the sanitized
+  SPEC-004 public shapes; other public responses are owned by this contract,
   not by upstream services.
 
 Adding any of the above to the public surface requires an accepted RFC

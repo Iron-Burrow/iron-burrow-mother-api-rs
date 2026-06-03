@@ -179,12 +179,62 @@ instead of forcing the frontend into a blind 404.
 }
 ```
 
+`GET /v1/predictions/fifa-world-cup/winner`
+
+Returns a DIS-backed World Cup 2026 winner prediction snapshot. Mother API does
+not call Polymarket directly and does not expose DIS-internal provider fields.
+
+```json
+{
+  "ok": true,
+  "event": "2026 FIFA World Cup Winner",
+  "event_slug": "fifa-world-cup-2026-winner",
+  "odds": [
+    {
+      "team": "France",
+      "probability": "0.18",
+      "price": "0.18",
+      "currency": "USDC"
+    }
+  ],
+  "source": "polymarket",
+  "deterministic": true,
+  "captured_at": "2026-06-03T18:20:00Z"
+}
+```
+
+`GET /v1/predictions/fifa-world-cup/{country}`
+
+Returns a DIS-backed World Cup 2026 country prediction snapshot. The country
+path segment is trimmed and lowercased before being sent to DIS.
+
+```json
+{
+  "ok": true,
+  "market": "Mexico to reach Round of 16",
+  "country": {
+    "slug": "mexico",
+    "name": "Mexico"
+  },
+  "probability": "0.63",
+  "price": "0.63",
+  "currency": "USDC",
+  "source": "polymarket",
+  "deterministic": true,
+  "captured_at": "2026-06-03T18:20:00Z"
+}
+```
+
 Invalid query responses are stable:
 
 - invalid `limit`: `400 invalid_limit`
 - missing or empty `q`: `400 missing_query`
 - trimmed `q` over 128 characters: `400 query_too_long`
 - configured database unavailable: `503 database_unavailable`
+- unsupported prediction country: `400 unsupported_prediction_subject`
+- prediction provider unavailable: `503 prediction_provider_unavailable`
+- prediction provider timeout: `504 prediction_provider_timeout`
+- DIS prediction resolver unavailable: `503 prediction_resolver_unavailable`
 
 ## Configuration
 
