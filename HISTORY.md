@@ -61,3 +61,6 @@ implementation, and documentation changes.
   implemented prediction routes can reach DIS on `iron-burrow-net`.
 - Added `checks.dis` to `/v1/status` as a config/client availability signal
   with `configured`, `not_configured`, and `invalid_config` states.
+- Changed `checks.price_indexer` on `/v1/status` from a reserved
+  `not_connected` placeholder to a config/client availability signal with
+  `configured`, `not_configured`, and `invalid_config` states.

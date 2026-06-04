@@ -103,7 +103,7 @@ in `ok` and `checks`.
   "checks": {
     "app": "ok",
     "database": "reachable",
-    "price_indexer": "not_connected",
+    "price_indexer": "configured",
     "dis": "configured",
     "evm_indexer": "not_connected"
   }
@@ -122,7 +122,7 @@ Fields:
 | `message`         | string  | Stable human-readable status line.                                                 |
 | `checks.app`      | string  | Always `"ok"`.                                                                     |
 | `checks.database` | string  | One of `"reachable"`, `"unreachable"`, `"skipped"`. `"skipped"` when unconfigured. |
-| `checks.price_indexer` | string | Currently always `"not_connected"`. May expand to richer states in the future. |
+| `checks.price_indexer` | string | One of `"configured"`, `"not_configured"`, `"invalid_config"`. Config/client availability only; not a live price-indexer network probe. |
 | `checks.dis`      | string  | One of `"configured"`, `"not_configured"`, `"invalid_config"`. Config/client availability only; not a live DIS network probe. |
 | `checks.evm_indexer`   | string | Currently always `"not_connected"`. Reserved.                                    |
 
