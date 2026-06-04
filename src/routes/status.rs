@@ -77,10 +77,22 @@ fn status_response(state: &AppState, database: DatabaseCheck) -> StatusResponse 
         checks: StatusChecks {
             app: "ok",
             database: database.as_str(),
-            price_indexer: "not_connected",
+            price_indexer: price_indexer_check(state),
             dis: dis_check(state),
             evm_indexer: "not_connected",
         },
+    }
+}
+
+fn price_indexer_check(state: &AppState) -> &'static str {
+    match (
+        state.config.price_indexer_url.as_ref(),
+        state.config.price_ql_internal_token.as_ref(),
+        state.price_indexer_client.as_ref(),
+    ) {
+        (_, _, Some(_)) => "configured",
+        (None, None, None) => "not_configured",
+        _ => "invalid_config",
     }
 }
 
@@ -124,7 +136,7 @@ mod tests {
                 "checks": {
                     "app": "ok",
                     "database": "unreachable",
-                    "price_indexer": "not_connected",
+                    "price_indexer": "not_configured",
                     "dis": "not_configured",
                     "evm_indexer": "not_connected"
                 }
@@ -139,6 +151,62 @@ mod tests {
 
         assert_eq!(json["ok"], true);
         assert_eq!(json["checks"]["dis"], "not_configured");
+    }
+
+    #[test]
+    fn status_response_reports_missing_price_indexer_config() {
+        let response = status_response(&AppState::new(Config::default()), DatabaseCheck::Skipped);
+        let json = serde_json::to_value(response).unwrap();
+
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["checks"]["price_indexer"], "not_configured");
+    }
+
+    #[test]
+    fn status_response_reports_valid_price_indexer_config() {
+        let response = status_response(
+            &AppState::new(Config {
+                price_indexer_url: Some("http://price-indexer:3010".to_string()),
+                price_ql_internal_token: Some("test-token".to_string()),
+                ..Config::default()
+            }),
+            DatabaseCheck::Skipped,
+        );
+        let json = serde_json::to_value(response).unwrap();
+
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["checks"]["price_indexer"], "configured");
+    }
+
+    #[test]
+    fn status_response_reports_invalid_price_indexer_config_without_failing_ok() {
+        let response = status_response(
+            &AppState::new(Config {
+                price_indexer_url: Some("not a url".to_string()),
+                price_ql_internal_token: Some("test-token".to_string()),
+                ..Config::default()
+            }),
+            DatabaseCheck::Skipped,
+        );
+        let json = serde_json::to_value(response).unwrap();
+
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["checks"]["price_indexer"], "invalid_config");
+    }
+
+    #[test]
+    fn status_response_reports_incomplete_price_indexer_config_without_failing_ok() {
+        let response = status_response(
+            &AppState::new(Config {
+                price_indexer_url: Some("http://price-indexer:3010".to_string()),
+                ..Config::default()
+            }),
+            DatabaseCheck::Skipped,
+        );
+        let json = serde_json::to_value(response).unwrap();
+
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["checks"]["price_indexer"], "invalid_config");
     }
 
     #[test]
