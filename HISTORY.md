@@ -53,3 +53,11 @@ implementation, and documentation changes.
 - Finalized the SPEC-004 judge-demo contract path with live Polymarket-implied
   wording, exact public error examples, local/dev curl smoke commands, and
   implemented-status spec language.
+
+## 2026-06-04
+
+- Wired `DIS_BASE_URL`, `DIS_REQUEST_TIMEOUT_MS`, and
+  `DIS_RETRY_MAX_ATTEMPTS` into the Mother API Compose environment so the
+  implemented prediction routes can reach DIS on `iron-burrow-net`.
+- Added `checks.dis` to `/v1/status` as a config/client availability signal
+  with `configured`, `not_configured`, and `invalid_config` states.

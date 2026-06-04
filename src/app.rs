@@ -159,6 +159,7 @@ mod tests {
         assert_eq!(json["checks"]["app"], "ok");
         assert_eq!(json["checks"]["database"], "skipped");
         assert_eq!(json["checks"]["price_indexer"], "not_connected");
+        assert_eq!(json["checks"]["dis"], "not_configured");
         assert_eq!(json["checks"]["evm_indexer"], "not_connected");
     }
 

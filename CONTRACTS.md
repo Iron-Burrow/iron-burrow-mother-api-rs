@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-06-03
+last_reviewed: 2026-06-04
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -104,6 +104,7 @@ in `ok` and `checks`.
     "app": "ok",
     "database": "reachable",
     "price_indexer": "not_connected",
+    "dis": "configured",
     "evm_indexer": "not_connected"
   }
 }
@@ -122,6 +123,7 @@ Fields:
 | `checks.app`      | string  | Always `"ok"`.                                                                     |
 | `checks.database` | string  | One of `"reachable"`, `"unreachable"`, `"skipped"`. `"skipped"` when unconfigured. |
 | `checks.price_indexer` | string | Currently always `"not_connected"`. May expand to richer states in the future. |
+| `checks.dis`      | string  | One of `"configured"`, `"not_configured"`, `"invalid_config"`. Config/client availability only; not a live DIS network probe. |
 | `checks.evm_indexer`   | string | Currently always `"not_connected"`. Reserved.                                    |
 
 `ok` is `false` when `checks.database` is `"unreachable"`. `"skipped"` is

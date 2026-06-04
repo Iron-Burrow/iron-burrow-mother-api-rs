@@ -24,6 +24,7 @@ pub struct StatusChecks {
     app: &'static str,
     database: &'static str,
     price_indexer: &'static str,
+    dis: &'static str,
     evm_indexer: &'static str,
 }
 
@@ -77,8 +78,20 @@ fn status_response(state: &AppState, database: DatabaseCheck) -> StatusResponse 
             app: "ok",
             database: database.as_str(),
             price_indexer: "not_connected",
+            dis: dis_check(state),
             evm_indexer: "not_connected",
         },
+    }
+}
+
+fn dis_check(state: &AppState) -> &'static str {
+    match (
+        state.config.dis_base_url.as_ref(),
+        state.dis_client.as_ref(),
+    ) {
+        (None, _) => "not_configured",
+        (Some(_), Some(_)) => "configured",
+        (Some(_), None) => "invalid_config",
     }
 }
 
@@ -112,9 +125,49 @@ mod tests {
                     "app": "ok",
                     "database": "unreachable",
                     "price_indexer": "not_connected",
+                    "dis": "not_configured",
                     "evm_indexer": "not_connected"
                 }
             })
         );
+    }
+
+    #[test]
+    fn status_response_reports_missing_dis_config() {
+        let response = status_response(&AppState::new(Config::default()), DatabaseCheck::Skipped);
+        let json = serde_json::to_value(response).unwrap();
+
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["checks"]["dis"], "not_configured");
+    }
+
+    #[test]
+    fn status_response_reports_valid_dis_config() {
+        let response = status_response(
+            &AppState::new(Config {
+                dis_base_url: Some("http://defi-intelligence-service:8080".to_string()),
+                ..Config::default()
+            }),
+            DatabaseCheck::Skipped,
+        );
+        let json = serde_json::to_value(response).unwrap();
+
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["checks"]["dis"], "configured");
+    }
+
+    #[test]
+    fn status_response_reports_invalid_dis_config_without_failing_ok() {
+        let response = status_response(
+            &AppState::new(Config {
+                dis_base_url: Some("not a url".to_string()),
+                ..Config::default()
+            }),
+            DatabaseCheck::Skipped,
+        );
+        let json = serde_json::to_value(response).unwrap();
+
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["checks"]["dis"], "invalid_config");
     }
 }
