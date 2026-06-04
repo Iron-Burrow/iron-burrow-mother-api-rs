@@ -12,10 +12,9 @@ Deployment-wise, the old service used the stable container name `iron-burrow-mot
 
 ## Not Ported
 
-- Public price routes
 - Event or holder indexing
-- Auth, API keys, billing, or x402 boundaries
-- Admin, explorer, account, tracked-token, and price routes
+- Full auth enforcement, balance debit, payment rails, or x402 boundaries
+- Admin, explorer, account, and tracked-token routes
 - TypeScript package/module architecture
 
 ## Endpoint Contract
@@ -149,6 +148,161 @@ for the slug, the asset response still succeeds with `price.status` set to
 }
 ```
 
+### Deterministic Price Evidence
+
+Mother API exposes a small deterministic price evidence surface backed by the
+internal price-indexer Query Layer. Mother API does not read price-indexer
+database tables directly. These endpoints return structured evidence only; they
+do not predict prices, call an LLM, or return investment advice.
+
+`GET /v1/assets/{slug}/price/latest`
+
+Returns the latest known USD price for a canonical Mother API asset. Unknown
+asset slugs use the same `404 asset_not_found` behavior as `GET
+/v1/assets/{slug}`. If the price-indexer Query Layer is unavailable, the route
+returns `503 price_indexer_unavailable`.
+
+```json
+{
+  "ok": true,
+  "type": "asset_price_latest",
+  "asset": {
+    "slug": "ethereum",
+    "symbol": "ETH"
+  },
+  "price": {
+    "currency": "USD",
+    "value": "3811.450000",
+    "published_at": "2026-05-29T00:00:00Z",
+    "source": "chainlink"
+  },
+  "billing": {
+    "billable": true,
+    "currency": "USD",
+    "amount": "0.000100"
+  }
+}
+```
+
+`GET /v1/assets/{slug}/signal/price-stats?window=7d`
+
+`GET /v1/assets/{slug}/signal/price-stats?fromDate=2020-05-21&toDate=2020-05-29`
+
+Returns deterministic statistics for normalized hourly USD price points. Recipe
+name: `price_stats_v1`.
+
+Supported `window` values are `7d`, `1w`, and `1m`. `7d` and `1w` are 7 days;
+`1m` is 31 days for alpha. Explicit date mode requires both `fromDate` and
+`toDate` in strict `YYYY-MM-DD` format. `window` and date mode are mutually
+exclusive. Future dates, reversed date ranges, duplicate/unknown query
+parameters, empty values, and ranges longer than 31 days return `400
+invalid_price_signal_query`.
+
+```json
+{
+  "ok": true,
+  "type": "price_stats_signal",
+  "asset": {
+    "slug": "ethereum",
+    "symbol": "ETH"
+  },
+  "signal": {
+    "type": "price_stats",
+    "recipe": "price_stats_v1",
+    "status": "found",
+    "range": {
+      "mode": "window",
+      "window": "7d",
+      "from": "2026-05-22T00:00:00Z",
+      "to": "2026-05-29T00:00:00Z"
+    },
+    "input": {
+      "currency": "USD",
+      "granularity": "1h",
+      "observations": 168,
+      "source_service": "price-indexer"
+    },
+    "stats": {
+      "first_price": "3720.120000",
+      "last_price": "3811.450000",
+      "min_price": "3602.100000",
+      "max_price": "3890.440000",
+      "avg_price": "3744.910000",
+      "change_abs": "91.330000",
+      "change_pct": "2.454920",
+      "observations": 168
+    },
+    "billing": {
+      "billable": true,
+      "currency": "USD",
+      "amount": "0.000500"
+    },
+    "source": {
+      "service": "price-indexer",
+      "freshness": "historical"
+    }
+  }
+}
+```
+
+`GET /v1/assets/{slug}/signal/price-trend?window=7d`
+
+`GET /v1/assets/{slug}/signal/price-trend?fromDate=2020-05-21&toDate=2020-05-29`
+
+Returns deterministic trend evidence using ordinary least squares. Recipe name:
+`price_trend_evidence_v1`. The included models are `linear_raw_price`,
+`log_linear_price`, and `indexed_linear_price`. The log model is skipped when
+any price is non-positive; the indexed model is skipped when the first price is
+non-positive. Agreement values are `positive`, `negative`, `mixed`, `flat`, or
+`insufficient_data`.
+
+```json
+{
+  "ok": true,
+  "type": "price_trend_signal",
+  "asset": {
+    "slug": "ethereum",
+    "symbol": "ETH"
+  },
+  "signal": {
+    "type": "price_trend_evidence",
+    "recipe": "price_trend_evidence_v1",
+    "status": "found",
+    "models": [
+      {
+        "name": "linear_raw_price",
+        "transform": "price",
+        "status": "included",
+        "direction": "positive",
+        "slope_per_day": "13.047143",
+        "r_squared": "0.420100"
+      }
+    ],
+    "evidence": {
+      "positive_models": 3,
+      "negative_models": 0,
+      "flat_models": 0,
+      "skipped_models": 0,
+      "total_models": 3,
+      "agreement": "positive"
+    },
+    "billing": {
+      "billable": true,
+      "currency": "USD",
+      "amount": "0.001000"
+    },
+    "source": {
+      "service": "price-indexer",
+      "freshness": "historical"
+    }
+  }
+}
+```
+
+Insufficient data is a stable non-billable response with `status:
+"insufficient_data"`, `stats: null`, an empty model list for trend, and
+`billing.billable: false`.
+
 `GET /v1/resolve?q=<query>`
 
 Resolves broad Sentinel search queries against Mother API-owned global assets.
@@ -184,7 +338,48 @@ Invalid query responses are stable:
 - invalid `limit`: `400 invalid_limit`
 - missing or empty `q`: `400 missing_query`
 - trimmed `q` over 128 characters: `400 query_too_long`
+- invalid price signal query: `400 invalid_price_signal_query`
 - configured database unavailable: `503 database_unavailable`
+- configured price-indexer unavailable for price evidence: `503 price_indexer_unavailable`
+
+## Metering Alpha
+
+This release adds a quote-only metering foundation. API keys are access
+credentials; accounts own balances and plans; usage belongs in a ledger. The
+current endpoints include billing quote metadata but do not require API keys,
+debit balances, or write usage ledger rows.
+
+Supported real units for alpha are:
+
+- `USD_MICRO`: 1 USD = 1,000,000 USD_MICRO
+- `BTC_SATS`: 1 BTC = 100,000,000 sats
+
+Public USD amounts are rendered as six-decimal strings. BTC support is modeled
+as integer sats in the quote layer.
+
+Conceptual API key types are:
+
+- `DEMO_LIKE`: revocable demo/hackathon access, no balance debit, future strict
+  rate limits.
+- `ONE_TIME_API`: prepaid account-owned access using account balance.
+- `SHREW_SUBSCRIPTION`: account/plan-owned access for the Musarana etrusca
+  tier.
+
+Alpha USD prices:
+
+| Operation | Range | Amount |
+| --- | --- | --- |
+| `price.latest` | none | `0.000100` |
+| `signal.price_stats` | <= 7 days | `0.000500` |
+| `signal.price_stats` | <= 31 days | `0.001500` |
+| `signal.price_trend` | <= 7 days | `0.001000` |
+| `signal.price_trend` | <= 31 days | `0.003000` |
+
+Validation errors, auth errors, rate-limit errors, upstream unavailable, and
+insufficient data are not billable. Successful `found` responses are billable.
+
+Current non-goals: no payment platform, no Stripe, no Coinbase, no x402, no BTC
+payment rails, no LLM interpretation, no ML, and no investment advice.
 
 ## Configuration
 
@@ -194,15 +389,17 @@ Invalid query responses are stable:
 | `HTTP_HOST` | `0.0.0.0` | Bind host. |
 | `HTTP_PORT` | `3000` | Bind port. |
 | `DATABASE_URL` | unset | Optional Postgres URL for `mother_api.global_asset` resolver reads. |
-| `PRICE_INDEXER_URL` | unset | Optional price-indexer Query Layer base URL, for example `http://price-indexer:3010`. |
+| `PRICE_INDEXER_URL` | unset | Optional price-indexer Query Layer base URL, for example `http://price-indexer:3010`. Signal endpoints call `/internal/v1/prices/*` below this base URL. |
 | `PRICE_QL_INTERNAL_TOKEN` | unset | Optional internal bearer token for price-indexer Query Layer calls. |
-| `PRICE_INDEXER_TIMEOUT_MS` | `2000` | Optional timeout for asset detail price lookup. |
+| `PRICE_INDEXER_TIMEOUT_MS` | `2000` | Optional timeout for price-indexer Query Layer calls. |
 | `RUST_LOG` | `iron_burrow_mother_api_rs=info,tower_http=info` | Optional tracing filter. |
 
 Price enrichment is enabled only when both `PRICE_INDEXER_URL` and
 `PRICE_QL_INTERNAL_TOKEN` are set. Missing or failing price configuration does
 not fail startup and does not fail asset detail pages; Mother API returns a
-stable unavailable price state instead.
+stable unavailable price state instead. Dedicated price evidence endpoints
+return `503 price_indexer_unavailable` when the Query Layer is not configured or
+unavailable.
 
 ## Database
 
@@ -215,6 +412,14 @@ and routing:
   Base, and Mantle.
 - `mother_api.asset_chain_map`: native assets and deployed token
   representations on each network.
+- `mother_api.accounts`: future metering account owners.
+- `mother_api.api_keys`: future access credentials for demo-like, one-time, and
+  subscription usage.
+- `mother_api.account_balances`: future integer minor-unit balances.
+- `mother_api.usage_price_catalog`: alpha operation prices in USD_MICRO and
+  BTC_SATS.
+- `mother_api.usage_ledger`: future usage records; this alpha slice quotes
+  usage but does not write ledger rows.
 
 Price-indexer, chain indexer, and infra-gateway tables remain out of scope for
 this service. Mother API consumes price-indexer through its Query Layer and does
@@ -245,6 +450,10 @@ cargo run
 ```sh
 curl -i http://localhost:3000/health
 curl -i 'http://localhost:3000/v1/assets?limit=20'
+curl -i 'http://localhost:3000/v1/assets/ethereum/price/latest'
+curl -i 'http://localhost:3000/v1/assets/ethereum/signal/price-stats?window=7d'
+curl -i 'http://localhost:3000/v1/assets/ethereum/signal/price-trend?window=7d'
+curl -i 'http://localhost:3000/v1/assets/ethereum/signal/price-stats?fromDate=2020-05-21&toDate=2020-05-29'
 curl -i 'http://localhost:3000/v1/resolve?q=usdc%20coin%20usd'
 curl -i 'http://localhost:3000/v1/resolve?q=oro%20de%20ley'
 curl -i 'http://localhost:3000/v1/resolve?q=some%20unknown%20thing'

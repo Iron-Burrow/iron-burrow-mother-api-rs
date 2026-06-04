@@ -5,6 +5,7 @@ use crate::{
     routes::{
         assets::{get_asset, list_assets},
         health::health,
+        price_signals::{latest_price, price_stats, price_trend},
         resolve::resolve,
         status::status,
     },
@@ -16,6 +17,9 @@ pub fn create_app(state: AppState) -> Router {
         .route("/status", get(status))
         .route("/resolve", get(resolve))
         .route("/assets", get(list_assets))
+        .route("/assets/{slug}/price/latest", get(latest_price))
+        .route("/assets/{slug}/signal/price-stats", get(price_stats))
+        .route("/assets/{slug}/signal/price-trend", get(price_trend))
         .route("/assets/{slug}", get(get_asset));
 
     Router::new()
@@ -405,6 +409,357 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn latest_price_route_returns_internal_ql_price_and_billing() {
+        let body = serde_json::json!({
+            "asset": {
+                "slug": "ethereum",
+                "symbol": "ETH"
+            },
+            "currency": "USD",
+            "price": "3811.450000",
+            "published_at": "2026-05-29T00:00:00Z",
+            "source": "chainlink",
+            "freshness_status": "fresh"
+        });
+        let Some((price_indexer_url, request_handle)) =
+            spawn_price_indexer_response("200 OK", body)
+        else {
+            return;
+        };
+        let app = price_signal_app(&price_indexer_url);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/assets/ethereum/price/latest")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["type"], "asset_price_latest");
+        assert_eq!(json["asset"]["slug"], "ethereum");
+        assert_eq!(json["asset"]["symbol"], "ETH");
+        assert_eq!(json["price"]["currency"], "USD");
+        assert_eq!(json["price"]["value"], "3811.450000");
+        assert_eq!(json["price"]["published_at"], "2026-05-29T00:00:00Z");
+        assert_eq!(json["price"]["source"], "chainlink");
+        assert_eq!(json["billing"]["billable"], true);
+        assert_eq!(json["billing"]["amount"], "0.000100");
+
+        let request = request_handle.await.unwrap();
+        assert!(request.starts_with("GET /internal/v1/prices/latest?slug=ethereum&currency=USD "));
+    }
+
+    #[tokio::test]
+    async fn latest_price_route_reports_unknown_asset_like_asset_detail() {
+        let response = test_app()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/assets/does-not-exist/price/latest")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["error"]["code"], "asset_not_found");
+    }
+
+    #[tokio::test]
+    async fn latest_price_route_reports_upstream_unavailable() {
+        let body = serde_json::json!({
+            "error": {
+                "code": "UPSTREAM_DOWN",
+                "message": "Price indexer is unavailable."
+            }
+        });
+        let Some((price_indexer_url, _request_handle)) =
+            spawn_price_indexer_response("503 Service Unavailable", body)
+        else {
+            return;
+        };
+        let app = price_signal_app(&price_indexer_url);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/assets/ethereum/price/latest")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["error"]["code"], "price_indexer_unavailable");
+    }
+
+    #[tokio::test]
+    async fn price_stats_endpoint_accepts_supported_windows() {
+        for window in ["7d", "1w", "1m"] {
+            let Some((price_indexer_url, request_handle)) =
+                spawn_price_indexer_response("200 OK", empty_series_json())
+            else {
+                return;
+            };
+            let app = price_signal_app(&price_indexer_url);
+
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri(format!(
+                            "/v1/assets/ethereum/signal/price-stats?window={window}"
+                        ))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let request = request_handle.await.unwrap();
+            assert!(request
+                .starts_with("GET /internal/v1/prices/series?slug=ethereum&currency=USD&from="));
+            assert!(request.contains("&granularity=1h "));
+        }
+    }
+
+    #[tokio::test]
+    async fn price_signal_endpoints_reject_invalid_query_shapes() {
+        for uri in [
+            "/v1/assets/ethereum/signal/price-stats",
+            "/v1/assets/ethereum/signal/price-stats?window=7d&fromDate=2020-05-21&toDate=2020-05-29",
+            "/v1/assets/ethereum/signal/price-stats?fromDate=2020-05-21",
+            "/v1/assets/ethereum/signal/price-stats?toDate=2020-05-29",
+            "/v1/assets/ethereum/signal/price-stats?fromDate=2020-5-21&toDate=2020-05-29",
+            "/v1/assets/ethereum/signal/price-stats?fromDate=2999-05-21&toDate=2999-05-29",
+            "/v1/assets/ethereum/signal/price-stats?fromDate=2020-05-30&toDate=2020-05-29",
+            "/v1/assets/ethereum/signal/price-stats?fromDate=2020-05-01&toDate=2020-06-02",
+            "/v1/assets/ethereum/signal/price-stats?window=7d&window=1w",
+            "/v1/assets/ethereum/signal/price-stats?window=7d&currency=USD",
+        ] {
+            let response = test_app()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{uri}");
+
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let json: Value = serde_json::from_slice(&body).unwrap();
+
+            assert_eq!(json["error"]["code"], "invalid_price_signal_query");
+        }
+    }
+
+    #[tokio::test]
+    async fn price_stats_endpoint_calculates_deterministic_stats() {
+        let Some((price_indexer_url, request_handle)) =
+            spawn_price_indexer_response("200 OK", increasing_series_json())
+        else {
+            return;
+        };
+        let app = price_signal_app(&price_indexer_url);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/assets/ethereum/signal/price-stats?fromDate=2020-05-21&toDate=2020-05-28")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["signal"]["type"], "price_stats");
+        assert_eq!(json["signal"]["recipe"], "price_stats_v1");
+        assert_eq!(json["signal"]["status"], "found");
+        assert_eq!(json["signal"]["input"]["observations"], 3);
+        assert_eq!(json["signal"]["stats"]["first_price"], "100.000000");
+        assert_eq!(json["signal"]["stats"]["last_price"], "120.000000");
+        assert_eq!(json["signal"]["stats"]["min_price"], "100.000000");
+        assert_eq!(json["signal"]["stats"]["max_price"], "120.000000");
+        assert_eq!(json["signal"]["stats"]["avg_price"], "110.000000");
+        assert_eq!(json["signal"]["stats"]["change_abs"], "20.000000");
+        assert_eq!(json["signal"]["stats"]["change_pct"], "20.000000");
+        assert_eq!(json["signal"]["billing"]["amount"], "0.000500");
+        assert_eq!(json["signal"]["source"]["service"], "price-indexer");
+
+        let request = request_handle.await.unwrap();
+        assert!(request.contains("from=2020-05-21T00%3A00%3A00Z"));
+        assert!(request.contains("to=2020-05-28T00%3A00%3A00Z"));
+    }
+
+    #[tokio::test]
+    async fn price_stats_endpoint_returns_non_billable_insufficient_data() {
+        let Some((price_indexer_url, _request_handle)) =
+            spawn_price_indexer_response("200 OK", empty_series_json())
+        else {
+            return;
+        };
+        let app = price_signal_app(&price_indexer_url);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/assets/ethereum/signal/price-stats?window=7d")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["signal"]["status"], "insufficient_data");
+        assert!(json["signal"]["stats"].is_null());
+        assert_eq!(json["signal"]["billing"]["billable"], false);
+        assert_eq!(json["signal"]["billing"]["reason"], "insufficient_data");
+    }
+
+    #[tokio::test]
+    async fn price_trend_endpoint_returns_positive_evidence_without_advice() {
+        let Some((price_indexer_url, _request_handle)) =
+            spawn_price_indexer_response("200 OK", increasing_series_json())
+        else {
+            return;
+        };
+        let app = price_signal_app(&price_indexer_url);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/assets/ethereum/signal/price-trend?fromDate=2020-05-21&toDate=2020-05-28")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body_text = String::from_utf8(body.to_vec()).unwrap();
+        let json: Value = serde_json::from_str(&body_text).unwrap();
+
+        assert_eq!(json["signal"]["type"], "price_trend_evidence");
+        assert_eq!(json["signal"]["recipe"], "price_trend_evidence_v1");
+        assert_eq!(json["signal"]["evidence"]["positive_models"], 3);
+        assert_eq!(json["signal"]["evidence"]["agreement"], "positive");
+        assert_eq!(json["signal"]["models"][0]["direction"], "positive");
+        assert_eq!(json["signal"]["billing"]["amount"], "0.001000");
+        assert!(!body_text.contains("buy"));
+        assert!(!body_text.contains("sell"));
+        assert!(!body_text.contains("bullish"));
+        assert!(!body_text.contains("bearish"));
+    }
+
+    #[tokio::test]
+    async fn price_trend_endpoint_skips_log_model_for_non_positive_prices() {
+        let Some((price_indexer_url, _request_handle)) =
+            spawn_price_indexer_response("200 OK", non_positive_series_json())
+        else {
+            return;
+        };
+        let app = price_signal_app(&price_indexer_url);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/assets/ethereum/signal/price-trend?window=7d")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["signal"]["models"][1]["name"], "log_linear_price");
+        assert_eq!(json["signal"]["models"][1]["status"], "skipped");
+        assert_eq!(json["signal"]["models"][1]["reason"], "non_positive_price");
+        assert_eq!(json["signal"]["evidence"]["skipped_models"], 1);
+    }
+
+    #[tokio::test]
+    async fn price_trend_endpoint_returns_non_billable_insufficient_data() {
+        let Some((price_indexer_url, _request_handle)) =
+            spawn_price_indexer_response("200 OK", one_point_series_json())
+        else {
+            return;
+        };
+        let app = price_signal_app(&price_indexer_url);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/assets/ethereum/signal/price-trend?window=7d")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["signal"]["status"], "insufficient_data");
+        assert_eq!(json["signal"]["models"].as_array().unwrap().len(), 0);
+        assert_eq!(json["signal"]["evidence"]["total_models"], 0);
+        assert_eq!(json["signal"]["billing"]["billable"], false);
+    }
+
+    #[tokio::test]
     async fn resolve_returns_usdc_for_aliases() {
         for query in ["usdc", "usdc%20coin%20usd", "usd%20coin"] {
             let json = resolve_json(&format!("/v1/resolve?q={query}")).await;
@@ -608,6 +963,115 @@ mod tests {
             .await
             .unwrap();
         serde_json::from_slice(&body).unwrap()
+    }
+
+    fn price_signal_app(price_indexer_url: &str) -> Router {
+        let price_indexer_client =
+            PriceIndexerClient::new(price_indexer_url, "test-token", 2000).unwrap();
+        let repository = GlobalAssetRepository::in_memory(vec![GlobalAsset {
+            id: "test-ethereum".to_string(),
+            slug: "ethereum".to_string(),
+            symbol: "ETH".to_string(),
+            name: "Ethereum".to_string(),
+            category: "crypto".to_string(),
+            canonical_path: "/assets/ethereum".to_string(),
+            aliases: vec!["eth".to_string()],
+            sort_order: 10,
+        }]);
+
+        create_app(AppState {
+            config: Config::default(),
+            version: env!("CARGO_PKG_VERSION"),
+            database_pool: None,
+            asset_repository: Some(repository),
+            price_indexer_client: Some(price_indexer_client),
+        })
+    }
+
+    fn empty_series_json() -> Value {
+        price_series_json(Vec::new())
+    }
+
+    fn increasing_series_json() -> Value {
+        price_series_json(vec![
+            ("2020-05-21T00:00:00Z", "100.000000"),
+            ("2020-05-22T00:00:00Z", "110.000000"),
+            ("2020-05-23T00:00:00Z", "120.000000"),
+        ])
+    }
+
+    fn non_positive_series_json() -> Value {
+        price_series_json(vec![
+            ("2020-05-21T00:00:00Z", "100.000000"),
+            ("2020-05-22T00:00:00Z", "0.000000"),
+        ])
+    }
+
+    fn one_point_series_json() -> Value {
+        price_series_json(vec![("2020-05-21T00:00:00Z", "100.000000")])
+    }
+
+    fn price_series_json(points: Vec<(&str, &str)>) -> Value {
+        let points = points
+            .into_iter()
+            .map(|(timestamp, price)| {
+                serde_json::json!({
+                    "timestamp": timestamp,
+                    "price": price,
+                    "source": "chainlink"
+                })
+            })
+            .collect::<Vec<_>>();
+
+        serde_json::json!({
+            "asset": {
+                "slug": "ethereum",
+                "symbol": "ETH"
+            },
+            "currency": "USD",
+            "granularity": "1h",
+            "range": {
+                "from": "2020-05-21T00:00:00Z",
+                "to": "2020-05-28T00:00:00Z"
+            },
+            "normalization": {
+                "timezone": "UTC",
+                "price_precision": "decimal_string",
+                "duplicate_policy": "latest_recorded_wins",
+                "missing_points_policy": "no_fill",
+                "source_priority_policy": "configured_price_feed_priority"
+            },
+            "points": points
+        })
+    }
+
+    fn spawn_price_indexer_response(
+        status: &str,
+        body: Value,
+    ) -> Option<(String, tokio::task::JoinHandle<String>)> {
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
+            Err(error) => panic!("failed to bind test price-indexer: {error}"),
+        };
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let body = body.to_string();
+        let status = status.to_string();
+        let handle = tokio::task::spawn_blocking(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let request = read_http_request(&mut stream);
+            let response = format!(
+                "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+
+            stream.write_all(response.as_bytes()).unwrap();
+
+            request
+        });
+
+        Some((url, handle))
     }
 
     fn spawn_price_indexer() -> Option<(String, tokio::task::JoinHandle<String>)> {

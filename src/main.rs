@@ -3,10 +3,12 @@ mod assets;
 mod config;
 mod db;
 mod error;
+mod metering;
 mod price_indexer;
 mod repositories;
 mod resolve;
 mod routes;
+mod signals;
 mod state;
 
 use std::net::SocketAddr;

@@ -73,6 +73,77 @@ impl PriceIndexerClient {
         Err(map_error_response(status, &body))
     }
 
+    pub async fn internal_latest_by_slug(
+        &self,
+        slug: &str,
+        currency: &str,
+    ) -> Result<InternalLatestPrice, PriceLookupError> {
+        let slug = slug.trim();
+
+        if slug.is_empty() {
+            return Err(PriceLookupError::InvalidSlug);
+        }
+
+        let url = self.internal_latest_price_url(slug, currency);
+        let response = self
+            .client
+            .get(url)
+            .bearer_auth(&self.token)
+            .timeout(self.timeout)
+            .send()
+            .await
+            .map_err(map_reqwest_error)?;
+
+        let status = response.status();
+        let body = response.bytes().await.map_err(map_reqwest_error)?;
+
+        if status.is_success() {
+            let latest_price = serde_json::from_slice::<InternalLatestPriceResponse>(&body)
+                .map_err(|_| PriceLookupError::MalformedResponse)?;
+
+            return InternalLatestPrice::try_from(latest_price);
+        }
+
+        Err(map_error_response(status, &body))
+    }
+
+    pub async fn internal_price_series(
+        &self,
+        slug: &str,
+        currency: &str,
+        from: &str,
+        to: &str,
+        granularity: &str,
+    ) -> Result<PriceSeries, PriceLookupError> {
+        let slug = slug.trim();
+
+        if slug.is_empty() {
+            return Err(PriceLookupError::InvalidSlug);
+        }
+
+        let url = self.internal_price_series_url(slug, currency, from, to, granularity);
+        let response = self
+            .client
+            .get(url)
+            .bearer_auth(&self.token)
+            .timeout(self.timeout)
+            .send()
+            .await
+            .map_err(map_reqwest_error)?;
+
+        let status = response.status();
+        let body = response.bytes().await.map_err(map_reqwest_error)?;
+
+        if status.is_success() {
+            let series = serde_json::from_slice::<PriceSeriesResponse>(&body)
+                .map_err(|_| PriceLookupError::MalformedResponse)?;
+
+            return PriceSeries::try_from(series);
+        }
+
+        Err(map_error_response(status, &body))
+    }
+
     pub async fn latest_by_slugs(
         &self,
         slugs: &[String],
@@ -150,6 +221,38 @@ impl PriceIndexerClient {
         url
     }
 
+    fn internal_latest_price_url(&self, slug: &str, currency: &str) -> Url {
+        let mut url = self.base_url.clone();
+        let base_path = url.path().trim_end_matches('/');
+        url.set_path(&format!("{base_path}/internal/v1/prices/latest"));
+        url.set_query(None);
+        url.query_pairs_mut()
+            .append_pair("slug", slug)
+            .append_pair("currency", &normalize_quote_currency(currency));
+        url
+    }
+
+    fn internal_price_series_url(
+        &self,
+        slug: &str,
+        currency: &str,
+        from: &str,
+        to: &str,
+        granularity: &str,
+    ) -> Url {
+        let mut url = self.base_url.clone();
+        let base_path = url.path().trim_end_matches('/');
+        url.set_path(&format!("{base_path}/internal/v1/prices/series"));
+        url.set_query(None);
+        url.query_pairs_mut()
+            .append_pair("slug", slug)
+            .append_pair("currency", &normalize_quote_currency(currency))
+            .append_pair("from", from)
+            .append_pair("to", to)
+            .append_pair("granularity", granularity);
+        url
+    }
+
     fn latest_price_batch_url(&self) -> Url {
         let mut url = self.base_url.clone();
         let base_path = url.path().trim_end_matches('/');
@@ -198,6 +301,37 @@ pub struct LatestAssetPrice {
     pub is_derived: bool,
     pub recorded_at: Option<String>,
     pub warning: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InternalLatestPrice {
+    pub currency: String,
+    pub value: String,
+    pub published_at: String,
+    pub source: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PriceSeries {
+    pub asset: PriceSeriesAsset,
+    pub currency: String,
+    pub granularity: String,
+    pub range_from: Option<String>,
+    pub range_to: Option<String>,
+    pub points: Vec<PriceSeriesPoint>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PriceSeriesAsset {
+    pub slug: String,
+    pub symbol: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PriceSeriesPoint {
+    pub timestamp: String,
+    pub price: String,
+    pub source: Option<String>,
 }
 
 impl LatestAssetPrice {
@@ -371,6 +505,74 @@ struct BatchLatestPriceResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
+struct InternalLatestPriceResponse {
+    #[serde(default)]
+    asset: Option<InternalPriceAssetResponse>,
+    #[serde(default, alias = "assetId", alias = "asset_id")]
+    slug: Option<String>,
+    #[serde(default)]
+    symbol: Option<String>,
+    #[serde(default, alias = "quoteCurrency", alias = "quote_currency")]
+    currency: Option<String>,
+    #[serde(default, alias = "value")]
+    price: Option<String>,
+    #[serde(default, alias = "sourceType", alias = "source_type")]
+    source: Option<String>,
+    #[serde(default, alias = "publishedAt", alias = "published_at")]
+    published_at: Option<String>,
+    #[serde(default, alias = "recordedAt", alias = "recorded_at")]
+    recorded_at: Option<String>,
+    #[serde(default, alias = "freshnessStatus", alias = "freshness_status")]
+    freshness_status: Option<FreshnessStatus>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct PriceSeriesResponse {
+    #[serde(default)]
+    asset: Option<InternalPriceAssetResponse>,
+    #[serde(default, alias = "quoteCurrency", alias = "quote_currency")]
+    currency: Option<String>,
+    granularity: Option<String>,
+    range: Option<PriceSeriesRangeResponse>,
+    #[serde(default)]
+    points: Vec<PriceSeriesPointResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct InternalPriceAssetResponse {
+    #[serde(default, alias = "assetId", alias = "asset_id")]
+    slug: Option<String>,
+    #[serde(default)]
+    symbol: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct PriceSeriesRangeResponse {
+    from: Option<String>,
+    to: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct PriceSeriesPointResponse {
+    #[serde(default, alias = "publishedAt", alias = "published_at")]
+    timestamp: Option<String>,
+    #[serde(default, alias = "value")]
+    price: Option<String>,
+    #[serde(default, alias = "sourceType", alias = "source_type")]
+    source: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct Staleness {
     age_seconds: u64,
     is_stale: bool,
@@ -409,6 +611,93 @@ struct LatestAssetPriceParts {
     is_fallback: bool,
     is_derived: bool,
     recorded_at: String,
+}
+
+impl TryFrom<InternalLatestPriceResponse> for InternalLatestPrice {
+    type Error = PriceLookupError;
+
+    fn try_from(response: InternalLatestPriceResponse) -> Result<Self, Self::Error> {
+        if matches!(
+            response.freshness_status,
+            Some(FreshnessStatus::Unavailable | FreshnessStatus::Unknown)
+        ) {
+            return Err(PriceLookupError::Unavailable {
+                status: None,
+                code: Some("PRICE_UNAVAILABLE".to_string()),
+            });
+        }
+
+        Ok(Self {
+            currency: response
+                .currency
+                .filter(|value| !value.trim().is_empty())
+                .ok_or(PriceLookupError::MalformedResponse)?,
+            value: response
+                .price
+                .filter(|value| !value.trim().is_empty())
+                .ok_or(PriceLookupError::MalformedResponse)?,
+            published_at: response
+                .published_at
+                .or(response.recorded_at)
+                .filter(|value| !value.trim().is_empty())
+                .ok_or(PriceLookupError::MalformedResponse)?,
+            source: response
+                .source
+                .filter(|value| !value.trim().is_empty())
+                .ok_or(PriceLookupError::MalformedResponse)?,
+        })
+    }
+}
+
+impl TryFrom<PriceSeriesResponse> for PriceSeries {
+    type Error = PriceLookupError;
+
+    fn try_from(response: PriceSeriesResponse) -> Result<Self, Self::Error> {
+        let asset = response.asset.unwrap_or(InternalPriceAssetResponse {
+            slug: Some("unknown".to_string()),
+            symbol: Some("UNKNOWN".to_string()),
+        });
+
+        Ok(Self {
+            asset: PriceSeriesAsset {
+                slug: asset.slug.unwrap_or_else(|| "unknown".to_string()),
+                symbol: asset.symbol.unwrap_or_else(|| "UNKNOWN".to_string()),
+            },
+            currency: response
+                .currency
+                .filter(|value| !value.trim().is_empty())
+                .ok_or(PriceLookupError::MalformedResponse)?,
+            granularity: response
+                .granularity
+                .filter(|value| !value.trim().is_empty())
+                .ok_or(PriceLookupError::MalformedResponse)?,
+            range_from: response.range.as_ref().and_then(|range| range.from.clone()),
+            range_to: response.range.as_ref().and_then(|range| range.to.clone()),
+            points: response
+                .points
+                .into_iter()
+                .map(PriceSeriesPoint::try_from)
+                .collect::<Result<Vec<_>, _>>()?,
+        })
+    }
+}
+
+impl TryFrom<PriceSeriesPointResponse> for PriceSeriesPoint {
+    type Error = PriceLookupError;
+
+    fn try_from(response: PriceSeriesPointResponse) -> Result<Self, Self::Error> {
+        Ok(Self {
+            timestamp: response
+                .timestamp
+                .filter(|value| !value.trim().is_empty())
+                .ok_or(PriceLookupError::MalformedResponse)?,
+            price: response
+                .price
+                .filter(|value| !value.trim().is_empty())
+                .ok_or(PriceLookupError::MalformedResponse)?,
+            source: response.source,
+        })
+    }
 }
 
 fn latest_asset_price_from_parts(parts: LatestAssetPriceParts) -> LatestAssetPrice {
@@ -601,6 +890,29 @@ mod tests {
     }
 
     #[test]
+    fn internal_price_urls_use_internal_v1_query_layer_paths() {
+        let client = PriceIndexerClient::new("http://price-indexer:3010", "secret", 2000)
+            .expect("price indexer client should initialize");
+
+        assert_eq!(
+            client.internal_latest_price_url("ethereum", "usd").as_str(),
+            "http://price-indexer:3010/internal/v1/prices/latest?slug=ethereum&currency=USD"
+        );
+        assert_eq!(
+            client
+                .internal_price_series_url(
+                    "ethereum",
+                    "usd",
+                    "2026-05-22T00:00:00Z",
+                    "2026-05-29T00:00:00Z",
+                    "1h",
+                )
+                .as_str(),
+            "http://price-indexer:3010/internal/v1/prices/series?slug=ethereum&currency=USD&from=2026-05-22T00%3A00%3A00Z&to=2026-05-29T00%3A00%3A00Z&granularity=1h"
+        );
+    }
+
+    #[test]
     fn normalizes_and_deduplicates_batch_slugs() {
         let slugs = vec![
             " Ethereum ".to_string(),
@@ -753,6 +1065,58 @@ mod tests {
         assert_eq!(price.quote_currency.as_deref(), Some("USD"));
         assert_eq!(price.confidence_label.as_deref(), Some("high"));
         assert_eq!(price.warning, None);
+    }
+
+    #[test]
+    fn parses_internal_latest_response_without_converting_price() {
+        let response = serde_json::from_value::<InternalLatestPriceResponse>(json!({
+            "asset": {
+                "slug": "ethereum",
+                "symbol": "ETH"
+            },
+            "currency": "USD",
+            "price": "3811.450000",
+            "published_at": "2026-05-29T00:00:00Z",
+            "source": "chainlink",
+            "freshness_status": "fresh"
+        }))
+        .unwrap();
+        let price = InternalLatestPrice::try_from(response).unwrap();
+
+        assert_eq!(price.currency, "USD");
+        assert_eq!(price.value, "3811.450000");
+        assert_eq!(price.published_at, "2026-05-29T00:00:00Z");
+        assert_eq!(price.source, "chainlink");
+    }
+
+    #[test]
+    fn parses_internal_price_series_response() {
+        let response = serde_json::from_value::<PriceSeriesResponse>(json!({
+            "asset": {
+                "slug": "ethereum",
+                "symbol": "ETH"
+            },
+            "currency": "USD",
+            "granularity": "1h",
+            "range": {
+                "from": "2026-05-22T00:00:00Z",
+                "to": "2026-05-29T00:00:00Z"
+            },
+            "points": [
+                {
+                    "timestamp": "2026-05-22T00:00:00Z",
+                    "price": "3720.120000",
+                    "source": "chainlink"
+                }
+            ]
+        }))
+        .unwrap();
+        let series = PriceSeries::try_from(response).unwrap();
+
+        assert_eq!(series.asset.slug, "ethereum");
+        assert_eq!(series.currency, "USD");
+        assert_eq!(series.granularity, "1h");
+        assert_eq!(series.points[0].price, "3720.120000");
     }
 
     #[test]

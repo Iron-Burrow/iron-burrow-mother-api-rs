@@ -45,6 +45,22 @@ impl ApiError {
         }
     }
 
+    pub fn invalid_price_signal_query(message: &'static str) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "invalid_price_signal_query",
+            message,
+        }
+    }
+
+    pub fn price_indexer_unavailable() -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: "price_indexer_unavailable",
+            message: "Price signal data is temporarily unavailable.",
+        }
+    }
+
     pub fn database_unavailable() -> Self {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,
