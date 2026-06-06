@@ -90,6 +90,7 @@ impl AssetsService {
     pub async fn get_asset(
         &self,
         raw_slug: &str,
+        quote_currency: &str,
         enrichment_query: Option<AssetEnrichmentQuery>,
     ) -> Result<AssetResponse, AssetsServiceError> {
         let slug = raw_slug.trim().to_ascii_lowercase();
@@ -98,27 +99,35 @@ impl AssetsService {
             .get_asset_detail_by_slug(&slug)
             .await?
             .ok_or(AssetsServiceError::AssetNotFound)?;
-        let price = self.lookup_price(&slug, &detail.asset.symbol).await;
+        let price = self
+            .lookup_price(&slug, &detail.asset.symbol, quote_currency)
+            .await;
         let enrichments = self.lookup_enrichments(enrichment_query, &slug).await;
 
         Ok(AssetResponse::new(detail, price, enrichments))
     }
 
-    async fn lookup_price(&self, slug: &str, symbol: &str) -> LatestAssetPrice {
+    async fn lookup_price(
+        &self,
+        slug: &str,
+        symbol: &str,
+        quote_currency: &str,
+    ) -> LatestAssetPrice {
         let Some(client) = &self.price_indexer_client else {
             return LatestAssetPrice::unavailable();
         };
 
         info!(
             asset_slug = slug,
-            symbol, "Price lookup attempted for asset detail"
+            symbol, quote_currency, "Price lookup attempted for asset detail"
         );
 
-        match client.latest_by_slug(slug).await {
+        match client.latest_by_slug(slug, quote_currency).await {
             Ok(price) => {
                 info!(
                     asset_slug = slug,
                     symbol,
+                    quote_currency,
                     status = price.status.as_str(),
                     source_type = price.source_type.as_deref(),
                     is_fallback = price.is_fallback,
@@ -776,7 +785,7 @@ mod tests {
 
     #[tokio::test]
     async fn returns_asset_detail() {
-        let response = service().get_asset("bitcoin", None).await.unwrap();
+        let response = service().get_asset("bitcoin", "USD", None).await.unwrap();
         let json = serde_json::to_value(response).unwrap();
 
         assert_eq!(json["ok"], true);
@@ -793,7 +802,7 @@ mod tests {
     #[tokio::test]
     async fn reports_unknown_asset_detail() {
         let error = service()
-            .get_asset("does-not-exist", None)
+            .get_asset("does-not-exist", "USD", None)
             .await
             .unwrap_err();
 

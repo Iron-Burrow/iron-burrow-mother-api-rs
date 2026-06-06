@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-06-02
+last_reviewed: 2026-06-06
 agent_edit_policy: append_only
 ---
 
@@ -64,3 +64,13 @@ implementation, and documentation changes.
 - Changed `checks.price_indexer` on `/v1/status` from a reserved
   `not_connected` placeholder to a config/client availability signal with
   `configured`, `not_configured`, and `invalid_config` states.
+
+## 2026-06-06
+
+- Forwarded `/v1/assets/{slug}?quoteCurrency=...` to the price-indexer latest
+  price lookup so the base `price` block can return direct or derived prices in
+  `USD`, `MXN`, `USDC`, or `BTC`.
+- Preserved `USD` as the default and kept currency conversion and derivation
+  entirely inside price-indexer.
+- Rejected empty or unsupported asset-detail `quoteCurrency` values with
+  `400 invalid_request` before calling price-indexer.

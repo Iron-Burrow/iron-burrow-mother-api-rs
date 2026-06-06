@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-06-04
+last_reviewed: 2026-06-06
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -217,7 +217,7 @@ signals can be requested for one-call asset-page rendering.
 | Name            | Type   | Required | Default | Allowed values | Notes |
 | --------------- | ------ | -------- | ------- | -------------- | ----- |
 | `include`       | string | No       | none    | `priceStats`, `priceTrend`, `priceSeries` | Comma-separated. Tokens are trimmed and matched case-insensitively. Unknown tokens are ignored. |
-| `quoteCurrency` | string | No       | `USD`   | `USD`, `MXN`, `USDC`, `BTC` | Applies only when at least one known enrichment is requested. |
+| `quoteCurrency` | string | No       | `USD`   | `USD`, `MXN`, `USDC`, `BTC` | Trimmed and uppercased. Applies to the latest `price` block and all requested enrichments. Empty or unsupported values return `400 invalid_request`. |
 | `window`        | string | No       | `24h`   | `1h`, `24h`, `7d`, `30d` | Applies only when at least one known enrichment is requested. |
 | `granularity`   | string | No       | upstream default | `5m`, `1h`, `1d` | Forwarded only when provided and only for requested enrichments. |
 
@@ -233,6 +233,10 @@ Allowed `window` and `granularity` combinations for requested enrichments:
 Mother API does not expose `asOf` on asset detail and never forwards legacy
 parameters such as `range`, `resolution`, `from`, `to`, `interval`,
 `sourceType`, `limit`, or `beforeId` to price-indexer.
+
+The latest-price lookup always forwards the normalized `quoteCurrency` to
+price-indexer. This allows price-indexer-owned direct or derived prices to
+populate the base `price` block without Mother API performing conversion.
 
 **Response — `200 OK`, full enrichment happy path:**
 
@@ -469,6 +473,7 @@ partial-response rule.
 
 **Errors:**
 
+- `400 invalid_request` — `quoteCurrency` is empty or unsupported.
 - `404 asset_not_found` — No active asset exists for the given slug.
 - `503 database_unavailable` — `DATABASE_URL` is unset or Postgres is
   unreachable.
@@ -1041,7 +1046,7 @@ Fields:
 
 | HTTP | `error.code`            | Trigger                                                                |
 | ---- | ----------------------- | ---------------------------------------------------------------------- |
-| 400  | `invalid_request`       | Price signal query parameters are unsupported or incompatible.         |
+| 400  | `invalid_request`       | Asset-detail `quoteCurrency` or price signal query parameters are unsupported or incompatible. |
 | 400  | `invalid_limit`         | `limit` query parameter is not a positive integer.                     |
 | 400  | `missing_query`         | `q` query parameter is missing or empty after trimming.                |
 | 400  | `query_too_long`        | Trimmed `q` exceeds 128 characters.                                    |

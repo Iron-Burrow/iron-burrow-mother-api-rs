@@ -43,14 +43,19 @@ impl PriceIndexerClient {
         self.timeout.as_millis()
     }
 
-    pub async fn latest_by_slug(&self, slug: &str) -> Result<LatestAssetPrice, PriceLookupError> {
+    pub async fn latest_by_slug(
+        &self,
+        slug: &str,
+        quote_currency: &str,
+    ) -> Result<LatestAssetPrice, PriceLookupError> {
         let slug = slug.trim();
 
         if slug.is_empty() {
             return Err(PriceLookupError::InvalidSlug);
         }
 
-        let url = self.latest_price_url(slug);
+        let quote_currency = normalize_quote_currency(quote_currency);
+        let url = self.latest_price_url(slug, &quote_currency);
         let response = self
             .client
             .get(url)
@@ -192,12 +197,14 @@ impl PriceIndexerClient {
         Err(map_error_response(status, &body))
     }
 
-    fn latest_price_url(&self, slug: &str) -> Url {
+    fn latest_price_url(&self, slug: &str, quote_currency: &str) -> Url {
         let mut url = self.base_url.clone();
         let base_path = url.path().trim_end_matches('/');
         url.set_path(&format!("{base_path}/prices/latest"));
         url.set_query(None);
-        url.query_pairs_mut().append_pair("slug", slug);
+        url.query_pairs_mut()
+            .append_pair("slug", slug)
+            .append_pair("quoteCurrency", quote_currency);
         url
     }
 
@@ -888,20 +895,23 @@ mod tests {
     }
 
     #[test]
-    fn latest_price_url_identifies_asset_by_slug() {
+    fn latest_price_url_identifies_asset_by_slug_and_quote_currency() {
         let client = PriceIndexerClient::new("http://price-indexer:3010/api", "secret", 2000)
             .expect("price indexer client should initialize");
 
-        let url = client.latest_price_url("usd-coin");
+        let url = client.latest_price_url("usd-coin", "MXN");
         let query_pairs = url.query_pairs().collect::<Vec<_>>();
 
         assert_eq!(
             url.as_str(),
-            "http://price-indexer:3010/api/prices/latest?slug=usd-coin"
+            "http://price-indexer:3010/api/prices/latest?slug=usd-coin&quoteCurrency=MXN"
         );
         assert!(query_pairs
             .iter()
             .any(|(key, value)| key == "slug" && value == "usd-coin"));
+        assert!(query_pairs
+            .iter()
+            .any(|(key, value)| key == "quoteCurrency" && value == "MXN"));
         assert!(!query_pairs.iter().any(|(key, _)| key == "symbol"));
     }
 
