@@ -209,14 +209,18 @@ DIS outcomes are mapped to this small, stable set of Mother API codes:
 | Country missing or unsupported by DIS       |  400 | `unsupported_prediction_subject`  |
 | Prediction provider unavailable / failed    |  503 | `prediction_provider_unavailable` |
 | Prediction provider timed out               |  504 | `prediction_provider_timeout`     |
-| DIS unconfigured, unreachable, timed out, or returns an availability failure | 503 | `prediction_resolver_unavailable` |
-| DIS responds but Mother cannot decode the response schema | 502 | `prediction_resolver_schema_mismatch` |
+| DIS unconfigured, unreachable, or reports an availability failure | 503 | `prediction_resolver_unavailable` |
+| Mother times out waiting for DIS | 504 | `prediction_resolver_timeout` |
+| HTTP 200 success body does not match the expected winner/country shape | 502 | `prediction_resolver_schema_mismatch` |
+| Non-success DIS body is not a valid error envelope | 502 | `prediction_resolver_malformed_response` |
+| DIS returns `internal_error` or an unknown code in a valid error envelope | 502 | `prediction_resolver_error` |
 | Any other unexpected Mother API failure     |  500 | `internal_error`                  |
 
 Rationale: an unsupported country is user/demo input and maps to `400`.
-Schema incompatibility is distinct from availability: Mother reached DIS and
-received a response, but could not understand its shape. The public error
-remains sanitized and does not expose provider data or response bodies.
+Schema incompatibility, malformed error envelopes, and unknown structured
+errors are distinct from availability because Mother reached DIS and received
+a response. Public errors remain sanitized and do not expose DIS messages,
+provider data, or response bodies.
 
 ## 7. DIS client (Mother API side)
 
@@ -254,14 +258,17 @@ The client must:
   configured DIS base URL and timeout.
 - Decode DIS success and DIS error responses.
 - Select and require the winner or country success shape from the request.
-- Classify DIS transport failures separately from DIS resolver failures so they
-  can be mapped to the public codes in section 6.
+- Classify transport, timeout, success-schema, malformed-error-envelope, known
+  error-code, and unknown-error-code outcomes separately.
 - Classify HTTP success responses that cannot be deserialized as
   `UnsupportedResponseSchema`, mapped publicly to
   `prediction_resolver_schema_mismatch`.
-- Log schema mismatches with the DIS path, status, event slug, expected
-  response variant, deserialization category, body length, and a capped list
-  of top-level field names.
+- Classify invalid DIS error envelopes as `MalformedErrorResponse` and valid
+  envelopes with unknown codes as `UnknownResolverErrorCode`; neither is
+  resolver unavailability or a success-schema mismatch.
+- Log response classification failures with the DIS path, status, event slug,
+  expected response variant, issue/category, body length, and capped top-level
+  field names. Unknown error codes may be logged only as a capped label.
 - Avoid logging full provider payloads or large response bodies.
 - Never log raw response bodies, provider URLs, provider IDs, or provider
   condition IDs.

@@ -401,7 +401,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prediction_routes_map_dis_timeout_to_resolver_unavailable() {
+    async fn prediction_routes_map_dis_timeout_to_resolver_timeout() {
         let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
             return;
         };
@@ -414,8 +414,8 @@ mod tests {
 
         let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
 
-        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-        assert_public_error(&json, "prediction_resolver_unavailable");
+        assert_eq!(status, StatusCode::GATEWAY_TIMEOUT);
+        assert_public_error(&json, "prediction_resolver_timeout");
         handle.join().expect("test listener thread should finish");
     }
 
@@ -482,7 +482,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prediction_routes_map_dis_internal_error_to_resolver_unavailable() {
+    async fn prediction_routes_map_dis_internal_error_to_resolver_error() {
         let Some((dis_url, _request_handle)) = spawn_prediction_dis(vec![(
             StatusCode::INTERNAL_SERVER_ERROR,
             serde_json::json!({
@@ -502,8 +502,8 @@ mod tests {
 
         let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
 
-        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-        assert_public_error(&json, "prediction_resolver_unavailable");
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_public_error(&json, "prediction_resolver_error");
     }
 
     #[tokio::test]
@@ -532,6 +532,54 @@ mod tests {
             json["error"]["code"],
             serde_json::json!("prediction_resolver_unavailable")
         );
+    }
+
+    #[tokio::test]
+    async fn prediction_routes_map_unknown_dis_error_code_to_resolver_error() {
+        let Some((dis_url, _request_handle)) = spawn_prediction_dis(vec![(
+            StatusCode::SERVICE_UNAVAILABLE,
+            serde_json::json!({
+                "error": {
+                    "code": "future_dis_error",
+                    "message": "Future DIS error.",
+                    "details": {
+                        "provider_market": { "id": "must-not-leak" }
+                    }
+                }
+            }),
+        )]) else {
+            return;
+        };
+        let app = test_app_with_dis(&dis_url);
+
+        let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
+
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_public_error(&json, "prediction_resolver_error");
+        assert_ne!(
+            json["error"]["code"],
+            serde_json::json!("prediction_resolver_schema_mismatch")
+        );
+        assert_ne!(
+            json["error"]["code"],
+            serde_json::json!("prediction_resolver_unavailable")
+        );
+    }
+
+    #[tokio::test]
+    async fn prediction_routes_map_invalid_dis_error_body_to_malformed_response() {
+        let Some((dis_url, _request_handle)) = spawn_prediction_dis_raw(vec![(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "not-json".to_string(),
+        )]) else {
+            return;
+        };
+        let app = test_app_with_dis(&dis_url);
+
+        let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
+
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_public_error(&json, "prediction_resolver_malformed_response");
     }
 
     #[tokio::test]
@@ -1875,6 +1923,17 @@ mod tests {
     fn spawn_prediction_dis(
         responses: Vec<(StatusCode, Value)>,
     ) -> Option<(String, tokio::task::JoinHandle<Vec<String>>)> {
+        spawn_prediction_dis_raw(
+            responses
+                .into_iter()
+                .map(|(status, body)| (status, body.to_string()))
+                .collect(),
+        )
+    }
+
+    fn spawn_prediction_dis_raw(
+        responses: Vec<(StatusCode, String)>,
+    ) -> Option<(String, tokio::task::JoinHandle<Vec<String>>)> {
         let listener = match TcpListener::bind("127.0.0.1:0") {
             Ok(listener) => listener,
             Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
@@ -1891,7 +1950,6 @@ mod tests {
                 let mut stream = accept_prediction_connection(&listener);
                 requests.push(read_http_request(&mut stream));
 
-                let body = body.to_string();
                 let reason = status.canonical_reason().unwrap_or("Unknown");
                 let response = format!(
                     "HTTP/1.1 {} {}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",

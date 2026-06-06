@@ -140,6 +140,30 @@ impl ApiError {
             message: "Prediction resolver returned an unsupported response.",
         }
     }
+
+    pub fn prediction_resolver_timeout() -> Self {
+        Self {
+            status: StatusCode::GATEWAY_TIMEOUT,
+            code: "prediction_resolver_timeout",
+            message: "Prediction resolver timed out.",
+        }
+    }
+
+    pub fn prediction_resolver_malformed_response() -> Self {
+        Self {
+            status: StatusCode::BAD_GATEWAY,
+            code: "prediction_resolver_malformed_response",
+            message: "Prediction resolver returned a malformed error response.",
+        }
+    }
+
+    pub fn prediction_resolver_error() -> Self {
+        Self {
+            status: StatusCode::BAD_GATEWAY,
+            code: "prediction_resolver_error",
+            message: "Prediction resolver returned an unclassified error.",
+        }
+    }
 }
 
 impl IntoResponse for ApiError {

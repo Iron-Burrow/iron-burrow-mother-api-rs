@@ -90,9 +90,29 @@ impl DisClient {
         }
 
         let error = map_error_response(status, &body);
-        if error == DisClientError::UnsupportedResponseSchema {
-            let deserialization_error = serde_json::from_slice::<DisErrorEnvelope>(&body).err();
-            log_schema_mismatch(request, status, &body, deserialization_error.as_ref());
+        match &error {
+            DisClientError::MalformedErrorResponse => {
+                let deserialization_error = serde_json::from_slice::<DisErrorEnvelope>(&body).err();
+                log_response_issue(
+                    request,
+                    status,
+                    &body,
+                    "malformed_error_response",
+                    deserialization_error.as_ref().map(serde_error_category),
+                    None,
+                );
+            }
+            DisClientError::UnknownResolverErrorCode(code) => {
+                log_response_issue(
+                    request,
+                    status,
+                    &body,
+                    "unknown_resolver_error_code",
+                    None,
+                    Some(code),
+                );
+            }
+            _ => {}
         }
 
         Err(error)
@@ -141,10 +161,13 @@ pub enum DisClientError {
     Transport,
     Timeout,
     ResolverUnavailable,
+    ResolverError,
     ProviderUnavailable,
     ProviderTimeout,
     UnsupportedSubject,
     UnsupportedResponseSchema,
+    MalformedErrorResponse,
+    UnknownResolverErrorCode(String),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -204,11 +227,8 @@ struct DisErrorEnvelope {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct DisErrorBody {
     code: String,
-    message: String,
-    details: Option<serde_json::Value>,
 }
 
 fn should_retry(error: &DisClientError, attempt: u64, max_attempts: u64) -> bool {
@@ -220,6 +240,7 @@ fn should_retry(error: &DisClientError, attempt: u64, max_attempts: u64) -> bool
                 | DisClientError::ProviderUnavailable
                 | DisClientError::ProviderTimeout
                 | DisClientError::ResolverUnavailable
+                | DisClientError::ResolverError
         )
 }
 
@@ -295,6 +316,35 @@ fn log_schema_mismatch(
     );
 }
 
+fn log_response_issue(
+    request: &PolymarketSnapshotRequest,
+    status: StatusCode,
+    body: &[u8],
+    response_issue: &'static str,
+    deserialization_error_category: Option<&'static str>,
+    dis_error_code: Option<&str>,
+) {
+    let top_level_fields = top_level_json_field_names(body);
+    let dis_error_code = dis_error_code.map(|code| {
+        code.chars()
+            .take(MAX_LOGGED_FIELD_NAME_CHARS)
+            .collect::<String>()
+    });
+
+    warn!(
+        dis_path = POLYMARKET_SNAPSHOT_PATH,
+        status_code = status.as_u16(),
+        event_slug = %request.event_slug,
+        expected_response_variant = expected_response_variant(request).as_str(),
+        response_issue,
+        deserialization_error_category,
+        dis_error_code = ?dis_error_code,
+        body_length = body.len(),
+        top_level_json_fields = ?top_level_fields,
+        "DIS prediction error response could not be classified"
+    );
+}
+
 fn serde_error_category(error: &serde_json::Error) -> &'static str {
     match error.classify() {
         serde_json::error::Category::Io => "io",
@@ -323,18 +373,10 @@ fn top_level_json_field_names(body: &[u8]) -> Vec<String> {
     names
 }
 
-fn map_error_response(status: StatusCode, body: &[u8]) -> DisClientError {
+fn map_error_response(_status: StatusCode, body: &[u8]) -> DisClientError {
     let envelope = match serde_json::from_slice::<DisErrorEnvelope>(body) {
         Ok(envelope) => envelope,
-        Err(_)
-            if matches!(
-                status,
-                StatusCode::SERVICE_UNAVAILABLE | StatusCode::GATEWAY_TIMEOUT
-            ) =>
-        {
-            return DisClientError::ResolverUnavailable;
-        }
-        Err(_) => return DisClientError::UnsupportedResponseSchema,
+        Err(_) => return DisClientError::MalformedErrorResponse,
     };
 
     match envelope.error.code.as_str() {
@@ -343,10 +385,9 @@ fn map_error_response(status: StatusCode, body: &[u8]) -> DisClientError {
         }
         "prediction_provider_unavailable" => DisClientError::ProviderUnavailable,
         "prediction_provider_timeout" => DisClientError::ProviderTimeout,
-        "prediction_resolver_unavailable" | "internal_error" => DisClientError::ResolverUnavailable,
-        _ if status == StatusCode::SERVICE_UNAVAILABLE => DisClientError::ResolverUnavailable,
-        _ if status == StatusCode::GATEWAY_TIMEOUT => DisClientError::ResolverUnavailable,
-        _ => DisClientError::UnsupportedResponseSchema,
+        "prediction_resolver_unavailable" => DisClientError::ResolverUnavailable,
+        "internal_error" => DisClientError::ResolverError,
+        code => DisClientError::UnknownResolverErrorCode(code.to_string()),
     }
 }
 
@@ -502,7 +543,7 @@ mod tests {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal_error",
-                DisClientError::ResolverUnavailable,
+                DisClientError::ResolverError,
             ),
         ] {
             let body = serde_json::to_vec(&json!({
@@ -519,23 +560,33 @@ mod tests {
     }
 
     #[test]
-    fn malformed_dis_availability_error_body_maps_to_resolver_unavailable() {
+    fn unknown_error_code_maps_to_unknown_resolver_error_code() {
+        let body = serde_json::to_vec(&json!({
+            "error": {
+                "code": "future_dis_error",
+                "message": "Future DIS error."
+            }
+        }))
+        .unwrap();
+
         assert_eq!(
-            map_error_response(StatusCode::SERVICE_UNAVAILABLE, b"not-json"),
-            DisClientError::ResolverUnavailable
-        );
-        assert_eq!(
-            map_error_response(StatusCode::GATEWAY_TIMEOUT, b"not-json"),
-            DisClientError::ResolverUnavailable
+            map_error_response(StatusCode::SERVICE_UNAVAILABLE, &body),
+            DisClientError::UnknownResolverErrorCode("future_dis_error".to_string())
         );
     }
 
     #[test]
-    fn malformed_non_availability_error_body_maps_to_unsupported_response_schema() {
-        assert_eq!(
-            map_error_response(StatusCode::INTERNAL_SERVER_ERROR, b"not-json"),
-            DisClientError::UnsupportedResponseSchema
-        );
+    fn malformed_error_body_maps_to_malformed_error_response_for_any_status() {
+        for status in [
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::SERVICE_UNAVAILABLE,
+            StatusCode::GATEWAY_TIMEOUT,
+        ] {
+            assert_eq!(
+                map_error_response(status, b"not-json"),
+                DisClientError::MalformedErrorResponse
+            );
+        }
     }
 
     #[tokio::test]

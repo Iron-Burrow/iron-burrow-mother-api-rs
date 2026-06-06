@@ -177,8 +177,15 @@ fn dis_error_to_api_error(error: DisClientError) -> ApiError {
         DisClientError::UnsupportedResponseSchema => {
             ApiError::prediction_resolver_schema_mismatch()
         }
-        DisClientError::Transport
-        | DisClientError::Timeout
-        | DisClientError::ResolverUnavailable => ApiError::prediction_resolver_unavailable(),
+        DisClientError::MalformedErrorResponse => {
+            ApiError::prediction_resolver_malformed_response()
+        }
+        DisClientError::ResolverError | DisClientError::UnknownResolverErrorCode(_) => {
+            ApiError::prediction_resolver_error()
+        }
+        DisClientError::Timeout => ApiError::prediction_resolver_timeout(),
+        DisClientError::Transport | DisClientError::ResolverUnavailable => {
+            ApiError::prediction_resolver_unavailable()
+        }
     }
 }
