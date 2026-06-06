@@ -132,6 +132,14 @@ impl ApiError {
             message: "Prediction resolver is temporarily unavailable.",
         }
     }
+
+    pub fn prediction_resolver_schema_mismatch() -> Self {
+        Self {
+            status: StatusCode::BAD_GATEWAY,
+            code: "prediction_resolver_schema_mismatch",
+            message: "Prediction resolver returned an unsupported response.",
+        }
+    }
 }
 
 impl IntoResponse for ApiError {

@@ -90,7 +90,11 @@ mod tests {
     }
 
     fn test_app_with_dis(dis_url: &str) -> Router {
-        let dis_client = DisClient::new(dis_url, 2000, 1).unwrap();
+        test_app_with_dis_timeout(dis_url, 2000)
+    }
+
+    fn test_app_with_dis_timeout(dis_url: &str, timeout_ms: u64) -> Router {
+        let dis_client = DisClient::new(dis_url, timeout_ms, 1).unwrap();
 
         create_app(AppState {
             config: Config::default(),
@@ -175,16 +179,33 @@ mod tests {
         let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
 
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(json["ok"], true);
-        assert_eq!(json["event"], "2026 FIFA World Cup Winner");
-        assert_eq!(json["event_slug"], "fifa-world-cup-2026-winner");
-        assert_eq!(json["odds"][0]["team"], "France");
-        assert_eq!(json["odds"][0]["probability"], "0.180000000000000001");
-        assert_eq!(json["odds"][0]["price"], "0.18");
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "ok": true,
+                "event": "World Cup Winner ",
+                "event_slug": "fifa-world-cup-2026-winner",
+                "odds": [
+                    {
+                        "team": "France",
+                        "probability": "0.1595",
+                        "price": "0.1595",
+                        "currency": "USDC"
+                    },
+                    {
+                        "team": "Spain",
+                        "probability": "0.1595",
+                        "price": "0.1595",
+                        "currency": "USDC"
+                    }
+                ],
+                "source": "polymarket",
+                "deterministic": true,
+                "captured_at": "2026-06-06T03:21:42.512048Z"
+            })
+        );
         assert!(json["odds"][0]["probability"].is_string());
         assert!(json["odds"][0]["price"].is_string());
-        assert!(json.get("provider_market").is_none());
-        assert!(json["odds"][0].get("provider_market").is_none());
 
         let requests = request_handle.await.unwrap();
         assert_eq!(requests.len(), 1);
@@ -216,14 +237,25 @@ mod tests {
             .await;
 
             assert_eq!(status, StatusCode::OK);
-            assert_eq!(json["ok"], true);
-            assert_eq!(json["market"], "Mexico to reach Round of 16");
-            assert_eq!(json["country"]["slug"], "mexico");
-            assert_eq!(json["probability"], "0.630000000000000001");
-            assert_eq!(json["price"], "0.63");
+            assert_eq!(
+                json,
+                serde_json::json!({
+                    "ok": true,
+                    "market": "Will Mexico reach the Round of 16 at the 2026 FIFA World Cup?",
+                    "country": {
+                        "slug": "mexico",
+                        "name": "Mexico"
+                    },
+                    "probability": "0.535",
+                    "price": "0.535",
+                    "currency": "USDC",
+                    "source": "polymarket",
+                    "deterministic": true,
+                    "captured_at": "2026-06-06T03:22:11.593940Z"
+                })
+            );
             assert!(json["probability"].is_string());
             assert!(json["price"].is_string());
-            assert!(json.get("provider_market").is_none());
         }
 
         let requests = request_handle.await.unwrap();
@@ -256,29 +288,35 @@ mod tests {
 
         assert_eq!(winner_status, StatusCode::OK);
         assert_eq!(winner_json["ok"], true);
-        assert_eq!(winner_json["event"], "2026 FIFA World Cup Winner");
+        assert_eq!(winner_json["event"], "World Cup Winner ");
         assert_eq!(winner_json["event_slug"], "fifa-world-cup-2026-winner");
         assert_eq!(winner_json["odds"][0]["team"], "France");
+        assert_eq!(winner_json["odds"][1]["team"], "Spain");
         assert!(winner_json["odds"][0]["probability"].is_string());
         assert!(winner_json["odds"][0]["price"].is_string());
         assert_eq!(winner_json["odds"][0]["currency"], "USDC");
         assert_eq!(winner_json["source"], "polymarket");
         assert_eq!(winner_json["deterministic"], true);
-        assert_eq!(winner_json["captured_at"], "2026-06-03T18:20:00Z");
+        assert_eq!(winner_json["captured_at"], "2026-06-06T03:21:42.512048Z");
         assert!(winner_json.get("provider_market").is_none());
         assert!(winner_json["odds"][0].get("provider_market").is_none());
 
         assert_eq!(country_status, StatusCode::OK);
         assert_eq!(country_json["ok"], true);
-        assert_eq!(country_json["market"], "Mexico to reach Round of 16");
+        assert_eq!(
+            country_json["market"],
+            "Will Mexico reach the Round of 16 at the 2026 FIFA World Cup?"
+        );
         assert_eq!(country_json["country"]["slug"], "mexico");
         assert_eq!(country_json["country"]["name"], "Mexico");
+        assert_eq!(country_json["probability"], "0.535");
+        assert_eq!(country_json["price"], "0.535");
         assert!(country_json["probability"].is_string());
         assert!(country_json["price"].is_string());
         assert_eq!(country_json["currency"], "USDC");
         assert_eq!(country_json["source"], "polymarket");
         assert_eq!(country_json["deterministic"], true);
-        assert_eq!(country_json["captured_at"], "2026-06-03T18:20:00Z");
+        assert_eq!(country_json["captured_at"], "2026-06-06T03:22:11.593940Z");
         assert!(country_json.get("provider_market").is_none());
         assert!(country_json["country"].get("provider_market").is_none());
 
@@ -345,6 +383,40 @@ mod tests {
 
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         assert_public_error(&json, "prediction_resolver_unavailable");
+    }
+
+    #[tokio::test]
+    async fn prediction_routes_map_dis_connection_failure_to_resolver_unavailable() {
+        let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
+            return;
+        };
+        let dis_url = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        let app = test_app_with_dis(&dis_url);
+
+        let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
+
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_public_error(&json, "prediction_resolver_unavailable");
+    }
+
+    #[tokio::test]
+    async fn prediction_routes_map_dis_timeout_to_resolver_unavailable() {
+        let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
+            return;
+        };
+        let dis_url = format!("http://{}", listener.local_addr().unwrap());
+        let handle = std::thread::spawn(move || {
+            let (_stream, _) = listener.accept().expect("test request should connect");
+            std::thread::sleep(Duration::from_millis(100));
+        });
+        let app = test_app_with_dis_timeout(&dis_url, 10);
+
+        let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
+
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_public_error(&json, "prediction_resolver_unavailable");
+        handle.join().expect("test listener thread should finish");
     }
 
     #[tokio::test]
@@ -435,57 +507,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prediction_routes_reject_dis_ok_false_success_bodies() {
-        for (uri, body) in [
-            (
-                "/v1/predictions/fifa-world-cup/winner",
-                serde_json::json!({
-                    "ok": false,
-                    "event": "2026 FIFA World Cup Winner",
-                    "event_slug": "fifa-world-cup-2026-winner",
-                    "odds": [
-                        {
-                            "team": "France",
-                            "probability": "0.18",
-                            "price": "0.18",
-                            "currency": "USDC"
-                        }
-                    ],
-                    "source": "polymarket",
-                    "deterministic": true,
-                    "captured_at": "2026-06-03T18:20:00Z"
-                }),
-            ),
-            (
-                "/v1/predictions/fifa-world-cup/mexico",
-                serde_json::json!({
-                    "ok": false,
-                    "market": "Mexico to reach Round of 16",
-                    "country": {
-                        "slug": "mexico",
-                        "name": "Mexico"
-                    },
-                    "probability": "0.63",
-                    "price": "0.63",
-                    "currency": "USDC",
-                    "source": "polymarket",
-                    "deterministic": true,
-                    "captured_at": "2026-06-03T18:20:00Z"
-                }),
-            ),
-        ] {
-            let Some((dis_url, _request_handle)) =
-                spawn_prediction_dis(vec![(StatusCode::OK, body)])
-            else {
-                return;
-            };
-            let app = test_app_with_dis(&dis_url);
+    async fn prediction_routes_map_wrong_shaped_success_to_schema_mismatch() {
+        let Some((dis_url, _request_handle)) = spawn_prediction_dis(vec![(
+            StatusCode::OK,
+            serde_json::json!({
+                "ok": true,
+                "event": "Legacy response shape",
+                "odds": [],
+                "provider_market": {
+                    "id": "must-not-leak",
+                    "url": "https://provider.invalid/must-not-leak"
+                }
+            }),
+        )]) else {
+            return;
+        };
+        let app = test_app_with_dis(&dis_url);
 
-            let (status, json) = app_json(app, uri).await;
+        let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
 
-            assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-            assert_public_error(&json, "prediction_resolver_unavailable");
-        }
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_public_error(&json, "prediction_resolver_schema_mismatch");
+        assert_ne!(
+            json["error"]["code"],
+            serde_json::json!("prediction_resolver_unavailable")
+        );
     }
 
     #[tokio::test]
@@ -1894,49 +1940,72 @@ mod tests {
 
     fn winner_prediction_body() -> Value {
         serde_json::json!({
-            "ok": true,
-            "event": "2026 FIFA World Cup Winner",
             "event_slug": "fifa-world-cup-2026-winner",
-            "odds": [
+            "event_title": "World Cup Winner ",
+            "source": "polymarket",
+            "source_kind": "public_market_data_api",
+            "mode": "live_passthrough",
+            "deterministic": true,
+            "captured_at": "2026-06-06T03:21:42.512048Z",
+            "provider_market": {
+                "id": "558936",
+                "slug": "will-france-win-the-2026-fifa-world-cup-924",
+                "condition_id": "0x9b6fef249040fd17e9c107955b37ac2c3e923509b6b0ff01cc463a331ddeb894",
+                "url": "https://polymarket.com/event/will-france-win-the-2026-fifa-world-cup-924"
+            },
+            "warnings": [
                 {
-                    "team": "France",
-                    "probability": "0.180000000000000001",
-                    "price": "0.18",
-                    "currency": "USDC",
-                    "provider_market": {
-                        "id": "hidden-winner-market"
-                    }
+                    "code": "probability_interpreted_from_price",
+                    "message": "Outcome probabilities are interpreted from public market prices."
                 }
             ],
-            "source": "polymarket",
-            "deterministic": true,
-            "captured_at": "2026-06-03T18:20:00Z",
-            "provider_market": {
-                "id": "hidden-top-level-market"
-            }
+            "outcomes": [
+                {
+                    "name": "France",
+                    "probability": "0.1595",
+                    "price": "0.1595",
+                    "currency": "USDC"
+                },
+                {
+                    "name": "Spain",
+                    "probability": "0.1595",
+                    "price": "0.1595",
+                    "currency": "USDC"
+                }
+            ]
         })
     }
 
     fn country_prediction_body(country_slug: &str) -> Value {
         serde_json::json!({
-            "ok": true,
-            "market": "Mexico to reach Round of 16",
-            "country": {
-                "slug": country_slug,
-                "name": "Mexico",
-                "provider_market": {
-                    "id": "hidden-country-market"
-                }
-            },
-            "probability": "0.630000000000000001",
-            "price": "0.63",
-            "currency": "USDC",
+            "event_slug": "fifa-world-cup-2026-country-probability",
+            "event_title": "FIFA World Cup 2026 Country Probability",
             "source": "polymarket",
+            "source_kind": "public_market_data_api",
+            "mode": "live_passthrough",
             "deterministic": true,
-            "captured_at": "2026-06-03T18:20:00Z",
+            "captured_at": "2026-06-06T03:22:11.593940Z",
             "provider_market": {
-                "id": "hidden-country-top-level-market"
-            }
+                "id": "2415420",
+                "slug": "will-mexico-reach-the-round-of-16-at-the-2026-fifa-world-cup-20260602025120735",
+                "condition_id": "0x2b3237da39d6c7b1f7adef29c5f675e4214cec25f585ca151c7b8cc9271871e1",
+                "url": "https://polymarket.com/event/will-mexico-reach-the-round-of-16-at-the-2026-fifa-world-cup-20260602025120735"
+            },
+            "warnings": [
+                {
+                    "code": "probability_interpreted_from_price",
+                    "message": "Outcome probability is interpreted from public market price."
+                }
+            ],
+            "subject": {
+                "kind": "country",
+                "slug": country_slug,
+                "name": "Mexico"
+            },
+            "market": "Will Mexico reach the Round of 16 at the 2026 FIFA World Cup?",
+            "probability": "0.535",
+            "price": "0.535",
+            "currency": "USDC"
         })
     }
 
