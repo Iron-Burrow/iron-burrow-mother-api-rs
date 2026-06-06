@@ -6,8 +6,9 @@ use serde::Serialize;
 
 use crate::{
     dis::{
-        DisClientError, PolymarketCountrySummary, PolymarketSnapshotOdd, PolymarketSnapshotRequest,
-        PolymarketSnapshotResponse,
+        DisClientError, PolymarketCountrySnapshot, PolymarketCountrySubject,
+        PolymarketSnapshotRequest, PolymarketSnapshotResponse, PolymarketWinnerOutcome,
+        PolymarketWinnerSnapshot,
     },
     error::ApiError,
     state::AppState,
@@ -109,73 +110,59 @@ async fn prediction_snapshot(
 fn winner_response(
     response: PolymarketSnapshotResponse,
 ) -> Result<WinnerPredictionResponse, ApiError> {
-    ensure_dis_success(response.ok)?;
+    let PolymarketSnapshotResponse::Winner(response) = response else {
+        return Err(ApiError::prediction_resolver_schema_mismatch());
+    };
 
-    Ok(WinnerPredictionResponse {
-        ok: true,
-        event: response
-            .event
-            .ok_or_else(ApiError::prediction_resolver_unavailable)?,
-        event_slug: WINNER_EVENT_SLUG.to_string(),
-        odds: response
-            .odds
-            .ok_or_else(ApiError::prediction_resolver_unavailable)?
-            .into_iter()
-            .map(prediction_odd)
-            .collect(),
-        source: response.source,
-        deterministic: response.deterministic,
-        captured_at: response.captured_at,
-    })
+    Ok(winner_prediction_response(response))
 }
 
 fn country_response(
     response: PolymarketSnapshotResponse,
 ) -> Result<CountryPredictionResponse, ApiError> {
-    ensure_dis_success(response.ok)?;
+    let PolymarketSnapshotResponse::Country(response) = response else {
+        return Err(ApiError::prediction_resolver_schema_mismatch());
+    };
 
-    Ok(CountryPredictionResponse {
+    Ok(country_prediction_response(response))
+}
+
+fn winner_prediction_response(response: PolymarketWinnerSnapshot) -> WinnerPredictionResponse {
+    WinnerPredictionResponse {
         ok: true,
-        market: response
-            .market
-            .ok_or_else(ApiError::prediction_resolver_unavailable)?,
-        country: response
-            .country
-            .map(prediction_country_summary)
-            .ok_or_else(ApiError::prediction_resolver_unavailable)?,
-        probability: response
-            .probability
-            .ok_or_else(ApiError::prediction_resolver_unavailable)?,
-        price: response
-            .price
-            .ok_or_else(ApiError::prediction_resolver_unavailable)?,
-        currency: response
-            .currency
-            .ok_or_else(ApiError::prediction_resolver_unavailable)?,
+        event: response.event_title,
+        event_slug: WINNER_EVENT_SLUG.to_string(),
+        odds: response.outcomes.into_iter().map(prediction_odd).collect(),
         source: response.source,
         deterministic: response.deterministic,
         captured_at: response.captured_at,
-    })
-}
-
-fn ensure_dis_success(ok: bool) -> Result<(), ApiError> {
-    if ok {
-        Ok(())
-    } else {
-        Err(ApiError::prediction_resolver_unavailable())
     }
 }
 
-fn prediction_odd(odd: PolymarketSnapshotOdd) -> PredictionOdd {
+fn country_prediction_response(response: PolymarketCountrySnapshot) -> CountryPredictionResponse {
+    CountryPredictionResponse {
+        ok: true,
+        market: response.market,
+        country: prediction_country_summary(response.subject),
+        probability: response.probability,
+        price: response.price,
+        currency: response.currency,
+        source: response.source,
+        deterministic: response.deterministic,
+        captured_at: response.captured_at,
+    }
+}
+
+fn prediction_odd(odd: PolymarketWinnerOutcome) -> PredictionOdd {
     PredictionOdd {
-        team: odd.team,
+        team: odd.name,
         probability: odd.probability,
         price: odd.price,
         currency: odd.currency,
     }
 }
 
-fn prediction_country_summary(country: PolymarketCountrySummary) -> PredictionCountrySummary {
+fn prediction_country_summary(country: PolymarketCountrySubject) -> PredictionCountrySummary {
     PredictionCountrySummary {
         slug: country.slug,
         name: country.name,
@@ -187,9 +174,18 @@ fn dis_error_to_api_error(error: DisClientError) -> ApiError {
         DisClientError::UnsupportedSubject => ApiError::unsupported_prediction_subject(),
         DisClientError::ProviderUnavailable => ApiError::prediction_provider_unavailable(),
         DisClientError::ProviderTimeout => ApiError::prediction_provider_timeout(),
-        DisClientError::Transport
-        | DisClientError::Timeout
-        | DisClientError::ResolverUnavailable
-        | DisClientError::MalformedResponse => ApiError::prediction_resolver_unavailable(),
+        DisClientError::UnsupportedResponseSchema => {
+            ApiError::prediction_resolver_schema_mismatch()
+        }
+        DisClientError::MalformedErrorResponse => {
+            ApiError::prediction_resolver_malformed_response()
+        }
+        DisClientError::ResolverError | DisClientError::UnknownResolverErrorCode(_) => {
+            ApiError::prediction_resolver_error()
+        }
+        DisClientError::Timeout => ApiError::prediction_resolver_timeout(),
+        DisClientError::Transport | DisClientError::ResolverUnavailable => {
+            ApiError::prediction_resolver_unavailable()
+        }
     }
 }

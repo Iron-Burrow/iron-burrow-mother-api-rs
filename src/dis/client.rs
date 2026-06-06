@@ -3,9 +3,12 @@ use std::time::Duration;
 use reqwest::{StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
+use tracing::warn;
 
 const POLYMARKET_SNAPSHOT_PATH: &str = "/internal/v1/prediction-markets/polymarket/snapshot";
 const RETRY_BACKOFF: Duration = Duration::from_millis(50);
+const MAX_LOGGED_TOP_LEVEL_FIELDS: usize = 16;
+const MAX_LOGGED_FIELD_NAME_CHARS: usize = 64;
 
 #[derive(Clone)]
 pub struct DisClient {
@@ -83,11 +86,36 @@ impl DisClient {
         let body = response.bytes().await.map_err(map_reqwest_error)?;
 
         if status.is_success() {
-            return serde_json::from_slice::<PolymarketSnapshotResponse>(&body)
-                .map_err(|_| DisClientError::MalformedResponse);
+            return decode_success_response(request, status, &body);
         }
 
-        Err(map_error_response(status, &body))
+        let error = map_error_response(status, &body);
+        match &error {
+            DisClientError::MalformedErrorResponse => {
+                let deserialization_error = serde_json::from_slice::<DisErrorEnvelope>(&body).err();
+                log_response_issue(
+                    request,
+                    status,
+                    &body,
+                    "malformed_error_response",
+                    deserialization_error.as_ref().map(serde_error_category),
+                    None,
+                );
+            }
+            DisClientError::UnknownResolverErrorCode(code) => {
+                log_response_issue(
+                    request,
+                    status,
+                    &body,
+                    "unknown_resolver_error_code",
+                    None,
+                    Some(code),
+                );
+            }
+            _ => {}
+        }
+
+        Err(error)
     }
 
     fn polymarket_prediction_snapshot_url(&self) -> Url {
@@ -133,10 +161,13 @@ pub enum DisClientError {
     Transport,
     Timeout,
     ResolverUnavailable,
+    ResolverError,
     ProviderUnavailable,
     ProviderTimeout,
     UnsupportedSubject,
-    MalformedResponse,
+    UnsupportedResponseSchema,
+    MalformedErrorResponse,
+    UnknownResolverErrorCode(String),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -146,32 +177,46 @@ pub struct PolymarketSnapshotRequest {
     pub country: Option<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PolymarketSnapshotResponse {
+    Winner(PolymarketWinnerSnapshot),
+    Country(PolymarketCountrySnapshot),
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct PolymarketSnapshotResponse {
-    pub ok: bool,
-    pub event: Option<String>,
-    pub event_slug: Option<String>,
-    pub odds: Option<Vec<PolymarketSnapshotOdd>>,
-    pub market: Option<String>,
-    pub country: Option<PolymarketCountrySummary>,
-    pub probability: Option<String>,
-    pub price: Option<String>,
-    pub currency: Option<String>,
+pub struct PolymarketWinnerSnapshot {
+    pub event_slug: String,
+    pub event_title: String,
+    pub outcomes: Vec<PolymarketWinnerOutcome>,
     pub source: String,
     pub deterministic: bool,
     pub captured_at: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct PolymarketSnapshotOdd {
-    pub team: String,
+pub struct PolymarketWinnerOutcome {
+    pub name: String,
     pub probability: String,
     pub price: String,
     pub currency: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct PolymarketCountrySummary {
+pub struct PolymarketCountrySnapshot {
+    pub event_slug: String,
+    pub event_title: String,
+    pub subject: PolymarketCountrySubject,
+    pub market: String,
+    pub probability: String,
+    pub price: String,
+    pub currency: String,
+    pub source: String,
+    pub deterministic: bool,
+    pub captured_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct PolymarketCountrySubject {
     pub slug: String,
     pub name: String,
 }
@@ -182,11 +227,8 @@ struct DisErrorEnvelope {
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct DisErrorBody {
     code: String,
-    message: String,
-    details: Option<serde_json::Value>,
 }
 
 fn should_retry(error: &DisClientError, attempt: u64, max_attempts: u64) -> bool {
@@ -198,6 +240,7 @@ fn should_retry(error: &DisClientError, attempt: u64, max_attempts: u64) -> bool
                 | DisClientError::ProviderUnavailable
                 | DisClientError::ProviderTimeout
                 | DisClientError::ResolverUnavailable
+                | DisClientError::ResolverError
         )
 }
 
@@ -209,18 +252,131 @@ fn map_reqwest_error(error: reqwest::Error) -> DisClientError {
     }
 }
 
-fn map_error_response(status: StatusCode, body: &[u8]) -> DisClientError {
+fn decode_success_response(
+    request: &PolymarketSnapshotRequest,
+    status: StatusCode,
+    body: &[u8],
+) -> Result<PolymarketSnapshotResponse, DisClientError> {
+    let decoded = match expected_response_variant(request) {
+        ExpectedResponseVariant::Winner => serde_json::from_slice::<PolymarketWinnerSnapshot>(body)
+            .map(PolymarketSnapshotResponse::Winner),
+        ExpectedResponseVariant::Country => {
+            serde_json::from_slice::<PolymarketCountrySnapshot>(body)
+                .map(PolymarketSnapshotResponse::Country)
+        }
+    };
+
+    decoded.map_err(|error| {
+        log_schema_mismatch(request, status, body, Some(&error));
+        DisClientError::UnsupportedResponseSchema
+    })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExpectedResponseVariant {
+    Winner,
+    Country,
+}
+
+impl ExpectedResponseVariant {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Winner => "winner",
+            Self::Country => "country",
+        }
+    }
+}
+
+fn expected_response_variant(request: &PolymarketSnapshotRequest) -> ExpectedResponseVariant {
+    if request.country.is_some() {
+        ExpectedResponseVariant::Country
+    } else {
+        ExpectedResponseVariant::Winner
+    }
+}
+
+fn log_schema_mismatch(
+    request: &PolymarketSnapshotRequest,
+    status: StatusCode,
+    body: &[u8],
+    error: Option<&serde_json::Error>,
+) {
+    let top_level_fields = top_level_json_field_names(body);
+    let error_category = error.map(serde_error_category).unwrap_or("data");
+
+    warn!(
+        dis_path = POLYMARKET_SNAPSHOT_PATH,
+        status_code = status.as_u16(),
+        event_slug = %request.event_slug,
+        expected_response_variant = expected_response_variant(request).as_str(),
+        deserialization_error_category = error_category,
+        body_length = body.len(),
+        top_level_json_fields = ?top_level_fields,
+        "DIS prediction response schema mismatch"
+    );
+}
+
+fn log_response_issue(
+    request: &PolymarketSnapshotRequest,
+    status: StatusCode,
+    body: &[u8],
+    response_issue: &'static str,
+    deserialization_error_category: Option<&'static str>,
+    dis_error_code: Option<&str>,
+) {
+    let top_level_fields = top_level_json_field_names(body);
+    let dis_error_code = dis_error_code.map(|code| {
+        code.chars()
+            .take(MAX_LOGGED_FIELD_NAME_CHARS)
+            .collect::<String>()
+    });
+
+    warn!(
+        dis_path = POLYMARKET_SNAPSHOT_PATH,
+        status_code = status.as_u16(),
+        event_slug = %request.event_slug,
+        expected_response_variant = expected_response_variant(request).as_str(),
+        response_issue,
+        deserialization_error_category,
+        dis_error_code = ?dis_error_code,
+        body_length = body.len(),
+        top_level_json_fields = ?top_level_fields,
+        "DIS prediction error response could not be classified"
+    );
+}
+
+fn serde_error_category(error: &serde_json::Error) -> &'static str {
+    match error.classify() {
+        serde_json::error::Category::Io => "io",
+        serde_json::error::Category::Syntax => "syntax",
+        serde_json::error::Category::Data => "data",
+        serde_json::error::Category::Eof => "eof",
+    }
+}
+
+fn top_level_json_field_names(body: &[u8]) -> Vec<String> {
+    let Ok(serde_json::Value::Object(fields)) = serde_json::from_slice::<serde_json::Value>(body)
+    else {
+        return Vec::new();
+    };
+
+    let mut names = fields
+        .keys()
+        .map(|name| {
+            name.chars()
+                .take(MAX_LOGGED_FIELD_NAME_CHARS)
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>();
+    names.sort();
+    names.truncate(MAX_LOGGED_TOP_LEVEL_FIELDS);
+    names
+}
+
+fn map_error_response(_status: StatusCode, body: &[u8]) -> DisClientError {
     let envelope = match serde_json::from_slice::<DisErrorEnvelope>(body) {
         Ok(envelope) => envelope,
-        Err(_)
-            if matches!(
-                status,
-                StatusCode::SERVICE_UNAVAILABLE | StatusCode::GATEWAY_TIMEOUT
-            ) =>
-        {
-            return DisClientError::ResolverUnavailable;
-        }
-        Err(_) => return DisClientError::MalformedResponse,
+        Err(_) => return DisClientError::MalformedErrorResponse,
     };
 
     match envelope.error.code.as_str() {
@@ -229,10 +385,9 @@ fn map_error_response(status: StatusCode, body: &[u8]) -> DisClientError {
         }
         "prediction_provider_unavailable" => DisClientError::ProviderUnavailable,
         "prediction_provider_timeout" => DisClientError::ProviderTimeout,
-        "prediction_resolver_unavailable" | "internal_error" => DisClientError::ResolverUnavailable,
-        _ if status == StatusCode::SERVICE_UNAVAILABLE => DisClientError::ResolverUnavailable,
-        _ if status == StatusCode::GATEWAY_TIMEOUT => DisClientError::ResolverUnavailable,
-        _ => DisClientError::ResolverUnavailable,
+        "prediction_resolver_unavailable" => DisClientError::ResolverUnavailable,
+        "internal_error" => DisClientError::ResolverError,
+        code => DisClientError::UnknownResolverErrorCode(code.to_string()),
     }
 }
 
@@ -283,53 +438,78 @@ mod tests {
     }
 
     #[test]
-    fn winner_response_preserves_decimal_strings_and_ignores_future_fields() {
-        let response = serde_json::from_value::<PolymarketSnapshotResponse>(json!({
-            "ok": true,
-            "event": "2026 FIFA World Cup Winner",
-            "event_slug": "fifa-world-cup-2026-winner",
-            "odds": [
-                {
-                    "team": "France",
-                    "probability": "0.180000000000000001",
-                    "price": "0.18",
-                    "currency": "USDC",
-                    "futureField": "ignored"
-                }
-            ],
-            "source": "polymarket",
-            "deterministic": true,
-            "captured_at": "2026-06-03T18:20:00Z",
-            "futureField": {"ignored": true}
-        }))
-        .unwrap();
+    fn current_winner_response_decodes_and_preserves_decimal_strings() {
+        let body = serde_json::to_vec(&winner_dis_body()).unwrap();
+        let response = decode_success_response(&winner_request(), StatusCode::OK, &body).unwrap();
 
-        let odds = response.odds.unwrap();
-        assert_eq!(odds[0].probability, "0.180000000000000001");
-        assert_eq!(odds[0].price, "0.18");
+        let PolymarketSnapshotResponse::Winner(response) = response else {
+            panic!("winner request should decode the winner response variant");
+        };
+
+        assert_eq!(response.event_title, "World Cup Winner ");
+        assert_eq!(response.outcomes.len(), 2);
+        assert_eq!(response.outcomes[0].name, "France");
+        assert_eq!(response.outcomes[0].probability, "0.1595");
+        assert_eq!(response.outcomes[0].price, "0.1595");
+        assert_eq!(response.outcomes[1].name, "Spain");
     }
 
     #[test]
-    fn country_response_preserves_decimal_strings_and_ignores_future_fields() {
-        let response = serde_json::from_value::<PolymarketSnapshotResponse>(json!({
+    fn current_country_response_decodes_and_preserves_decimal_strings() {
+        let body = serde_json::to_vec(&country_dis_body()).unwrap();
+        let response = decode_success_response(&country_request(), StatusCode::OK, &body).unwrap();
+
+        let PolymarketSnapshotResponse::Country(response) = response else {
+            panic!("country request should decode the country response variant");
+        };
+
+        assert_eq!(response.subject.slug, "mexico");
+        assert_eq!(response.subject.name, "Mexico");
+        assert_eq!(response.probability, "0.535");
+        assert_eq!(response.price, "0.535");
+        assert_eq!(response.currency, "USDC");
+    }
+
+    #[test]
+    fn wrong_shaped_success_response_maps_to_unsupported_response_schema() {
+        let body = serde_json::to_vec(&json!({
             "ok": true,
-            "market": "Mexico to reach Round of 16",
-            "country": { "slug": "mexico", "name": "Mexico", "futureField": "ignored" },
-            "probability": "0.630000000000000001",
-            "price": "0.63",
-            "currency": "USDC",
-            "source": "polymarket",
-            "deterministic": true,
-            "captured_at": "2026-06-03T18:20:00Z",
-            "futureField": {"ignored": true}
+            "event": "Legacy shape",
+            "odds": []
         }))
         .unwrap();
 
         assert_eq!(
-            response.probability.as_deref(),
-            Some("0.630000000000000001")
+            decode_success_response(&winner_request(), StatusCode::OK, &body),
+            Err(DisClientError::UnsupportedResponseSchema)
         );
-        assert_eq!(response.price.as_deref(), Some("0.63"));
+    }
+
+    #[test]
+    fn diagnostic_field_names_are_sorted_capped_and_exclude_values() {
+        let mut fields = serde_json::Map::new();
+        for index in (0..20).rev() {
+            fields.insert(
+                format!("field_{index:02}"),
+                Value::String(format!("secret-provider-value-{index}")),
+            );
+        }
+        fields.insert(
+            "z".repeat(MAX_LOGGED_FIELD_NAME_CHARS + 10),
+            Value::String("secret-provider-url".to_string()),
+        );
+        let body = serde_json::to_vec(&Value::Object(fields)).unwrap();
+
+        let names = top_level_json_field_names(&body);
+
+        assert_eq!(names.len(), MAX_LOGGED_TOP_LEVEL_FIELDS);
+        assert!(names.windows(2).all(|pair| pair[0] <= pair[1]));
+        assert!(names
+            .iter()
+            .all(|name| name.chars().count() <= MAX_LOGGED_FIELD_NAME_CHARS));
+        let logged_names = names.join(",");
+        assert!(!logged_names.contains("secret-provider-value"));
+        assert!(!logged_names.contains("secret-provider-url"));
     }
 
     #[test]
@@ -363,7 +543,7 @@ mod tests {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal_error",
-                DisClientError::ResolverUnavailable,
+                DisClientError::ResolverError,
             ),
         ] {
             let body = serde_json::to_vec(&json!({
@@ -380,23 +560,33 @@ mod tests {
     }
 
     #[test]
-    fn malformed_dis_availability_error_body_maps_to_resolver_unavailable() {
+    fn unknown_error_code_maps_to_unknown_resolver_error_code() {
+        let body = serde_json::to_vec(&json!({
+            "error": {
+                "code": "future_dis_error",
+                "message": "Future DIS error."
+            }
+        }))
+        .unwrap();
+
         assert_eq!(
-            map_error_response(StatusCode::SERVICE_UNAVAILABLE, b"not-json"),
-            DisClientError::ResolverUnavailable
-        );
-        assert_eq!(
-            map_error_response(StatusCode::GATEWAY_TIMEOUT, b"not-json"),
-            DisClientError::ResolverUnavailable
+            map_error_response(StatusCode::SERVICE_UNAVAILABLE, &body),
+            DisClientError::UnknownResolverErrorCode("future_dis_error".to_string())
         );
     }
 
     #[test]
-    fn malformed_non_availability_error_body_maps_to_malformed_response() {
-        assert_eq!(
-            map_error_response(StatusCode::INTERNAL_SERVER_ERROR, b"not-json"),
-            DisClientError::MalformedResponse
-        );
+    fn malformed_error_body_maps_to_malformed_error_response_for_any_status() {
+        for status in [
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::SERVICE_UNAVAILABLE,
+            StatusCode::GATEWAY_TIMEOUT,
+        ] {
+            assert_eq!(
+                map_error_response(status, b"not-json"),
+                DisClientError::MalformedErrorResponse
+            );
+        }
     }
 
     #[tokio::test]
@@ -516,6 +706,84 @@ mod tests {
             event_slug: "fifa-world-cup-2026-winner".to_string(),
             country: None,
         }
+    }
+
+    fn country_request() -> PolymarketSnapshotRequest {
+        PolymarketSnapshotRequest {
+            event_slug: "fifa-world-cup-2026-country-probability".to_string(),
+            country: Some("mexico".to_string()),
+        }
+    }
+
+    fn winner_dis_body() -> Value {
+        json!({
+            "event_slug": "fifa-world-cup-2026-winner",
+            "event_title": "World Cup Winner ",
+            "source": "polymarket",
+            "source_kind": "public_market_data_api",
+            "mode": "live_passthrough",
+            "deterministic": true,
+            "captured_at": "2026-06-06T03:21:42.512048Z",
+            "provider_market": {
+                "id": "558936",
+                "slug": "will-france-win-the-2026-fifa-world-cup-924",
+                "condition_id": "0x9b6fef249040fd17e9c107955b37ac2c3e923509b6b0ff01cc463a331ddeb894",
+                "url": "https://polymarket.com/event/will-france-win-the-2026-fifa-world-cup-924"
+            },
+            "warnings": [
+                {
+                    "code": "probability_interpreted_from_price",
+                    "message": "Outcome probabilities are interpreted from public market prices."
+                }
+            ],
+            "outcomes": [
+                {
+                    "name": "France",
+                    "probability": "0.1595",
+                    "price": "0.1595",
+                    "currency": "USDC"
+                },
+                {
+                    "name": "Spain",
+                    "probability": "0.1595",
+                    "price": "0.1595",
+                    "currency": "USDC"
+                }
+            ]
+        })
+    }
+
+    fn country_dis_body() -> Value {
+        json!({
+            "event_slug": "fifa-world-cup-2026-country-probability",
+            "event_title": "FIFA World Cup 2026 Country Probability",
+            "source": "polymarket",
+            "source_kind": "public_market_data_api",
+            "mode": "live_passthrough",
+            "deterministic": true,
+            "captured_at": "2026-06-06T03:22:11.593940Z",
+            "provider_market": {
+                "id": "2415420",
+                "slug": "will-mexico-reach-the-round-of-16-at-the-2026-fifa-world-cup-20260602025120735",
+                "condition_id": "0x2b3237da39d6c7b1f7adef29c5f675e4214cec25f585ca151c7b8cc9271871e1",
+                "url": "https://polymarket.com/event/will-mexico-reach-the-round-of-16-at-the-2026-fifa-world-cup-20260602025120735"
+            },
+            "warnings": [
+                {
+                    "code": "probability_interpreted_from_price",
+                    "message": "Outcome probability is interpreted from public market price."
+                }
+            ],
+            "subject": {
+                "kind": "country",
+                "slug": "mexico",
+                "name": "Mexico"
+            },
+            "market": "Will Mexico reach the Round of 16 at the 2026 FIFA World Cup?",
+            "probability": "0.535",
+            "price": "0.535",
+            "currency": "USDC"
+        })
     }
 
     fn write_response(stream: &mut std::net::TcpStream, status: StatusCode, body: Value) {

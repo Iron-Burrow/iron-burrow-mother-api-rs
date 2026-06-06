@@ -247,6 +247,12 @@ Invalid query responses are stable:
 - prediction provider unavailable: `503 prediction_provider_unavailable`
 - prediction provider timeout: `504 prediction_provider_timeout`
 - DIS prediction resolver unavailable: `503 prediction_resolver_unavailable`
+- DIS prediction resolver timeout: `504 prediction_resolver_timeout`
+- DIS prediction response schema mismatch:
+  `502 prediction_resolver_schema_mismatch`
+- malformed DIS prediction error response:
+  `502 prediction_resolver_malformed_response`
+- unclassified DIS prediction error: `502 prediction_resolver_error`
 
 ## Configuration
 

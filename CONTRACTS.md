@@ -690,7 +690,14 @@ Fields:
 - `504 prediction_provider_timeout` - DIS reports the prediction provider
   timed out.
 - `503 prediction_resolver_unavailable` - DIS is unconfigured, unreachable,
-  or returned an unexpected resolver response.
+  or reports an availability failure.
+- `504 prediction_resolver_timeout` - Mother API timed out waiting for DIS.
+- `502 prediction_resolver_schema_mismatch` - DIS returned HTTP 200, but Mother
+  API could not decode the expected success schema.
+- `502 prediction_resolver_malformed_response` - DIS returned a non-success
+  body that was not a valid error envelope.
+- `502 prediction_resolver_error` - DIS returned `internal_error` or an
+  unknown code in a valid error envelope.
 
 Examples:
 
@@ -720,6 +727,46 @@ Examples:
   "error": {
     "code": "prediction_resolver_unavailable",
     "message": "Prediction resolver is temporarily unavailable."
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "prediction_resolver_schema_mismatch",
+    "message": "Prediction resolver returned an unsupported response."
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "prediction_resolver_timeout",
+    "message": "Prediction resolver timed out."
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "prediction_resolver_malformed_response",
+    "message": "Prediction resolver returned a malformed error response."
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "prediction_resolver_error",
+    "message": "Prediction resolver returned an unclassified error."
   }
 }
 ```
@@ -796,7 +843,14 @@ supported-country validation, and provider-specific failure details.
 - `504 prediction_provider_timeout` - DIS reports the prediction provider
   timed out.
 - `503 prediction_resolver_unavailable` - DIS is unconfigured, unreachable,
-  or returned an unexpected resolver response.
+  or reports an availability failure.
+- `504 prediction_resolver_timeout` - Mother API timed out waiting for DIS.
+- `502 prediction_resolver_schema_mismatch` - DIS returned HTTP 200, but Mother
+  API could not decode the expected success schema.
+- `502 prediction_resolver_malformed_response` - DIS returned a non-success
+  body that was not a valid error envelope.
+- `502 prediction_resolver_error` - DIS returned `internal_error` or an
+  unknown code in a valid error envelope.
 
 Examples:
 
@@ -836,6 +890,46 @@ Examples:
   "error": {
     "code": "prediction_resolver_unavailable",
     "message": "Prediction resolver is temporarily unavailable."
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "prediction_resolver_schema_mismatch",
+    "message": "Prediction resolver returned an unsupported response."
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "prediction_resolver_timeout",
+    "message": "Prediction resolver timed out."
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "prediction_resolver_malformed_response",
+    "message": "Prediction resolver returned a malformed error response."
+  }
+}
+```
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "prediction_resolver_error",
+    "message": "Prediction resolver returned an unclassified error."
   }
 }
 ```
@@ -1059,7 +1153,11 @@ Fields:
 | 400  | `unsupported_prediction_subject` | Requested prediction country is unsupported for the event.    |
 | 503  | `prediction_provider_unavailable` | DIS reports the prediction provider is unavailable or failed. |
 | 504  | `prediction_provider_timeout` | DIS reports the prediction provider timed out.                    |
-| 503  | `prediction_resolver_unavailable` | DIS is unconfigured, unreachable, or returned an unexpected resolver response. |
+| 503  | `prediction_resolver_unavailable` | DIS is unconfigured, unreachable, or reports an availability failure. |
+| 504  | `prediction_resolver_timeout` | Mother API timed out waiting for DIS. |
+| 502  | `prediction_resolver_schema_mismatch` | DIS returned HTTP 200, but Mother API could not decode the expected success schema. |
+| 502  | `prediction_resolver_malformed_response` | DIS returned a non-success body that was not a valid error envelope. |
+| 502  | `prediction_resolver_error` | DIS returned `internal_error` or an unknown code in a valid error envelope. |
 
 `error.code` values listed above are stable. New codes may be added in
 future contract revisions. Clients must tolerate unknown codes by
