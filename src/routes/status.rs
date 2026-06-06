@@ -213,7 +213,7 @@ mod tests {
     fn status_response_reports_valid_dis_config() {
         let response = status_response(
             &AppState::new(Config {
-                dis_base_url: Some("http://defi-intelligence-service:8080".to_string()),
+                dis_base_url: Some("http://dis:8000".to_string()),
                 ..Config::default()
             }),
             DatabaseCheck::Skipped,

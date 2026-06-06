@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn valid_dis_base_url_creates_client() {
         let state = AppState::new(Config {
-            dis_base_url: Some("http://defi-intelligence-service:8080".to_string()),
+            dis_base_url: Some("http://dis:8000".to_string()),
             ..Config::default()
         });
 

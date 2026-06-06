@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-06-01
+last_reviewed: 2026-06-06
 agent_edit_policy: update_when_relevant
 external_contract: iron-burrow-defi-intelligence-service/CONTRACTS.md@2026-06-01
 ---
@@ -99,7 +99,7 @@ already established for `PRICE_INDEXER_URL` in [src/config.rs](../../src/config.
 
 | Variable                 | Default | Description                                                                                      |
 | ------------------------ | ------- | ------------------------------------------------------------------------------------------------ |
-| `DIS_BASE_URL`           | unset   | DIS internal base URL on `iron-burrow-net`, for example `http://defi-intelligence-service:8080`. |
+| `DIS_BASE_URL`           | unset   | DIS internal base URL on `iron-burrow-net`, for example `http://dis:8000`. |
 | `DIS_REQUEST_TIMEOUT_MS` | `5000`  | Per-attempt HTTP timeout in milliseconds.                                                        |
 | `DIS_RETRY_MAX_ATTEMPTS` | `2`     | Maximum total HTTP attempts per logical call (initial + retries). `1` disables retries.          |
 
