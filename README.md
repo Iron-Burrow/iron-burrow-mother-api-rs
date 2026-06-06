@@ -1,473 +1,410 @@
+# Iron Burrow Mother API
+
+Public API boundary for **Iron Burrow**.
+
+Iron Burrow is a source-aware blockchain intelligence system built to make crypto data easier for humans, applications, and AI agents to inspect. The **Mother API** is the public interface of the burrow: the stable HTTP surface that exposes selected assets, price signals, chain mappings, health information, and demo-ready prediction snapshots.
+
+The internal burrow has more tunnels than this README needs to reveal. This repository documents the public door: what a judge, builder, frontend, or agent can call today.
+
+Production API:
+
+```bash
+export IB_API="https://api.ironburrow.com"
+```
+
 ---
-status: active
-owner: iron-burrow
-last_reviewed: 2026-06-06
-agent_edit_policy: update_when_relevant
+
+## ETHMEX 🇲🇽 Hackathon Context
+
+This repository is part of the **Ethereum México x Bitso Hybrid Hackathon — AI, Blockchain & Payments: Build Today, Play Global**.
+
+The hackathon brings together builders working at the intersection of:
+
+* AI
+* blockchain
+* stablecoins
+* payments
+* financial apps
+* institutional use cases
+
+For this hackathon, Iron Burrow Mother API acts as the public data boundary between the burrow and the outside world.
+
+In practical terms, this means:
+
+* a frontend can ask Mother API for supported assets and price context;
+* an AI agent can call deterministic endpoints instead of inventing answers;
+* judges can inspect live public endpoints with `curl`;
+* the system can expose blockchain and market signals without leaking every internal service, resolver, worker, or database tunnel.
+
+The goal is not to show a giant API surface. The goal is to show a small, working, public, source-aware interface that an AI or financial application could safely build on top of.
+
 ---
 
-# Iron Burrow Mother API RS
+## Quick Start
 
-Fresh Rust implementation of the Iron Burrow Mother API using Axum.
+Install `jq` if you want readable JSON output.
 
-This repository is not a line-by-line port of the old TypeScript gateway. The TypeScript implementation remains in `_reference_implementation/` as temporary reference material while the Rust service takes over the minimal Production Alpha 1 contract.
-
-## Reference Findings
-
-The old TypeScript gateway was built as a broad API gateway. It includes health and status endpoints, public explorer routes, price routes, account/tracking routes, admin preview routes, API-key context middleware, rate limiting, response caching, database checks, and price-indexer checks.
-
-Deployment-wise, the old service used the stable container name `iron-burrow-mother-api`, listened on port `3000`, and was expected to be reached by Caddy over a Docker network. The Rust service takes over those canonical deployment names after the old TypeScript app is stopped and discarded, but drops the gateway sprawl.
-
-## Not Ported
-
-- Public price routes
-- Event or holder indexing
-- Auth, API keys, billing, or x402 boundaries
-- Admin, explorer, account, tracked-token, and price routes
-- TypeScript package/module architecture
-
-## Endpoint Contract
-
-`GET /health`
-
-```json
-{
-  "ok": true,
-  "service": "iron-burrow-mother-api",
-  "mascot": "Capitan Sousa",
-  "message": "Happy squirrel, systems nominal."
-}
+```bash
+export IB_API="https://api.ironburrow.com"
 ```
 
-`/health` is dependency-free.
+Check that the Mother API is alive:
 
-`GET /v1/assets?limit=<limit>`
-
-Lists active Mother API-owned global assets. `limit` is optional, defaults to
-`100`, and is clamped to `1000`. List responses include USD price enrichment
-from the internal price-indexer Query Layer when configured; otherwise each
-asset returns a stable unavailable price object.
-
-```json
-{
-  "ok": true,
-  "type": "assets",
-  "limit": 100,
-  "count": 21,
-  "assets": [
-    {
-      "asset_id": "bitcoin",
-      "symbol": "BTC",
-      "name": "Bitcoin",
-      "category": "crypto",
-      "canonical_path": "/assets/bitcoin",
-      "price": {
-        "status": "available",
-        "price": "2500.123456",
-        "quote_currency": "USD",
-        "source_type": "chainlink",
-        "confidence_label": null,
-        "is_fallback": false,
-        "is_derived": false,
-        "recorded_at": "2026-05-20T12:00:01.000Z",
-        "warning": null
-      }
-    }
-  ]
-}
+```bash
+curl -sS "$IB_API/health" | jq
 ```
 
-`GET /v1/assets/{slug}`
+You should see a small response confirming the service is alive, including the service name, mascot, and a happy systems message.
 
-Returns one active asset plus the network-specific chain maps the UI can use to
-render asset detail pages. Asset detail always includes a stable `price` object.
-Use `quoteCurrency=USD|MXN|USDC|BTC` to select the quote for that latest price;
-Mother API forwards the selection to price-indexer and does not convert prices
-locally.
-If the price-indexer Query Layer is not configured, unavailable, or has no price
-for the slug, the asset response still succeeds with `price.status` set to
-`"unavailable"`.
+For raw HTTP headers:
 
-```json
-{
-  "ok": true,
-  "type": "asset",
-  "asset": {
-    "asset_id": "usdc",
-    "symbol": "USDC",
-    "name": "USD Coin",
-    "category": "crypto",
-    "canonical_path": "/assets/usdc"
-  },
-  "price": {
-    "status": "available",
-    "price": "1.0001",
-    "quote_currency": "USD",
-    "source_type": "coingecko",
-    "confidence_label": "high",
-    "is_fallback": false,
-    "is_derived": false,
-    "recorded_at": "2026-05-26T12:00:05Z",
-    "warning": null
-  },
-  "chain_maps": [
-    {
-      "network": {
-        "slug": "eth-mainnet",
-        "name": "Ethereum Mainnet",
-        "caip2": "eip155:1"
-      },
-      "is_native": false,
-      "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
-    },
-    {
-      "network": {
-        "slug": "arbitrum-one",
-        "name": "Arbitrum One",
-        "caip2": "eip155:42161"
-      },
-      "is_native": false,
-      "address": "0xaf88d065e77c8cc2239327c5edb3a432268e5831"
-    },
-    {
-      "network": {
-        "slug": "base",
-        "name": "Base",
-        "caip2": "eip155:8453"
-      },
-      "is_native": false,
-      "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
-    },
-    {
-      "network": {
-        "slug": "near",
-        "name": "NEAR Mainnet",
-        "caip2": "near:mainnet"
-      },
-      "is_native": false,
-      "address": "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1"
-    },
-    {
-      "network": {
-        "slug": "mantle",
-        "name": "Mantle",
-        "caip2": "eip155:5000"
-      },
-      "is_native": false,
-      "address": "0x09bc4e0d864854c6afb6eb9a9cdf58ac190d0df9"
-    }
-  ]
-}
+```bash
+curl -i "$IB_API/health"
 ```
 
-`GET /v1/resolve?q=<query>`
+---
 
-Resolves broad Sentinel search queries against Mother API-owned global assets.
-Unknown searches return a successful unresolved response with recommendations
-instead of forcing the frontend into a blind 404.
+## Public Endpoints
 
-```json
-{
-  "ok": true,
-  "type": "resolve",
-  "resolved": true,
-  "query": {
-    "raw": "usdc coin usd",
-    "normalized": "usdc coin usd"
-  },
-  "result": {
-    "kind": "asset",
-    "canonical_path": "/assets/usdc",
-    "resource_url": "/v1/assets/usdc",
-    "confidence": "alias_exact",
-    "asset": {
-      "asset_id": "usdc",
-      "symbol": "USDC",
-      "name": "USD Coin",
-      "category": "crypto"
-    }
-  }
-}
+These examples are intentionally judge-friendly. They are not a replacement for strict contract documentation. They are here so you can poke the live burrow and understand what the response means.
+
+---
+
+### 1. Health
+
+```bash
+curl -sS "$IB_API/health" | jq
 ```
 
-`GET /v1/predictions/fifa-world-cup/winner`
+Use this to confirm the public API process is running.
 
-Returns a live Polymarket-implied, DIS-backed World Cup 2026 winner prediction
-snapshot. Mother API does not call Polymarket directly and does not expose
-DIS-internal provider fields.
+Expected interpretation:
 
-```json
-{
-  "ok": true,
-  "event": "2026 FIFA World Cup Winner",
-  "event_slug": "fifa-world-cup-2026-winner",
-  "odds": [
-    {
-      "team": "France",
-      "probability": "0.18",
-      "price": "0.18",
-      "currency": "USDC"
-    }
-  ],
-  "source": "polymarket",
-  "deterministic": true,
-  "captured_at": "2026-06-03T18:20:00Z"
-}
+* `ok: true` means the Mother API process is alive.
+* This endpoint is lightweight and does not require every internal dependency to be healthy.
+
+---
+
+### 2. Status / Dependency Picture
+
+```bash
+curl -sS "$IB_API/v1/status" | jq
 ```
 
-`GET /v1/predictions/fifa-world-cup/{country}`
+Use this to get a public readiness picture of the burrow.
 
-Returns a live Polymarket-implied, DIS-backed World Cup 2026 country prediction
-snapshot. The country path segment is trimmed and lowercased before being sent
-to DIS.
+Important:
 
-```json
-{
-  "ok": true,
-  "market": "Mexico to reach Round of 16",
-  "country": {
-    "slug": "mexico",
-    "name": "Mexico"
-  },
-  "probability": "0.63",
-  "price": "0.63",
-  "currency": "USDC",
-  "source": "polymarket",
-  "deterministic": true,
-  "captured_at": "2026-06-03T18:20:00Z"
-}
+`/v1/status` can return `200 OK` even when one dependency is degraded. Do not only inspect the HTTP status code. Look at:
+
+* `ok`
+* `checks`
+* individual dependency states
+
+This endpoint is meant to help an operator, judge, frontend, or agent understand whether the public API is alive and whether its connected services are behaving.
+
+---
+
+### 3. Asset List
+
+```bash
+curl -sS "$IB_API/v1/assets" | jq
 ```
 
-Invalid query responses are stable:
+With an explicit limit:
 
-- invalid `limit`: `400 invalid_limit`
-- missing or empty `q`: `400 missing_query`
-- trimmed `q` over 128 characters: `400 query_too_long`
-- configured database unavailable: `503 database_unavailable`
-- unsupported prediction country: `400 unsupported_prediction_subject`
-- prediction provider unavailable: `503 prediction_provider_unavailable`
-- prediction provider timeout: `504 prediction_provider_timeout`
-- DIS prediction resolver unavailable: `503 prediction_resolver_unavailable`
-- DIS prediction resolver timeout: `504 prediction_resolver_timeout`
-- DIS prediction response schema mismatch:
-  `502 prediction_resolver_schema_mismatch`
-- malformed DIS prediction error response:
-  `502 prediction_resolver_malformed_response`
-- unclassified DIS prediction error: `502 prediction_resolver_error`
-
-## Configuration
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `APP_ENV` | `development` | Runtime environment label. |
-| `HTTP_HOST` | `0.0.0.0` | Bind host. |
-| `HTTP_PORT` | `3000` | Bind port. |
-| `DATABASE_URL` | unset | Optional Postgres URL for `mother_api.global_asset` resolver reads. |
-| `PRICE_INDEXER_URL` | unset | Optional price-indexer Query Layer base URL, for example `http://price-indexer:3010`. |
-| `PRICE_QL_INTERNAL_TOKEN` | unset | Optional internal bearer token for price-indexer Query Layer calls. |
-| `PRICE_INDEXER_TIMEOUT_MS` | `2000` | Optional timeout for asset detail price lookup. |
-| `DIS_BASE_URL` | unset | Optional DIS internal base URL, for example `http://dis:8000`. |
-| `DIS_REQUEST_TIMEOUT_MS` | `5000` | Optional per-attempt timeout for DIS internal resolver calls. |
-| `DIS_RETRY_MAX_ATTEMPTS` | `2` | Optional maximum total attempts for retryable DIS calls. |
-| `RUST_LOG` | `iron_burrow_mother_api_rs=info,tower_http=info` | Optional tracing filter. |
-
-Price enrichment is enabled only when both `PRICE_INDEXER_URL` and
-`PRICE_QL_INTERNAL_TOKEN` are set. Missing or failing price configuration does
-not fail startup and does not fail asset detail pages; Mother API returns a
-stable unavailable price state instead.
-
-## Database
-
-Mother API owns a minimal global asset catalog for product-facing asset search
-and routing:
-
-- `mother_api.global_asset`: chain-agnostic assets such as Bitcoin, ETH, USDC,
-  WBTC, Mantle, NEAR, and Gold.
-- `mother_api.network`: networks such as Bitcoin mainnet, Ethereum mainnet,
-  Base, and Mantle.
-- `mother_api.asset_chain_map`: native assets and deployed token
-  representations on each network.
-
-Price-indexer, chain indexer, and infra-gateway tables remain out of scope for
-this service. Mother API consumes price-indexer through its Query Layer and does
-not read price-indexer database tables directly.
-
-Run migrations with `sqlx-cli` when `DATABASE_URL` points at the target database:
-
-```sh
-sqlx migrate run
+```bash
+curl -sS "$IB_API/v1/assets?limit=10" | jq
 ```
 
-Docker Compose runs the same command through the `db-migrate` service. Local
-Compose keeps the convenience behavior of migrating before starting the API.
-Production deploys should run `db-migrate` explicitly before restarting the API.
+Compact view:
 
-The seed catalog is production-alpha data, even though the current migration
-filename still says `demo`. It includes AAVE, AUSD, BTC, USDS, ETH, FBTC, GHO,
-MNT, MPDAO, NEAR, STNEAR, USDC, USDT, USDT0, USDe, WBTC, WETH, cmETH, mETH,
-sUSDe, and Gold as assets. Bitcoin mainnet, Ethereum mainnet, Base, Arbitrum
-One, Mantle, and NEAR are seeded as networks.
+```bash
+curl -sS "$IB_API/v1/assets?limit=20" \
+  | jq '.assets[] | {asset_id, symbol, name, price: .price.status}'
+```
 
-## Local Run
+Expected interpretation:
 
-```sh
+This endpoint returns the active asset catalog known by Mother API. Each asset can include a price state.
+
+A price state may be:
+
+* `available` — the burrow has a usable price signal;
+* `unavailable` — the asset still exists, but price enrichment is missing or temporarily unavailable.
+
+The asset list is useful for frontends, agents, and demos that need to know what the burrow can currently talk about.
+
+---
+
+### 4. Single Asset Detail
+
+Try known asset slugs:
+
+```bash
+curl -sS "$IB_API/v1/assets/bitcoin" | jq
+```
+
+```bash
+curl -sS "$IB_API/v1/assets/ethereum" | jq
+```
+
+```bash
+curl -sS "$IB_API/v1/assets/usdc" | jq
+```
+
+```bash
+curl -sS "$IB_API/v1/assets/bitso-mxn" | jq
+```
+
+Use MXN as the quote currency:
+
+```bash
+curl -sS "$IB_API/v1/assets/bitso-mxn?quoteCurrency=MXN" | jq
+```
+
+Compact view:
+
+```bash
+curl -sS "$IB_API/v1/assets/ethereum" \
+  | jq '{ok, asset, price, chain_maps}'
+```
+
+Expected interpretation:
+
+This endpoint returns one asset, its latest price state, and the chain mappings Mother API knows about.
+
+For example, `ethereum` can be represented as a native asset on Ethereum Mainnet, while `usdc` can have token addresses across multiple networks.
+
+This is useful when an AI agent or frontend needs to answer questions like:
+
+> “What is this asset, what networks does it live on, and does the burrow currently have a price for it?”
+
+---
+
+### 5. Asset Detail With Price Enrichments
+
+USD example:
+
+```bash
+curl -sS \
+  "$IB_API/v1/assets/ethereum?include=priceStats,priceTrend,priceSeries&quoteCurrency=USD&window=24h&granularity=1h" \
+  | jq
+```
+
+MXN example:
+
+```bash
+curl -sS \
+  "$IB_API/v1/assets/ethereum?include=priceStats,priceTrend,priceSeries&quoteCurrency=MXN&window=24h&granularity=1h" \
+  | jq
+```
+
+Expected interpretation:
+
+This is the richer asset detail path. It can include:
+
+* latest price;
+* recent price statistics;
+* trend information;
+* time series data;
+* chain mappings.
+
+This endpoint is useful for a frontend or AI assistant that wants one compact asset response instead of calling several endpoints separately.
+
+If one enrichment is unavailable, the base asset response should still be useful.
+
+---
+
+### 6. Strict Price Stats
+
+```bash
+curl -sS \
+  "$IB_API/v1/assets/ethereum/signal/price-stats?quoteCurrency=USD&window=24h&granularity=1h" \
+  | jq
+```
+
+Expected interpretation:
+
+This endpoint focuses only on price statistics for the requested asset, quote currency, time window, and granularity.
+
+Use this when you want a strict stats response instead of a full asset detail payload.
+
+---
+
+### 7. Strict Price Trend
+
+```bash
+curl -sS \
+  "$IB_API/v1/assets/ethereum/signal/price-trend?quoteCurrency=USD&window=24h&granularity=1h" \
+  | jq
+```
+
+Expected interpretation:
+
+This endpoint focuses only on the trend signal for the requested asset.
+
+Use this when an agent or application wants to reason about recent price direction without parsing the full asset detail response.
+
+---
+
+### 8. Asset Search / Resolve
+
+```bash
+curl -sS "$IB_API/v1/resolve?q=usdc" | jq
+```
+
+```bash
+curl -sS "$IB_API/v1/resolve?q=oro%20de%20ley" | jq
+```
+
+```bash
+curl -sS "$IB_API/v1/resolve?q=some%20unknown%20thing" | jq
+```
+
+Expected interpretation:
+
+This endpoint helps resolve broad search queries into known Mother API resources.
+
+If the query is known, the response can point to a canonical asset path.
+
+If the query is unknown, the response should still be structured instead of forcing the caller into a blind failure.
+
+This is especially useful for AI and frontend flows where users may search by symbol, name, alias, or natural language.
+
+---
+
+## ETHMEX Demo: World Cup Prediction Snapshots
+
+For the hackathon demo, Mother API also exposes a small public prediction surface related to the 2026 FIFA World Cup.
+
+These endpoints are designed for demo excitement: a judge can ask about a winner market or a country-specific market and get a live, source-aware prediction snapshot.
+
+The response is market-implied data, not advice and not a guarantee. Market probabilities can move.
+
+---
+
+### 9. World Cup Winner Prediction
+
+```bash
+curl -sS "$IB_API/v1/predictions/fifa-world-cup/winner" | jq
+```
+
+Expected interpretation:
+
+This endpoint returns a snapshot of the current World Cup winner market.
+
+Look for:
+
+* `event`
+* `odds`
+* `team`
+* `probability`
+* `source`
+* `deterministic`
+* `captured_at`
+
+The important hackathon idea is that an AI agent does not need to invent the odds. It can ask the burrow for a deterministic, source-aware snapshot.
+
+---
+
+### 10. World Cup Country Prediction
+
+Mexico:
+
+```bash
+curl -sS "$IB_API/v1/predictions/fifa-world-cup/mexico" | jq
+```
+
+Try other configured countries:
+
+```bash
+curl -sS "$IB_API/v1/predictions/fifa-world-cup/argentina" | jq
+```
+
+```bash
+curl -sS "$IB_API/v1/predictions/fifa-world-cup/france" | jq
+```
+
+```bash
+curl -sS "$IB_API/v1/predictions/fifa-world-cup/colombia" | jq
+```
+
+```bash
+curl -sS "$IB_API/v1/predictions/fifa-world-cup/spain" | jq
+```
+
+Expected interpretation:
+
+This endpoint returns a country-specific prediction snapshot.
+
+For example, a judge from Mexico, Colombia, Argentina, France, or Spain can call a country route and immediately see a market-implied probability related to that country.
+
+This is where the hackathon theme becomes visible:
+
+* blockchain data source;
+* public API;
+* deterministic response;
+* AI-friendly structure;
+* fun live demo.
+
+---
+
+## Why This Matters For AI Agents
+
+AI agents are powerful, but they should not hallucinate financial, market, or blockchain facts.
+
+Iron Burrow Mother API gives agents a smaller and safer job:
+
+1. call a public endpoint;
+2. inspect structured JSON;
+3. explain the result to the user;
+4. cite the source and timestamp when available.
+
+Mother API is not trying to be the whole burrow. It is the public mouth of the burrow.
+
+---
+
+## Development
+
+Run locally:
+
+```bash
 cargo run
 ```
 
-```sh
+Basic local checks:
+
+```bash
 curl -i http://localhost:3000/health
 curl -i 'http://localhost:3000/v1/assets?limit=20'
-curl -i 'http://localhost:3000/v1/resolve?q=usdc%20coin%20usd'
-curl -i 'http://localhost:3000/v1/resolve?q=oro%20de%20ley'
-curl -i 'http://localhost:3000/v1/resolve?q=some%20unknown%20thing'
+curl -i 'http://localhost:3000/v1/resolve?q=usdc'
 ```
 
-## Demo Smoke
+Development checks:
 
-For the Maria UI demo path, point the UI at the local or deployed Mother API
-and confirm the asset page can use:
-
-```sh
-curl -i 'http://localhost:3000/v1/assets/usdc?include=priceStats,priceTrend,priceSeries&quoteCurrency=USD&window=24h&granularity=1h'
-```
-
-The response should be `200 OK`. Maria should render asset identity, latest
-price state, chain maps, stats/trend, and series data when available. If one
-enrichment fails, the page should stay visible and treat that signal as
-unavailable. If price-indexer is disabled, the base asset page should still
-render with unavailable price and signal states.
-
-With Docker:
-
-```sh
-cp .env.example .env
-docker compose up --build
-```
-
-To run the local migration service directly:
-
-```sh
-docker compose run --rm db-migrate
-```
-
-## Publishing
-
-Pushing an immutable release tag publishes one production image to GHCR:
-
-```sh
-git tag v0.1.2
-git push origin v0.1.2
-```
-
-The workflow publishes only:
-
-```text
-ghcr.io/iron-burrow/iron-burrow-mother-api-rs:v0.1.2
-```
-
-It does not publish `latest`. The same image contains the API binary and
-`sqlx-cli`; the `db-migrate` service runs:
-
-```sh
-sqlx migrate run
-```
-
-## Production Deploy
-
-Production uses two external Docker networks:
-
-- `iron-burrow-public-net`: shared only by Caddy and `iron-burrow-mother-api`.
-- `iron-burrow-net`: shared only by Postgres, migrations, and `iron-burrow-mother-api`.
-
-Caddy is the only public entrypoint and publishes ports `80` and `443`. The API
-joins both networks, exposes container port `3000` without publishing it to the
-host, and is reached by Caddy as `mother-api:3000` on `iron-burrow-public-net`.
-Postgres and `db-migrate` stay on `iron-burrow-net`.
-
-The price-indexer service should also join `iron-burrow-net` when it runs from a
-separate Compose project. Mother API can then reach it by Docker DNS, commonly
-`http://price-indexer:3010`, and the price-indexer does not need to publish port
-`3010` to the host.
-
-```sh
-docker network create iron-burrow-net
-docker network create iron-burrow-public-net
-```
-
-If the network already exists, Docker will report that and no action is needed.
-
-```sh
-cp .env.production.example .env.production
-# Edit .env.production with production values.
-```
-
-The initial production-alpha deploy uses the pinned image tag `v0.1.0`:
-
-```sh
-IRON_BURROW_MOTHER_API_TAG=v0.1.0
-```
-
-Do not deploy production from `latest`; keep deploys tied to explicit release
-tags so rollback and audit stay boring.
-
-Pull the immutable image tag, run migrations explicitly, then start or restart
-the API:
-
-```sh
-docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml pull iron-burrow-mother-api db-migrate
-docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml run --rm db-migrate
-docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml up -d iron-burrow-mother-api
-docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml ps
-```
-
-Confirm both services resolve to the same image name and tag:
-
-```sh
-docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml config
-docker image ls ghcr.io/iron-burrow/iron-burrow-mother-api-rs
-```
-
-If migration fails, do not start the new API image. Keep or restore the previous
-`IRON_BURROW_MOTHER_API_TAG` in `.env.production`, pull that tag if needed, and
-start the API with the previous image:
-
-```sh
-docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml up -d iron-burrow-mother-api
-```
-
-Database rollback should be handled as a forward repair or backup restore unless
-a specific migration has an explicitly tested down path.
-
-Before assigning the canonical `iron-burrow-mother-api` container and
-`mother-api` network alias to Rust, stop and remove the old TypeScript API. This
-repo does not maintain a side-by-side old/new naming strategy.
-
-Production verification:
-
-```sh
-curl -i https://api.ironburrow.com/health
-curl -i https://api.ironburrow.com/v1/status
-curl -i 'https://api.ironburrow.com/v1/assets?limit=1'
-curl -i 'https://api.ironburrow.com/v1/resolve?q=usdc'
-```
-
-`IRON_BURROW_MOTHER_API_TAG` controls the shared production image used by both
-`iron-burrow-mother-api` and `db-migrate`:
-`ghcr.io/iron-burrow/iron-burrow-mother-api-rs`.
-
-Before cutover on the VPS, verify that `api.ironburrow.com` points to the VPS,
-that Caddy serves only the intended Rust routes (`/health` and `/v1/*`), and
-that old TypeScript routes are gone or return `404`.
-
-Render the effective production config before deploying:
-
-```sh
-docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml config
-```
-
-## Development Checks
-
-```sh
+```bash
 cargo fmt --check
 cargo check
 cargo test
 ```
+
+---
+
+## Closing Remarks
+
+Iron Burrow is built around a simple belief:
+
+> AI should be able to interact with blockchain systems through deterministic, source-aware, boringly reliable interfaces.
+
+For ETHMEX, this repository is the public API checkpoint of that idea.
+
+Small surface. Real endpoints. Live data. No need to reveal every tunnel in the burrow.
+
+---
+
+## License
+
+MIT License.
+
+See [`LICENCE`](LICENSE).
