@@ -1,3 +1,10 @@
+---
+status: active
+owner: iron-burrow
+last_reviewed: 2026-06-06
+agent_edit_policy: update_when_relevant
+---
+
 # Iron Burrow Mother API RS
 
 Fresh Rust implementation of the Iron Burrow Mother API using Axum.
@@ -73,6 +80,9 @@ asset returns a stable unavailable price object.
 
 Returns one active asset plus the network-specific chain maps the UI can use to
 render asset detail pages. Asset detail always includes a stable `price` object.
+Use `quoteCurrency=USD|MXN|USDC|BTC` to select the quote for that latest price;
+Mother API forwards the selection to price-indexer and does not convert prices
+locally.
 If the price-indexer Query Layer is not configured, unavailable, or has no price
 for the slug, the asset response still succeeds with `price.status` set to
 `"unavailable"`.

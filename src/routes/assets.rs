@@ -15,7 +15,7 @@ use crate::{
     state::AppState,
 };
 
-const DEFAULT_SIGNAL_QUOTE_CURRENCY: &str = "USD";
+const DEFAULT_QUOTE_CURRENCY: &str = "USD";
 const DEFAULT_SIGNAL_WINDOW: &str = "24h";
 
 #[derive(Deserialize)]
@@ -93,9 +93,15 @@ pub async fn get_asset(
         .clone()
         .ok_or_else(ApiError::database_unavailable)?;
     let service = AssetsService::new(repository, state.price_indexer_client.clone());
+    let quote_currency = params
+        .quote_currency
+        .as_deref()
+        .unwrap_or(DEFAULT_QUOTE_CURRENCY)
+        .trim()
+        .to_ascii_uppercase();
     let enrichment_query = parse_asset_enrichment_query(&slug, params);
     let response = service
-        .get_asset(&slug, enrichment_query)
+        .get_asset(&slug, &quote_currency, enrichment_query)
         .await
         .map_err(assets_error_to_api_error)?;
 
@@ -214,7 +220,7 @@ fn parse_signal_request(
     let quote_currency = params
         .quote_currency
         .as_deref()
-        .unwrap_or(DEFAULT_SIGNAL_QUOTE_CURRENCY)
+        .unwrap_or(DEFAULT_QUOTE_CURRENCY)
         .trim()
         .to_ascii_uppercase();
     let window = params

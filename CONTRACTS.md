@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-06-04
+last_reviewed: 2026-06-06
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -217,7 +217,7 @@ signals can be requested for one-call asset-page rendering.
 | Name            | Type   | Required | Default | Allowed values | Notes |
 | --------------- | ------ | -------- | ------- | -------------- | ----- |
 | `include`       | string | No       | none    | `priceStats`, `priceTrend`, `priceSeries` | Comma-separated. Tokens are trimmed and matched case-insensitively. Unknown tokens are ignored. |
-| `quoteCurrency` | string | No       | `USD`   | `USD`, `MXN`, `USDC`, `BTC` | Applies only when at least one known enrichment is requested. |
+| `quoteCurrency` | string | No       | `USD`   | `USD`, `MXN`, `USDC`, `BTC` | Applies to the latest `price` block and all requested enrichments. |
 | `window`        | string | No       | `24h`   | `1h`, `24h`, `7d`, `30d` | Applies only when at least one known enrichment is requested. |
 | `granularity`   | string | No       | upstream default | `5m`, `1h`, `1d` | Forwarded only when provided and only for requested enrichments. |
 
@@ -233,6 +233,10 @@ Allowed `window` and `granularity` combinations for requested enrichments:
 Mother API does not expose `asOf` on asset detail and never forwards legacy
 parameters such as `range`, `resolution`, `from`, `to`, `interval`,
 `sourceType`, `limit`, or `beforeId` to price-indexer.
+
+The latest-price lookup always forwards the normalized `quoteCurrency` to
+price-indexer. This allows price-indexer-owned direct or derived prices to
+populate the base `price` block without Mother API performing conversion.
 
 **Response — `200 OK`, full enrichment happy path:**
 

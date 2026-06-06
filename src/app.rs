@@ -732,8 +732,30 @@ mod tests {
         assert_eq!(json["price"]["status"], "available");
 
         let request = request_handle.await.unwrap();
-        assert!(request.starts_with("GET /prices/latest?slug=usd-coin "));
+        assert!(request.starts_with("GET /prices/latest?slug=usd-coin&quoteCurrency=USD "));
         assert!(!request.contains("symbol="));
+    }
+
+    #[tokio::test]
+    async fn asset_detail_forwards_quote_currency_to_latest_price() {
+        let Some((price_indexer_url, request_handle)) =
+            spawn_multi_price_indexer(vec![(StatusCode::OK, latest_price_body_with_quote("MXN"))])
+        else {
+            return;
+        };
+        let app = test_app_with_price_indexer(&price_indexer_url, 2000);
+
+        let (status, json) = app_json(app, "/v1/assets/ethereum?quoteCurrency=mxn").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(json["price"]["status"], "available");
+        assert_eq!(json["price"]["quote_currency"], "MXN");
+        assert_eq!(json["price"]["source_type"], "fx-derived");
+        assert_eq!(json["price"]["is_derived"], true);
+
+        let requests = request_handle.await.unwrap();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].starts_with("GET /prices/latest?slug=ethereum&quoteCurrency=MXN "));
     }
 
     #[tokio::test]
@@ -842,7 +864,7 @@ mod tests {
         })
         .to_string();
         let Some((price_indexer_url, request_handle)) = spawn_multi_price_indexer(vec![
-            (StatusCode::OK, latest_price_body()),
+            (StatusCode::OK, latest_price_body_with_quote("MXN")),
             (StatusCode::OK, stats_body),
             (StatusCode::OK, trend_body),
             (StatusCode::OK, series_body),
@@ -860,6 +882,8 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(json["ok"], true);
         assert_eq!(json["price"]["status"], "available");
+        assert_eq!(json["price"]["quote_currency"], "MXN");
+        assert_eq!(json["price"]["is_derived"], true);
         assert_eq!(json["signals"]["price_stats"]["percentChange"], "0.020367");
         assert_eq!(
             json["signals"]["price_stats"]["warnings"][0],
@@ -879,7 +903,7 @@ mod tests {
 
         let requests = request_handle.await.unwrap();
         assert_eq!(requests.len(), 4);
-        assert!(requests[0].starts_with("GET /prices/latest?slug=ethereum "));
+        assert!(requests[0].starts_with("GET /prices/latest?slug=ethereum&quoteCurrency=MXN "));
         assert!(requests[1].starts_with(
             "GET /prices/stats?slug=ethereum&quoteCurrency=MXN&window=24h&granularity=1h "
         ));
@@ -1654,13 +1678,18 @@ mod tests {
     }
 
     fn latest_price_body() -> String {
+        latest_price_body_with_quote("USD")
+    }
+
+    fn latest_price_body_with_quote(quote_currency: &str) -> String {
+        let is_derived = quote_currency != "USD";
         serde_json::json!({
             "assetId": "test-asset",
             "symbol": "TEST",
             "name": "Test Asset",
-            "quoteCurrency": "USD",
+            "quoteCurrency": quote_currency,
             "price": "1.0001",
-            "sourceType": "coingecko",
+            "sourceType": if is_derived { "fx-derived" } else { "coingecko" },
             "sourcePriority": 10,
             "riskCategory": "normal",
             "confidenceScore": 95,
@@ -1669,8 +1698,12 @@ mod tests {
             "recordedAt": "2026-05-26T12:00:05Z",
             "freshnessStatus": "fresh",
             "isFallback": false,
-            "isDerived": false,
-            "derivationPath": null,
+            "isDerived": is_derived,
+            "derivationPath": if is_derived {
+                serde_json::json!(["TEST/USD", format!("{quote_currency}/USD")])
+            } else {
+                serde_json::Value::Null
+            },
             "staleness": {
                 "ageSeconds": 5,
                 "isStale": false,

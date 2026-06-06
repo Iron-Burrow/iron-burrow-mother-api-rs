@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-06-02
+last_reviewed: 2026-06-06
 agent_edit_policy: update_when_relevant
 external_contract: iron-burrow-price-indexer/CONTRACTS.md@2026-06-02
 ---
@@ -56,18 +56,19 @@ The upstream source documents for this spec are:
 
 ## Existing behavior
 
-The current `/v1/assets/{slug}` behavior must remain stable. It returns:
+The `/v1/assets/{slug}` base response shape must remain stable. It returns:
 
 - `ok`, `type: "asset"`
 - `asset` (identity summary)
 - `price` (latest price block, always present)
 - `chain_maps`
 
-Today the endpoint already attempts latest price enrichment as part of base
-asset detail. That behavior is preserved. The latest price block is always
-attempted; when the price-indexer client is disabled or the lookup fails, the
-endpoint already returns a price block with `status: "unavailable"`. That
-contract does not change.
+The endpoint attempts latest price enrichment as part of base asset detail.
+The latest price block is always attempted in the requested `quoteCurrency`;
+when the price-indexer client is disabled or the lookup fails, the endpoint
+returns a price block with `status: "unavailable"`. Mother API passes through
+price-indexer-owned direct or derived price metadata and does not calculate
+currency conversions.
 
 ## Enrichment model
 
@@ -82,7 +83,7 @@ GET /v1/assets/{slug}?include=priceStats,priceTrend,priceSeries&quoteCurrency=US
 | Name            | Required | Default          | Allowed values                                  | Notes |
 | --------------- | -------- | ---------------- | ----------------------------------------------- | ----- |
 | `include`       | No       | none             | comma-separated: `priceStats`, `priceTrend`, `priceSeries` | Unknown tokens are ignored. |
-| `quoteCurrency` | No       | `USD`            | `USD`, `MXN`, `USDC`, `BTC`                      | Applied to requested enrichments. |
+| `quoteCurrency` | No       | `USD`            | `USD`, `MXN`, `USDC`, `BTC`                      | Applied to the latest price and requested enrichments. |
 | `window`        | No       | `24h`            | `1h`, `24h`, `7d`, `30d`                         | Applied to requested enrichments. |
 | `granularity`   | No       | upstream default | `5m`, `1h`, `1d`                                 | Forwarded only when provided. |
 
@@ -95,13 +96,15 @@ Recommended `include` values:
 Rules:
 
 - When `include` is absent, the endpoint returns the existing stable shape plus
-  the latest price block, with no signal enrichment.
+  the latest price block in the requested `quoteCurrency`, with no signal
+  enrichment.
 - `include` tokens are matched case-insensitively after trimming. Unknown
   tokens are ignored rather than rejected, consistent with the Mother API
   convention that unknown query parameters are ignored.
-- `quoteCurrency`, `window`, and `granularity` only take effect when at least
-  one enrichment is requested. They follow the same allowed values and
-  forwarding rules as `SPEC-003` and must obey ADR-001.
+- `quoteCurrency` always applies to the latest price and also applies uniformly
+  to requested enrichments. `window` and `granularity` only take effect when at
+  least one enrichment is requested. Signal parameters follow the same allowed
+  values and forwarding rules as `SPEC-003` and must obey ADR-001.
 
 ### Enrichment doctrine
 
@@ -333,8 +336,10 @@ This spec explicitly does not cover:
 
 The implementation is complete when tests prove:
 
-- Existing `/v1/assets/{slug}` behavior is unchanged when `include` is absent.
-- Latest price enrichment is always attempted and unchanged.
+- Existing `/v1/assets/{slug}` response shape is unchanged when `include` is
+  absent.
+- Latest price enrichment is always attempted with the normalized
+  `quoteCurrency`, defaulting to `USD`.
 - `include=priceStats` calls `/prices/stats` with the exact mapped parameters.
 - `include=priceTrend` calls `/prices/trend` with the exact mapped parameters.
 - `include=priceSeries` calls `/prices/series` with the exact mapped parameters
