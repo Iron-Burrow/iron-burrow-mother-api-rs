@@ -259,7 +259,7 @@ Invalid query responses are stable:
 | `PRICE_INDEXER_URL` | unset | Optional price-indexer Query Layer base URL, for example `http://price-indexer:3010`. |
 | `PRICE_QL_INTERNAL_TOKEN` | unset | Optional internal bearer token for price-indexer Query Layer calls. |
 | `PRICE_INDEXER_TIMEOUT_MS` | `2000` | Optional timeout for asset detail price lookup. |
-| `DIS_BASE_URL` | unset | Optional DIS internal base URL, for example `http://defi-intelligence-service:8080`. |
+| `DIS_BASE_URL` | unset | Optional DIS internal base URL, for example `http://dis:8000`. |
 | `DIS_REQUEST_TIMEOUT_MS` | `5000` | Optional per-attempt timeout for DIS internal resolver calls. |
 | `DIS_RETRY_MAX_ATTEMPTS` | `2` | Optional maximum total attempts for retryable DIS calls. |
 | `RUST_LOG` | `iron_burrow_mother_api_rs=info,tower_http=info` | Optional tracing filter. |
