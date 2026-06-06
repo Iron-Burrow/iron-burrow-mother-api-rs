@@ -759,6 +759,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn asset_detail_rejects_unsupported_quote_currency_before_upstream() {
+        for uri in [
+            "/v1/assets/ethereum?quoteCurrency=eur",
+            "/v1/assets/ethereum?quoteCurrency=",
+        ] {
+            let (status, json) = app_json(test_app(), uri).await;
+
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert_eq!(json["ok"], false);
+            assert_eq!(json["error"]["code"], "invalid_request");
+        }
+    }
+
+    #[tokio::test]
     async fn asset_detail_reports_disabled_requested_enrichments_without_failing_page() {
         let json = assets_json(
             "/v1/assets/bitcoin?include=priceStats,priceTrend,priceSeries&quoteCurrency=MXN",

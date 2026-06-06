@@ -88,17 +88,12 @@ pub async fn get_asset(
     Path(slug): Path<String>,
     Query(params): Query<AssetDetailQuery>,
 ) -> Result<Json<AssetResponse>, ApiError> {
+    let quote_currency = parse_quote_currency(params.quote_currency.as_deref())?;
     let repository = state
         .asset_repository
         .clone()
         .ok_or_else(ApiError::database_unavailable)?;
     let service = AssetsService::new(repository, state.price_indexer_client.clone());
-    let quote_currency = params
-        .quote_currency
-        .as_deref()
-        .unwrap_or(DEFAULT_QUOTE_CURRENCY)
-        .trim()
-        .to_ascii_uppercase();
     let enrichment_query = parse_asset_enrichment_query(&slug, params);
     let response = service
         .get_asset(&slug, &quote_currency, enrichment_query)
@@ -217,12 +212,7 @@ fn parse_signal_request(
         return Err(ApiError::invalid_request());
     }
 
-    let quote_currency = params
-        .quote_currency
-        .as_deref()
-        .unwrap_or(DEFAULT_QUOTE_CURRENCY)
-        .trim()
-        .to_ascii_uppercase();
+    let quote_currency = parse_quote_currency(params.quote_currency.as_deref())?;
     let window = params
         .window
         .as_deref()
@@ -234,10 +224,6 @@ fn parse_signal_request(
         Some(value) => Some(value.to_string()),
         None => None,
     };
-
-    if !matches!(quote_currency.as_str(), "USD" | "MXN" | "USDC" | "BTC") {
-        return Err(ApiError::invalid_request());
-    }
 
     if !matches!(window.as_str(), "1h" | "24h" | "7d" | "30d") {
         return Err(ApiError::invalid_request());
@@ -263,6 +249,19 @@ fn parse_signal_request(
         window,
         granularity,
     })
+}
+
+fn parse_quote_currency(raw_quote_currency: Option<&str>) -> Result<String, ApiError> {
+    let quote_currency = raw_quote_currency
+        .unwrap_or(DEFAULT_QUOTE_CURRENCY)
+        .trim()
+        .to_ascii_uppercase();
+
+    if matches!(quote_currency.as_str(), "USD" | "MXN" | "USDC" | "BTC") {
+        Ok(quote_currency)
+    } else {
+        Err(ApiError::invalid_request())
+    }
 }
 
 fn signal_error_to_api_error(

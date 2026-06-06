@@ -72,3 +72,5 @@ implementation, and documentation changes.
   `USD`, `MXN`, `USDC`, or `BTC`.
 - Preserved `USD` as the default and kept currency conversion and derivation
   entirely inside price-indexer.
+- Rejected empty or unsupported asset-detail `quoteCurrency` values with
+  `400 invalid_request` before calling price-indexer.
