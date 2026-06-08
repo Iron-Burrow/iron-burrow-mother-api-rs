@@ -1,5 +1,5 @@
 /target/
-/backups/
+/backups/ibdb-*
 /.env
 /.env.*
 !.env.example
