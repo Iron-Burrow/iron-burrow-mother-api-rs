@@ -1,4 +1,5 @@
 /target/
+/backups/
 /.env
 /.env.*
 !.env.example
