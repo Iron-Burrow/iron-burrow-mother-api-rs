@@ -816,10 +816,18 @@ assets and must not be silently collapsed.
 - Kept grouping, response correlation, catalog chain-ID checks, and public
   endpoint behavior out of this slice.
 
-### PR 4 - Orchestration service
+### PR 4 - Orchestration service (complete)
 
-- Group accounts by network, resolve and deduplicate targets, skip unsupported
-  pairs, call Bigwig, and retain response correlations.
+- Added the internal balance snapshot service with first-seen network grouping,
+  caller-order restoration, catalog target resolution, defensive target
+  deduplication, and unsupported-pair skips.
+- Planned every network group before I/O, then called eligible Bigwig groups
+  concurrently with at most one call per network.
+- Added strict Bigwig evidence validation, catalog chain-ID checks,
+  account-target correlation, pinned evidence retention, and internal item
+  failure mapping.
+- Kept decimal conversion, quote enrichment, public response shaping,
+  validation, routes, and contract changes out of this slice.
 
 ### PR 5 - Quote and response shaping
 
