@@ -331,6 +331,9 @@ fn map_error_response(
     #[derive(Deserialize)]
     struct ErrorBody {
         code: String,
+        // Bigwig's binding error contract requires both fields. Decode and
+        // discard them so contract drift is classified as malformed without
+        // retaining or exposing upstream messages or details.
         #[serde(rename = "message")]
         _message: String,
         #[serde(rename = "details")]
@@ -688,6 +691,26 @@ mod tests {
             map_error_response(StatusCode::BAD_GATEWAY, b"not-json", None),
             BigwigLatestBalancesError::MalformedErrorResponse
         );
+        for body in [
+            json!({ "error": { "code": "rpc_error", "details": {} } }),
+            json!({ "error": { "code": "rpc_error", "message": "RPC failed." } }),
+            json!({
+                "error": {
+                    "code": "rpc_error",
+                    "message": null,
+                    "details": null
+                }
+            }),
+        ] {
+            assert_eq!(
+                map_error_response(
+                    StatusCode::BAD_GATEWAY,
+                    &serde_json::to_vec(&body).unwrap(),
+                    None
+                ),
+                BigwigLatestBalancesError::MalformedErrorResponse
+            );
+        }
         assert_eq!(
             map_error_response(
                 StatusCode::BAD_GATEWAY,

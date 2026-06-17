@@ -104,7 +104,6 @@ networks:
   iron-burrow-public-net:
     name: iron-burrow-public-net
   infra-client:
-    external: true
     name: iron-burrow-infra-client-net
 
 volumes:
