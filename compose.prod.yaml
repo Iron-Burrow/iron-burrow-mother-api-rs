@@ -58,6 +58,9 @@ services:
       DIS_BASE_URL: ${DIS_BASE_URL:-}
       DIS_REQUEST_TIMEOUT_MS: ${DIS_REQUEST_TIMEOUT_MS:-5000}
       DIS_RETRY_MAX_ATTEMPTS: ${DIS_RETRY_MAX_ATTEMPTS:-2}
+      INFRA_GATEWAY_URL: ${INFRA_GATEWAY_URL:-}
+      INFRA_GATEWAY_TOKEN: ${INFRA_GATEWAY_TOKEN:-}
+      BIGWIG_REQUEST_TIMEOUT_MS: ${BIGWIG_REQUEST_TIMEOUT_MS:-30000}
       RUST_LOG: ${RUST_LOG:-iron_burrow_mother_api_rs=info,tower_http=info}
     expose:
       - "3000"
@@ -69,6 +72,7 @@ services:
       iron-burrow-public-net:
         aliases:
           - mother-api
+      infra-client: {}
 
   db-migrate:
     build: !reset null
@@ -90,3 +94,6 @@ networks:
   iron-burrow-public-net:
     external: true
     name: iron-burrow-public-net
+  infra-client:
+    external: true
+    name: iron-burrow-infra-client-net

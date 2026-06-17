@@ -807,11 +807,14 @@ assets and must not be silently collapsed.
   unsupported-pair results with catalog-integrity validation.
 - Kept Bigwig calls out of this slice.
 
-### PR 3 - Bigwig client
+### PR 3 - Bigwig client (complete)
 
-- Add the authenticated client for
+- Added the authenticated client for
   `POST /internal/v1/primitives/evm/latest-balances`.
-- Add request/response DTOs, error mapping, and contract tests.
+- Added request/response DTOs, error mapping, configuration/state wiring, and
+  contract tests.
+- Kept grouping, response correlation, catalog chain-ID checks, and public
+  endpoint behavior out of this slice.
 
 ### PR 4 - Orchestration service
 

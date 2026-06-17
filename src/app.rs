@@ -86,6 +86,7 @@ mod tests {
             asset_repository: Some(GlobalAssetRepository::in_memory(demo_assets())),
             price_indexer_client: Some(price_indexer_client),
             dis_client: None,
+            bigwig_latest_balances_client: None,
         })
     }
 
@@ -103,6 +104,7 @@ mod tests {
             asset_repository: Some(GlobalAssetRepository::in_memory(demo_assets())),
             price_indexer_client: None,
             dis_client: Some(dis_client),
+            bigwig_latest_balances_client: None,
         })
     }
 
@@ -645,6 +647,7 @@ mod tests {
             asset_repository: Some(repository),
             price_indexer_client: Some(price_indexer_client),
             dis_client: None,
+            bigwig_latest_balances_client: None,
         });
 
         let response = app
@@ -802,6 +805,7 @@ mod tests {
             asset_repository: Some(repository),
             price_indexer_client: Some(price_indexer_client),
             dis_client: None,
+            bigwig_latest_balances_client: None,
         });
 
         let response = app
