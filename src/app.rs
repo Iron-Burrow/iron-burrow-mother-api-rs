@@ -772,10 +772,10 @@ mod tests {
             "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
         );
         assert_eq!(chain_maps[0]["is_native"], false);
-        assert_eq!(chain_maps[1]["network"]["slug"], "arbitrum-one");
-        assert_eq!(chain_maps[2]["network"]["slug"], "base");
+        assert_eq!(chain_maps[1]["network"]["slug"], "arbitrum-mainnet");
+        assert_eq!(chain_maps[2]["network"]["slug"], "base-mainnet");
         assert_eq!(chain_maps[3]["network"]["slug"], "near");
-        assert_eq!(chain_maps[4]["network"]["slug"], "mantle");
+        assert_eq!(chain_maps[4]["network"]["slug"], "mantle-mainnet");
     }
 
     #[tokio::test]

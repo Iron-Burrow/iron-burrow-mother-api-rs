@@ -89,3 +89,11 @@ implementation, and documentation changes.
   including `eth-mainnet`, are not constrained by a Mother-owned
   Base/Arbitrum allowlist; Bigwig remains the authority for internal
   operation-aware route resolution.
+- Migrated active Base, Mantle, and Arbitrum catalog rows in place to
+  `base-mainnet`, `mantle-mainnet`, and `arbitrum-mainnet`, preserving network
+  IDs and existing asset mappings.
+- Added the internal batch catalog resolver for native and ERC-20 balance
+  targets, with precise unsupported-network, unsupported-asset, and
+  unsupported-pair outcomes plus malformed-catalog rejection.
+- Updated existing asset-detail chain maps to emit canonical EVM network
+  slugs. No balance endpoint or Bigwig call was added in this slice.

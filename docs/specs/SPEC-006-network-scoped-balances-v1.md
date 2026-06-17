@@ -798,13 +798,14 @@ assets and must not be silently collapsed.
 - Locked canonical slugs, limits, grouping, target mapping, errors, and
   evidence.
 
-### PR 2 - Catalog migration and target resolver
+### PR 2 - Catalog migration and target resolver (complete)
 
-- Migrate `base`, `mantle`, and `arbitrum-one` catalog mappings to canonical
+- Migrated `base`, `mantle`, and `arbitrum-one` catalog mappings to canonical
   `*-mainnet` slugs.
-- Add `(network_slug, asset_slug) -> BalanceTarget`.
-- Support native, ERC-20, and unsupported-pair results.
-- Do not call Bigwig yet.
+- Added batch-ready `(network_slug, asset_slug) -> BalanceTarget` resolution.
+- Added native, ERC-20, unsupported-network, unsupported-asset, and
+  unsupported-pair results with catalog-integrity validation.
+- Kept Bigwig calls out of this slice.
 
 ### PR 3 - Bigwig client
 

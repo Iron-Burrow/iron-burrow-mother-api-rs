@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-06-06
+last_reviewed: 2026-06-17
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -434,6 +434,10 @@ Chain map entry:
 | `network.caip2`   | string \| null  | CAIP-2 identifier when known.                                          |
 | `is_native`       | bool            | `true` when the asset is the network's native asset.                   |
 | `address`         | string \| null  | Token contract address. `null` for native assets or when not applicable. |
+
+EVM chain maps use canonical Iron Burrow mainnet slugs, including
+`base-mainnet`, `mantle-mainnet`, and `arbitrum-mainnet`. The legacy catalog
+values `base`, `mantle`, and `arbitrum-one` are not emitted.
 
 Optional `signals` fields:
 
