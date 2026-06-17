@@ -1,5 +1,7 @@
 mod app;
 mod assets;
+#[allow(dead_code)]
+mod balances;
 mod config;
 mod db;
 mod dis;

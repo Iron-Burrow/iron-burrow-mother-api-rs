@@ -75,6 +75,24 @@ impl GlobalAssetRepository {
             Self::InMemory(catalog) => Ok(get_asset_detail_by_slug_in_memory(catalog, slug)),
         }
     }
+
+    #[allow(dead_code)]
+    pub(crate) async fn load_balance_catalog_rows(
+        &self,
+        network_slug: &str,
+        ordered_asset_slugs: &[String],
+    ) -> Result<Vec<BalanceCatalogRow>, RepositoryError> {
+        match self {
+            Self::Database(pool) => {
+                load_balance_catalog_rows_db(pool, network_slug, ordered_asset_slugs).await
+            }
+            Self::InMemory(catalog) => Ok(load_balance_catalog_rows_in_memory(
+                catalog,
+                network_slug,
+                ordered_asset_slugs,
+            )),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -100,6 +118,8 @@ pub struct AssetChainMap {
     pub network: NetworkRef,
     pub is_native: bool,
     pub address: Option<String>,
+    pub decimals: Option<i32>,
+    pub token_standard: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -107,6 +127,8 @@ pub struct NetworkRef {
     pub slug: String,
     pub name: String,
     pub caip2: Option<String>,
+    pub family: String,
+    pub chain_id: Option<i64>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -204,8 +226,30 @@ struct AssetChainMapRow {
     network_slug: String,
     network_name: String,
     network_caip2: Option<String>,
+    network_family: String,
+    network_chain_id: Option<i64>,
     is_native: bool,
     address: Option<String>,
+    decimals: Option<i32>,
+    token_standard: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, FromRow)]
+pub(crate) struct BalanceCatalogRow {
+    pub ordinal: i64,
+    pub requested_asset_slug: String,
+    pub network_slug: Option<String>,
+    pub network_family: Option<String>,
+    pub network_chain_id: Option<i64>,
+    pub asset_slug: Option<String>,
+    pub asset_symbol: Option<String>,
+    pub asset_name: Option<String>,
+    pub mapping_id: Option<String>,
+    pub is_native: Option<bool>,
+    pub deployment_address: Option<String>,
+    pub decimals: Option<i32>,
+    pub token_standard: Option<String>,
 }
 
 fn map_row(row: GlobalAssetRow) -> GlobalAsset {
@@ -227,9 +271,13 @@ fn map_chain_map_row(row: AssetChainMapRow) -> AssetChainMap {
             slug: row.network_slug,
             name: row.network_name,
             caip2: row.network_caip2,
+            family: row.network_family,
+            chain_id: row.network_chain_id,
         },
         is_native: row.is_native,
         address: row.address,
+        decimals: row.decimals,
+        token_standard: row.token_standard,
     }
 }
 
@@ -440,8 +488,12 @@ async fn get_asset_detail_by_slug_db(
           network.slug as network_slug,
           network.name as network_name,
           network.caip2 as network_caip2,
+          network.family as network_family,
+          network.chain_id as network_chain_id,
           asset_chain_map.is_native,
-          asset_chain_map.deployment_address as address
+          asset_chain_map.deployment_address as address,
+          asset_chain_map.decimals,
+          asset_chain_map.token_standard
         from mother_api.asset_chain_map
         join mother_api.network network
           on network.id = asset_chain_map.network_id
@@ -460,6 +512,65 @@ async fn get_asset_detail_by_slug_db(
     .collect();
 
     Ok(Some(GlobalAssetDetail { asset, chain_maps }))
+}
+
+#[allow(dead_code)]
+async fn load_balance_catalog_rows_db(
+    pool: &PgPool,
+    network_slug: &str,
+    ordered_asset_slugs: &[String],
+) -> Result<Vec<BalanceCatalogRow>, RepositoryError> {
+    sqlx::query_as::<_, BalanceCatalogRow>(
+        r#"
+        with requested_assets as (
+          select
+            requested.asset_slug,
+            requested.ordinality::bigint as ordinal
+          from unnest($2::text[]) with ordinality
+            as requested(asset_slug, ordinality)
+        ),
+        requested_network as (
+          select
+            id,
+            slug,
+            family,
+            chain_id
+          from mother_api.network
+          where status = 'active'
+            and slug = $1
+        )
+        select
+          requested_assets.ordinal,
+          requested_assets.asset_slug as requested_asset_slug,
+          requested_network.slug as network_slug,
+          requested_network.family as network_family,
+          requested_network.chain_id as network_chain_id,
+          global_asset.slug as asset_slug,
+          global_asset.symbol as asset_symbol,
+          global_asset.name as asset_name,
+          asset_chain_map.id::text as mapping_id,
+          asset_chain_map.is_native,
+          asset_chain_map.deployment_address,
+          asset_chain_map.decimals,
+          asset_chain_map.token_standard
+        from requested_assets
+        left join requested_network
+          on true
+        left join mother_api.global_asset global_asset
+          on global_asset.status = 'active'
+         and global_asset.slug = requested_assets.asset_slug
+        left join mother_api.asset_chain_map asset_chain_map
+          on asset_chain_map.status = 'active'
+         and asset_chain_map.network_id = requested_network.id
+         and asset_chain_map.asset_id = global_asset.id
+        order by requested_assets.ordinal asc, asset_chain_map.id asc
+        "#,
+    )
+    .bind(network_slug)
+    .bind(ordered_asset_slugs)
+    .fetch_all(pool)
+    .await
+    .map_err(RepositoryError::new)
 }
 
 fn find_confident_match_in_memory(
@@ -538,6 +649,90 @@ fn get_asset_detail_by_slug_in_memory(
     })
 }
 
+#[allow(dead_code)]
+fn load_balance_catalog_rows_in_memory(
+    catalog: &InMemoryGlobalAssets,
+    network_slug: &str,
+    ordered_asset_slugs: &[String],
+) -> Vec<BalanceCatalogRow> {
+    let network = catalog
+        .chain_maps
+        .iter()
+        .find(|mapping| mapping.chain_map.network.slug == network_slug)
+        .map(|mapping| &mapping.chain_map.network);
+
+    let mut rows = Vec::new();
+
+    for (index, requested_asset_slug) in ordered_asset_slugs.iter().enumerate() {
+        let ordinal = i64::try_from(index + 1).unwrap_or(i64::MAX);
+        let asset = catalog
+            .assets
+            .iter()
+            .find(|asset| asset.slug == *requested_asset_slug);
+        let mappings = asset
+            .map(|asset| {
+                catalog
+                    .chain_maps
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, mapping)| {
+                        mapping.asset_slug == asset.slug
+                            && mapping.chain_map.network.slug == network_slug
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        if mappings.is_empty() {
+            rows.push(in_memory_balance_catalog_row(
+                ordinal,
+                requested_asset_slug,
+                network,
+                asset,
+                None,
+            ));
+            continue;
+        }
+
+        for (mapping_index, mapping) in mappings {
+            rows.push(in_memory_balance_catalog_row(
+                ordinal,
+                requested_asset_slug,
+                network,
+                asset,
+                Some((mapping_index, mapping)),
+            ));
+        }
+    }
+
+    rows
+}
+
+#[allow(dead_code)]
+fn in_memory_balance_catalog_row(
+    ordinal: i64,
+    requested_asset_slug: &str,
+    network: Option<&NetworkRef>,
+    asset: Option<&GlobalAsset>,
+    mapping: Option<(usize, &InMemoryAssetChainMap)>,
+) -> BalanceCatalogRow {
+    BalanceCatalogRow {
+        ordinal,
+        requested_asset_slug: requested_asset_slug.to_string(),
+        network_slug: network.map(|network| network.slug.clone()),
+        network_family: network.map(|network| network.family.clone()),
+        network_chain_id: network.and_then(|network| network.chain_id),
+        asset_slug: asset.map(|asset| asset.slug.clone()),
+        asset_symbol: asset.map(|asset| asset.symbol.clone()),
+        asset_name: asset.map(|asset| asset.name.clone()),
+        mapping_id: mapping.map(|(index, _)| format!("in-memory-mapping-{index}")),
+        is_native: mapping.map(|(_, mapping)| mapping.chain_map.is_native),
+        deployment_address: mapping.and_then(|(_, mapping)| mapping.chain_map.address.clone()),
+        decimals: mapping.and_then(|(_, mapping)| mapping.chain_map.decimals),
+        token_standard: mapping.and_then(|(_, mapping)| mapping.chain_map.token_standard.clone()),
+    }
+}
+
 fn demo_chain_maps_for_assets(assets: &[GlobalAsset]) -> Vec<InMemoryAssetChainMap> {
     let mut chain_maps = Vec::new();
 
@@ -552,6 +747,35 @@ fn demo_chain_maps_for_assets(assets: &[GlobalAsset]) -> Vec<InMemoryAssetChainM
                 None,
                 10,
             )),
+            "ethereum" => chain_maps.extend([
+                in_memory_chain_map(
+                    "ethereum",
+                    "eth-mainnet",
+                    "Ethereum Mainnet",
+                    Some("eip155:1"),
+                    true,
+                    None,
+                    20,
+                ),
+                in_memory_chain_map(
+                    "ethereum",
+                    "arbitrum-mainnet",
+                    "Arbitrum One",
+                    Some("eip155:42161"),
+                    true,
+                    None,
+                    30,
+                ),
+                in_memory_chain_map(
+                    "ethereum",
+                    "base-mainnet",
+                    "Base",
+                    Some("eip155:8453"),
+                    true,
+                    None,
+                    40,
+                ),
+            ]),
             "usdc" => chain_maps.extend([
                 in_memory_chain_map(
                     "usdc",
@@ -564,7 +788,7 @@ fn demo_chain_maps_for_assets(assets: &[GlobalAsset]) -> Vec<InMemoryAssetChainM
                 ),
                 in_memory_chain_map(
                     "usdc",
-                    "arbitrum-one",
+                    "arbitrum-mainnet",
                     "Arbitrum One",
                     Some("eip155:42161"),
                     false,
@@ -573,7 +797,7 @@ fn demo_chain_maps_for_assets(assets: &[GlobalAsset]) -> Vec<InMemoryAssetChainM
                 ),
                 in_memory_chain_map(
                     "usdc",
-                    "base",
+                    "base-mainnet",
                     "Base",
                     Some("eip155:8453"),
                     false,
@@ -591,7 +815,7 @@ fn demo_chain_maps_for_assets(assets: &[GlobalAsset]) -> Vec<InMemoryAssetChainM
                 ),
                 in_memory_chain_map(
                     "usdc",
-                    "mantle",
+                    "mantle-mainnet",
                     "Mantle",
                     Some("eip155:5000"),
                     false,
@@ -599,6 +823,15 @@ fn demo_chain_maps_for_assets(assets: &[GlobalAsset]) -> Vec<InMemoryAssetChainM
                     280,
                 ),
             ]),
+            "mantle" => chain_maps.push(in_memory_chain_map(
+                "mantle",
+                "mantle-mainnet",
+                "Mantle",
+                Some("eip155:5000"),
+                true,
+                None,
+                50,
+            )),
             _ => {}
         }
     }
@@ -615,6 +848,30 @@ fn in_memory_chain_map(
     address: Option<&str>,
     sort_order: i32,
 ) -> InMemoryAssetChainMap {
+    let (family, chain_id) = match caip2 {
+        Some(value) if value.starts_with("eip155:") => (
+            "evm",
+            value
+                .strip_prefix("eip155:")
+                .and_then(|chain_id| chain_id.parse::<i64>().ok()),
+        ),
+        Some(value) if value.starts_with("bip122:") => ("bitcoin", None),
+        Some(value) if value.starts_with("near:") => ("near", None),
+        _ => ("unknown", None),
+    };
+    let decimals = match asset_slug {
+        "bitcoin" => 8,
+        "usdc" => 6,
+        _ => 18,
+    };
+    let token_standard = if is_native {
+        "native"
+    } else if family == "evm" {
+        "erc20"
+    } else {
+        "nep141"
+    };
+
     InMemoryAssetChainMap {
         asset_slug: asset_slug.to_string(),
         chain_map: AssetChainMap {
@@ -622,9 +879,13 @@ fn in_memory_chain_map(
                 slug: network_slug.to_string(),
                 name: network_name.to_string(),
                 caip2: caip2.map(str::to_string),
+                family: family.to_string(),
+                chain_id,
             },
             is_native,
             address: address.map(str::to_string),
+            decimals: Some(decimals),
+            token_standard: Some(token_standard.to_string()),
         },
         sort_order,
     }
@@ -897,6 +1158,199 @@ mod tests {
             Some("global_asset_slug_normalized")
         );
 
+        transaction.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn full_migration_uses_canonical_evm_network_slugs() {
+        let Ok(database_url) = std::env::var("DATABASE_URL") else {
+            return;
+        };
+
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+
+        let canonical_networks = sqlx::query_as::<_, (String, i64, String)>(
+            r#"
+            select slug, chain_id, caip2
+            from mother_api.network
+            where status = 'active'
+              and slug in ('base-mainnet', 'mantle-mainnet', 'arbitrum-mainnet')
+            order by chain_id
+            "#,
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let legacy_count = sqlx::query_scalar::<_, i64>(
+            r#"
+            select count(*)
+            from mother_api.network
+            where status = 'active'
+              and slug in ('base', 'mantle', 'arbitrum-one')
+            "#,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            canonical_networks,
+            vec![
+                (
+                    "mantle-mainnet".to_string(),
+                    5000,
+                    "eip155:5000".to_string()
+                ),
+                ("base-mainnet".to_string(), 8453, "eip155:8453".to_string()),
+                (
+                    "arbitrum-mainnet".to_string(),
+                    42161,
+                    "eip155:42161".to_string()
+                ),
+            ]
+        );
+        assert_eq!(legacy_count, 0);
+    }
+
+    #[tokio::test]
+    async fn canonical_network_migration_preserves_ids_and_mapping_counts() {
+        let Ok(database_url) = std::env::var("DATABASE_URL") else {
+            return;
+        };
+
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let mut transaction = pool.begin().await.unwrap();
+
+        let before = sqlx::query_as::<_, (String, String, i64)>(
+            r#"
+            select
+              network.id::text,
+              network.slug,
+              count(asset_chain_map.id)
+            from mother_api.network network
+            left join mother_api.asset_chain_map asset_chain_map
+              on asset_chain_map.network_id = network.id
+            where network.status = 'active'
+              and network.slug in (
+                'base-mainnet',
+                'mantle-mainnet',
+                'arbitrum-mainnet'
+              )
+            group by network.id, network.slug
+            order by network.id
+            "#,
+        )
+        .fetch_all(&mut *transaction)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            r#"
+            update mother_api.network
+            set slug = case slug
+              when 'base-mainnet' then 'base'
+              when 'mantle-mainnet' then 'mantle'
+              when 'arbitrum-mainnet' then 'arbitrum-one'
+            end
+            where status = 'active'
+              and slug in (
+                'base-mainnet',
+                'mantle-mainnet',
+                'arbitrum-mainnet'
+              )
+            "#,
+        )
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+
+        sqlx::raw_sql(include_str!(
+            "../../migrations/0005_canonical_evm_network_slugs.sql"
+        ))
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+
+        let after = sqlx::query_as::<_, (String, String, i64)>(
+            r#"
+            select
+              network.id::text,
+              network.slug,
+              count(asset_chain_map.id)
+            from mother_api.network network
+            left join mother_api.asset_chain_map asset_chain_map
+              on asset_chain_map.network_id = network.id
+            where network.status = 'active'
+              and network.slug in (
+                'base-mainnet',
+                'mantle-mainnet',
+                'arbitrum-mainnet'
+              )
+            group by network.id, network.slug
+            order by network.id
+            "#,
+        )
+        .fetch_all(&mut *transaction)
+        .await
+        .unwrap();
+
+        assert_eq!(after, before);
+
+        transaction.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn canonical_network_migration_rejects_conflicting_rows() {
+        let Ok(database_url) = std::env::var("DATABASE_URL") else {
+            return;
+        };
+
+        let pool = PgPool::connect(&database_url).await.unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        let mut transaction = pool.begin().await.unwrap();
+
+        sqlx::query(
+            r#"
+            update mother_api.network
+            set slug = 'base'
+            where status = 'active'
+              and slug = 'base-mainnet'
+            "#,
+        )
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+            insert into mother_api.network (
+              slug,
+              name,
+              family,
+              chain_id,
+              status
+            )
+            values (
+              'base-mainnet',
+              'Conflicting Base Mainnet',
+              'evm',
+              8453,
+              'inactive'
+            )
+            "#,
+        )
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+
+        let result = sqlx::raw_sql(include_str!(
+            "../../migrations/0005_canonical_evm_network_slugs.sql"
+        ))
+        .execute(&mut *transaction)
+        .await;
+
+        assert!(result.is_err());
         transaction.rollback().await.unwrap();
     }
 }
