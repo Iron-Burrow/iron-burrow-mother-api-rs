@@ -1,30 +1,31 @@
 ---
-status: draft
+status: accepted
 owner: iron-burrow
 last_reviewed: 2026-06-17
 agent_edit_policy: update_when_relevant
 external_contracts:
   - iron-burrow-price-indexer/CONTRACTS.md@2026-06-02
-  - iron-burrow-infra-gateway/CONTRACTS.md@v3.5
+  - iron-burrow-infra-gateway/CONTRACTS.md@3.5.0
 ---
 
 # SPEC-006 - Network-Scoped Balances v1
 
-Draft proposal for Mother API endpoints that resolve latest balances for one
-or more network-scoped EVM addresses across canonical Iron Burrow assets.
+Accepted implementation target for Mother API endpoints that resolve latest
+balances for one or more network-scoped EVM addresses across canonical Iron
+Burrow assets.
 
-This document is not a public contract. It remains non-binding until accepted,
-implemented, and reflected in [CONTRACTS.md](../../CONTRACTS.md). The
-implementation PR that adds these public endpoints must update
+This accepted spec is not a public contract. The routes remain non-binding
+until implemented and reflected in [CONTRACTS.md](../../CONTRACTS.md). The
+implementation PR that adds the public endpoints must update
 [CONTRACTS.md](../../CONTRACTS.md) and [HISTORY.md](../../HISTORY.md) in the
 same change.
 
 The Bigwig EVM latest balance evidence primitive is available in production as
-of Bigwig v3.5. Mother API SPEC-006 plans against that contract.
+of Bigwig 3.5.0. Mother API SPEC-006 is aligned with that binding contract.
 
 ## Purpose
 
-This spec proposes a compact balance snapshot surface for Coto / Control Tower.
+This spec defines a compact balance snapshot surface for Coto / Control Tower.
 A caller provides explicit addresses, networks, assets, and a quote currency,
 then receives latest raw balances, decimal amounts, and quote values.
 
@@ -49,8 +50,9 @@ on different networks. Callers must provide each desired pair explicitly.
 
 ### Canonical network slug
 
-Mother API and Bigwig must share one canonical Iron Burrow `network_slug`
-namespace:
+Mother API and Bigwig share one canonical Iron Burrow `network_slug`
+namespace for EVM balance resolution. Canonical EVM slugs include, but are not
+limited to:
 
 ```txt
 eth-mainnet
@@ -59,32 +61,40 @@ mantle-mainnet
 arbitrum-mainnet
 ```
 
-For the initial v1 rollout, Mother API enables balances only for:
+A canonical EVM network is eligible for SPEC-006 balance resolution when:
 
-```txt
-base-mainnet
-arbitrum-mainnet
-```
+1. the network exists in Mother's canonical network catalog;
+2. the network has active asset mappings for the requested assets;
+3. the network is expected to be callable through Bigwig's 3.5.0
+   latest-balance primitive.
 
-Bigwig v3.5 has operation-capable latest-balance routes for those two networks.
-`eth-mainnet` and `mantle-mainnet` remain canonical catalog identifiers but
-must return `unsupported_network` for this endpoint until Bigwig has an
-operation-capable route for them.
+Mother must not treat the example slug list as a hard-coded allowlist or
+duplicate Bigwig's operation-capable route map. Mother sends an accepted
+`network_slug` unchanged to Bigwig. Bigwig owns internal operation-aware route
+resolution, and Mother must not send or receive `route_id`.
 
-Mother's current seeded catalog contains legacy values including `base`,
-`mantle`, and `arbitrum-one`. Before enabling either public endpoint, the
+If Bigwig returns `unsupported_network`, `network_not_enabled_for_operation`,
+or `no_route_satisfies_operation` for a Mother-accepted network, Mother maps
+that as a runtime balance resolution failure according to the Bigwig error
+mapping section. Mother must not expose route or provider details.
+
+`eth-mainnet` is a canonical EVM network slug and must not be rejected merely
+because earlier examples focused on Base and Arbitrum. If Mother has active
+catalog mappings for the requested assets and Bigwig has an operation-capable
+latest-balance route for `eth-mainnet`, Mother must accept and orchestrate the
+request.
+
+Mother's current seeded catalog may contain legacy values including `base`,
+`mantle`, and `arbitrum-one`. Before enabling the public endpoints, the
 implementation must migrate those catalog values and their asset mappings to
-`base-mainnet`, `mantle-mainnet`, and `arbitrum-mainnet`.
+canonical `*-mainnet` slugs.
 
-Legacy slugs are not balance aliases in v1. Requests using them must return
-`unsupported_network`. Mother must not translate public slugs into Bigwig route
-IDs, and must never send or receive `route_id`.
-
-A request accepted by Mother must be callable against Bigwig v3.5 using the
-same `network_slug`.
+Legacy slugs are not balance aliases in v1. Requests using legacy slugs must
+return `unsupported_network`.
 
 `bitcoin-mainnet` may remain in the catalog, but non-EVM balance resolution is
-out of scope for v1.
+out of scope for v1. Non-EVM and unknown slugs return `unsupported_network`
+before orchestration.
 
 ### Canonical asset slug
 
@@ -137,7 +147,9 @@ Mother API resolves:
   asset_slug + network_slug -> native/ERC-20 concrete target
 
 Bigwig resolves:
-  network_slug + account address + concrete target -> raw_amount evidence
+  network_slug + account address + concrete target
+    -> internal operation-capable route
+    -> raw_amount evidence
 
 Price Indexer resolves:
   asset quote price, FX, and quote value inputs
@@ -152,7 +164,7 @@ Mother API must not perform direct EVM JSON-RPC calls, price derivation,
 balance indexing, holder indexing, DeFi protocol math, or protocol-specific
 reserve lookup.
 
-## Proposed endpoints
+## Planned public endpoints
 
 ```http
 POST /v1/balances
@@ -175,8 +187,8 @@ PriceQuoteClient
 BalanceResponseAssembler
 ```
 
-These routes are proposed only. They are not part of the public contract until
-implemented and added to `CONTRACTS.md`.
+These routes are accepted implementation targets only. They are not part of
+the public contract until implemented and added to `CONTRACTS.md`.
 
 ## Request model
 
@@ -301,7 +313,7 @@ resolution_items = accounts.length x assets.length
 ```
 
 After grouping by `network_slug`, every Bigwig request must also satisfy
-Bigwig v3.5 limits:
+Bigwig 3.5.0 limits:
 
 ```txt
 max_accounts: 50
@@ -310,23 +322,30 @@ max_account_target_items: 1000
 ```
 
 Mother returns `request_too_large` if the public request or any grouped Bigwig
-call would exceed its applicable limits.
+call would exceed its applicable limits. Mother must reject an oversized
+request; it must not chunk one public request into multiple Bigwig calls for
+the same network.
 
 ## Bigwig integration
 
-### Bigwig v3.5 adapter
+### Bigwig 3.5.0 adapter
 
 Bigwig accepts exactly one network per request. Mother must group accounts by
-`network_slug`.
+`network_slug` exactly once, preserve caller account order within each group,
+and make at most one Bigwig call for each non-empty network target group.
 
 For each group, Mother must:
 
 1. collect the requested accounts for that network;
 2. resolve each requested `asset_slug` to an active network-specific target;
 3. skip unsupported asset-network pairs before calling Bigwig;
-4. deduplicate concrete targets;
+4. deduplicate concrete targets while preserving first-occurrence order;
 5. call `POST /internal/v1/primitives/evm/latest-balances`;
 6. map evidence items back to Mother positions using catalog metadata.
+
+If every requested asset is unsupported on a network, Mother must not call
+Bigwig for that group. The affected account results contain their skipped
+items and use `"evidence": null`.
 
 Mother-to-Bigwig request:
 
@@ -370,7 +389,46 @@ Mother retains this correlation while assembling the response:
 ```
 
 Bigwig duplicate target identity is `kind:native` or
-`kind:erc20 + lower(contract_address)`.
+`kind:erc20 + lower(contract_address)`. Response correlation uses only the
+normalized account address and concrete target. It must not depend on
+`asset_slug`, response position alone, route identity, or provider metadata.
+
+### Bigwig response validation
+
+For every successful Bigwig response, Mother must validate:
+
+```txt
+primitive = evm_latest_balances
+network.network_slug = requested network_slug
+network.chain_id = expected catalog chain ID
+items.length = grouped accounts.length x deduplicated targets.length
+each requested account-target correlation appears exactly once
+item order follows accounts as the outer loop and targets as the inner loop
+status matches the resolved and failed item counts
+```
+
+Expected chain IDs must come from Mother's canonical network catalog, not from
+a hard-coded network list.
+
+Examples:
+
+```txt
+eth-mainnet: 1
+base-mainnet: 8453
+arbitrum-mainnet: 42161
+mantle-mainnet: 5000
+```
+
+Mother must validate that Bigwig's returned `network.chain_id` matches the
+catalog chain ID for the requested `network_slug`. `chain_id` is an internal
+consistency check and is not added to Mother's planned public evidence shape.
+A malformed success body, unexpected correlation, duplicate or missing item,
+or inconsistent status is a Mother `internal_error`; the affected account
+results use `"evidence": null`.
+
+Bigwig pins all items in one call to one observed block. Mother may propagate
+that block number, block hash, and `observed_at`, but this is latest snapshot
+evidence and makes no finality guarantee.
 
 ### Bigwig error mapping
 
@@ -379,7 +437,7 @@ Request-wide Bigwig failures map as follows:
 | Bigwig failure | Mother result |
 | --- | --- |
 | `401 unauthorized` | `balance_provider_unavailable`; never expose authentication details |
-| `404 unsupported_network` | `unsupported_network` only if Mother missed validation; otherwise `balance_resolution_failed` |
+| `404 unsupported_network` after Mother admission | `balance_resolution_failed` |
 | `422 network_not_enabled_for_operation` | `balance_resolution_failed` |
 | `422 no_route_satisfies_operation` | `balance_resolution_failed` |
 | `429 gateway_rate_limited` | `balance_provider_unavailable`; retain `Retry-After` internally |
@@ -387,14 +445,20 @@ Request-wide Bigwig failures map as follows:
 | `503 provider_unavailable` | `balance_provider_unavailable` |
 | `504 provider_timeout` | `balance_provider_unavailable` |
 | `500 internal_error` | `balance_provider_unavailable` |
+| transport failure or client timeout | `balance_provider_unavailable` |
 
-An unexpected Bigwig request-validation error after Mother accepted and shaped
-the request is a Mother `internal_error`.
+Any Bigwig malformed-body or request-validation error after Mother accepted
+and shaped the request is a Mother `internal_error`.
 
 A request-wide Bigwig failure affects every supported account-target item in
 that network group, and each affected pair receives the mapped Mother error
 code in its account result. Other network groups may still succeed, allowing a
-bulk response to be `partial`.
+bulk response to be `partial`. Request-wide failures do not establish balance
+evidence, so affected account results use `"evidence": null`.
+
+A valid Bigwig `partial` or `failed` evidence envelope did establish a pinned
+snapshot. Mother preserves its block and observation evidence while mapping
+the failed items.
 
 Mother public responses must not expose Bigwig route IDs, provider names,
 provider URLs, node roles, capability versions, route evidence, API keys,
@@ -608,11 +672,14 @@ observe a different block and time. Evidence is therefore attached to each
 account result. Accounts in the same network group share the same Bigwig
 evidence block and observation time.
 
-If Bigwig fails before establishing evidence for a network group, affected
-account results use `"evidence": null`.
+If Bigwig fails before establishing evidence for a network group, returns a
+malformed success body, or is not called because every pair in the group was
+skipped, affected account results use `"evidence": null`.
 
-Mother may expose Bigwig block number, block hash, and `observed_at` as balance
-evidence. It must not expose Bigwig route or provider internals.
+Mother may expose Bigwig block number, block hash, and `observed_at` as latest
+pinned snapshot evidence. This evidence makes no finality claim. Mother must
+not expose Bigwig `chain_id`, route, capability, authentication, or provider
+internals.
 
 ## Balance and quote shaping
 
@@ -725,10 +792,11 @@ assets and must not be silently collapsed.
 
 ## Recommended implementation sequence
 
-### PR 1 - Spec alignment
+### PR 1 - Spec alignment (complete)
 
-- Align SPEC-006 with the production Bigwig v3.5 contract.
-- Lock canonical slugs, limits, grouping, target mapping, errors, and evidence.
+- Accepted SPEC-006 and aligned it with the production Bigwig 3.5.0 contract.
+- Locked canonical slugs, limits, grouping, target mapping, errors, and
+  evidence.
 
 ### PR 2 - Catalog migration and target resolver
 
@@ -765,28 +833,54 @@ assets and must not be silently collapsed.
 
 Implementation acceptance tests must verify:
 
-- Mother accepts canonical `base-mainnet` and `arbitrum-mainnet` and rejects
-  legacy balance slugs;
+- Mother accepts canonical EVM network slugs that exist in the Mother catalog
+  and are eligible for Bigwig latest-balance orchestration, including
+  `eth-mainnet` when active;
+- Mother rejects legacy slugs such as `base`, `mantle`, and `arbitrum-one`;
+- Mother rejects non-EVM and unknown slugs for SPEC-006 v1;
 - every Mother-accepted network slug is sent unchanged to Bigwig;
+- `eth-mainnet` is not rejected by a hard-coded Base/Arbitrum allowlist; when
+  catalog asset mappings exist and the Bigwig client returns a valid
+  `eth-mainnet` evidence envelope, Mother returns a normal balance response;
 - bulk requests are grouped by `network_slug`;
+- caller account order is preserved within each network group;
+- each non-empty network target group produces at most one Bigwig call and is
+  never split into chunks;
 - Bigwig receives only `network_slug`, `accounts[].address`, and concrete
   `targets`;
 - Mother never sends `asset_slug`, symbols, decimals, quote currency,
   `client_ref`, Coto concepts, or `route_id` to Bigwig;
 - native and ERC-20 assets map to their correct concrete target shapes;
-- concrete targets are deduplicated before the Bigwig call;
-- requests above 20 asset slugs or 1,000 resolution items are rejected;
+- concrete targets are deduplicated before the Bigwig call while preserving
+  first-occurrence order;
+- requests above 50 accounts, 20 asset slugs, or 1,000 resolution items are
+  rejected;
 - every grouped Bigwig call remains within 50 accounts, 20 targets, and 1,000
   account-target items;
 - unsupported asset-network pairs are skipped before calling Bigwig;
+- skipped-only network groups do not call Bigwig and return null evidence;
+- Bigwig responses are rejected as `internal_error` when primitive, network,
+  chain ID, item cardinality, correlations, ordering, or status is inconsistent;
 - Bigwig `observed_at`, block number, and block hash become account evidence;
+- valid Bigwig `partial` and `failed` envelopes retain their pinned snapshot
+  evidence;
+- request-wide Bigwig failures and malformed success bodies produce null
+  evidence;
+- public evidence omits Bigwig `chain_id` and makes no finality claim;
+- single-account `as_of.observed_at` equals its account evidence timestamp;
 - bulk responses do not invent one aggregate observation time;
 - Bigwig `raw_amount` is converted with Mother catalog decimals without
   floating-point arithmetic;
 - Bigwig item failures become public item-level
   `balance_resolution_failed` errors without provider codes;
-- Bigwig `complete`, `partial`, `failed`, and request-wide failures map to
-  Mother status and errors;
+- Bigwig `404`, operation-resolution `422`, and `502 rpc_error` request-wide
+  failures map to `balance_resolution_failed`;
+- Bigwig authentication, rate-limit, availability, timeout, transport, and
+  `500` failures map to `balance_provider_unavailable`;
+- Bigwig validation errors after Mother admission and malformed or
+  inconsistent success bodies map to `internal_error`;
+- Bigwig `complete`, `partial`, and `failed` evidence maps to Mother status and
+  errors;
 - quote failure preserves the balance and produces `partial`;
 - public responses never expose Bigwig route, provider, authentication, or
   runtime internals.
