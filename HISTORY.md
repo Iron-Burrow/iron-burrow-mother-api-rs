@@ -74,3 +74,18 @@ implementation, and documentation changes.
   entirely inside price-indexer.
 - Rejected empty or unsupported asset-detail `quoteCurrency` values with
   `400 invalid_request` before calling price-indexer.
+
+## 2026-06-17
+
+- Accepted `SPEC-006-network-scoped-balances-v1.md` as the implementation
+  target for Mother API network-scoped latest EVM balance snapshots.
+- Aligned canonical network slugs, limits, grouping, concrete target mapping,
+  response validation, error mapping, and pinned snapshot evidence with
+  Bigwig 3.5.0.
+- Kept `/v1/balances` and `/v1/balances/bulk` outside the binding public
+  contract until implementation; this documentation-only change adds no
+  endpoints, dependencies, migrations, or runtime behavior.
+- Corrected SPEC-006 network eligibility so canonical catalog EVM networks,
+  including `eth-mainnet`, are not constrained by a Mother-owned
+  Base/Arbitrum allowlist; Bigwig remains the authority for internal
+  operation-aware route resolution.
