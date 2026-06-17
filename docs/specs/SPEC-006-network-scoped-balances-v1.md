@@ -3,7 +3,7 @@ status: accepted
 owner: iron-burrow
 last_reviewed: 2026-06-17
 agent_edit_policy: update_when_relevant
-external_contracts:
+external_contract:
   - iron-burrow-price-indexer/CONTRACTS.md@2026-06-02
   - iron-burrow-infra-gateway/CONTRACTS.md@3.5.0
 ---
