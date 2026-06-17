@@ -6,6 +6,7 @@ const DEFAULT_HTTP_PORT: u16 = 3000;
 pub const DEFAULT_PRICE_INDEXER_TIMEOUT_MS: u64 = 2000;
 pub const DEFAULT_DIS_REQUEST_TIMEOUT_MS: u64 = 5000;
 pub const DEFAULT_DIS_RETRY_MAX_ATTEMPTS: u64 = 2;
+pub const DEFAULT_BIGWIG_REQUEST_TIMEOUT_MS: u64 = 30000;
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct Config {
@@ -19,6 +20,9 @@ pub struct Config {
     pub dis_base_url: Option<String>,
     pub dis_request_timeout_ms: u64,
     pub dis_retry_max_attempts: u64,
+    pub infra_gateway_url: Option<String>,
+    pub infra_gateway_token: Option<String>,
+    pub bigwig_request_timeout_ms: u64,
 }
 
 impl Config {
@@ -51,6 +55,13 @@ impl Config {
                 DEFAULT_DIS_RETRY_MAX_ATTEMPTS,
             )
             .map_err(ConfigError::InvalidDisRetryMaxAttempts)?,
+            infra_gateway_url: optional_env("INFRA_GATEWAY_URL"),
+            infra_gateway_token: optional_env("INFRA_GATEWAY_TOKEN"),
+            bigwig_request_timeout_ms: parse_positive_optional_u64_env(
+                "BIGWIG_REQUEST_TIMEOUT_MS",
+                DEFAULT_BIGWIG_REQUEST_TIMEOUT_MS,
+            )
+            .map_err(ConfigError::InvalidBigwigRequestTimeout)?,
         })
     }
 
@@ -77,6 +88,9 @@ impl Default for Config {
             dis_base_url: None,
             dis_request_timeout_ms: DEFAULT_DIS_REQUEST_TIMEOUT_MS,
             dis_retry_max_attempts: DEFAULT_DIS_RETRY_MAX_ATTEMPTS,
+            infra_gateway_url: None,
+            infra_gateway_token: None,
+            bigwig_request_timeout_ms: DEFAULT_BIGWIG_REQUEST_TIMEOUT_MS,
         }
     }
 }
@@ -98,6 +112,12 @@ impl std::fmt::Debug for Config {
             .field("dis_base_url", &self.dis_base_url)
             .field("dis_request_timeout_ms", &self.dis_request_timeout_ms)
             .field("dis_retry_max_attempts", &self.dis_retry_max_attempts)
+            .field("infra_gateway_url", &self.infra_gateway_url)
+            .field(
+                "infra_gateway_token",
+                &self.infra_gateway_token.as_ref().map(|_| "<redacted>"),
+            )
+            .field("bigwig_request_timeout_ms", &self.bigwig_request_timeout_ms)
             .finish()
     }
 }
@@ -140,6 +160,7 @@ pub enum ConfigError {
     InvalidPriceIndexerTimeout(String),
     InvalidDisRequestTimeout(String),
     InvalidDisRetryMaxAttempts(String),
+    InvalidBigwigRequestTimeout(String),
     InvalidSocketAddress { host: String, port: u16 },
 }
 
@@ -165,6 +186,12 @@ impl std::fmt::Display for ConfigError {
                 write!(
                     formatter,
                     "DIS_RETRY_MAX_ATTEMPTS must be a positive u64, got {value:?}"
+                )
+            }
+            Self::InvalidBigwigRequestTimeout(value) => {
+                write!(
+                    formatter,
+                    "BIGWIG_REQUEST_TIMEOUT_MS must be a positive u64, got {value:?}"
                 )
             }
             Self::InvalidSocketAddress { host, port } => {
@@ -223,6 +250,9 @@ mod tests {
         assert_eq!(config.dis_base_url, None);
         assert_eq!(config.dis_request_timeout_ms, 5000);
         assert_eq!(config.dis_retry_max_attempts, 2);
+        assert_eq!(config.infra_gateway_url, None);
+        assert_eq!(config.infra_gateway_token, None);
+        assert_eq!(config.bigwig_request_timeout_ms, 30000);
         assert_eq!(
             config.socket_addr().unwrap(),
             "0.0.0.0:3000".parse::<SocketAddr>().unwrap()
@@ -317,6 +347,56 @@ mod tests {
             Config::from_env(),
             Err(ConfigError::InvalidDisRetryMaxAttempts("0".to_string()))
         );
+    }
+
+    #[test]
+    fn bigwig_timeout_defaults_and_rejects_zero_or_invalid_values() {
+        assert_eq!(
+            parse_positive_optional_u64_env("MISSING_BIGWIG_REQUEST_TIMEOUT", 30000).unwrap(),
+            30000
+        );
+
+        std::env::set_var("ZERO_BIGWIG_REQUEST_TIMEOUT", "0");
+        std::env::set_var("INVALID_BIGWIG_REQUEST_TIMEOUT", "eventually");
+
+        assert_eq!(
+            parse_positive_optional_u64_env("ZERO_BIGWIG_REQUEST_TIMEOUT", 30000),
+            Err("0".to_string())
+        );
+        assert_eq!(
+            parse_positive_optional_u64_env("INVALID_BIGWIG_REQUEST_TIMEOUT", 30000),
+            Err("eventually".to_string())
+        );
+
+        std::env::remove_var("ZERO_BIGWIG_REQUEST_TIMEOUT");
+        std::env::remove_var("INVALID_BIGWIG_REQUEST_TIMEOUT");
+    }
+
+    #[test]
+    fn from_env_rejects_invalid_bigwig_timeout() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let _timeout_snapshot = EnvVarSnapshot::capture("BIGWIG_REQUEST_TIMEOUT_MS");
+        std::env::set_var("BIGWIG_REQUEST_TIMEOUT_MS", "eventually");
+
+        assert_eq!(
+            Config::from_env(),
+            Err(ConfigError::InvalidBigwigRequestTimeout(
+                "eventually".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn config_debug_redacts_bigwig_token() {
+        let config = Config {
+            infra_gateway_url: Some("http://infra-gateway-hub:8080".to_string()),
+            infra_gateway_token: Some("super-secret".to_string()),
+            ..Config::default()
+        };
+        let debug = format!("{config:?}");
+
+        assert!(debug.contains("<redacted>"));
+        assert!(!debug.contains("super-secret"));
     }
 
     #[test]

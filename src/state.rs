@@ -2,8 +2,8 @@ use sqlx::PgPool;
 use tracing::warn;
 
 use crate::{
-    config::Config, db, dis::DisClient, price_indexer::PriceIndexerClient,
-    repositories::global_assets::GlobalAssetRepository,
+    balances::bigwig::BigwigLatestBalancesClient, config::Config, db, dis::DisClient,
+    price_indexer::PriceIndexerClient, repositories::global_assets::GlobalAssetRepository,
 };
 
 #[derive(Clone, Debug)]
@@ -14,6 +14,8 @@ pub struct AppState {
     pub asset_repository: Option<GlobalAssetRepository>,
     pub price_indexer_client: Option<PriceIndexerClient>,
     pub dis_client: Option<DisClient>,
+    #[allow(dead_code)]
+    pub bigwig_latest_balances_client: Option<BigwigLatestBalancesClient>,
 }
 
 impl AppState {
@@ -27,6 +29,7 @@ impl AppState {
         let asset_repository = database_pool.clone().map(GlobalAssetRepository::database);
         let price_indexer_client = create_price_indexer_client(&config);
         let dis_client = create_dis_client(&config);
+        let bigwig_latest_balances_client = create_bigwig_latest_balances_client(&config);
 
         Ok(Self {
             config,
@@ -35,6 +38,7 @@ impl AppState {
             asset_repository,
             price_indexer_client,
             dis_client,
+            bigwig_latest_balances_client,
         })
     }
 
@@ -47,6 +51,7 @@ impl AppState {
             asset_repository: Some(asset_repository),
             price_indexer_client: None,
             dis_client: None,
+            bigwig_latest_balances_client: None,
         }
     }
 }
@@ -97,6 +102,32 @@ fn create_dis_client(config: &Config) -> Option<DisClient> {
     }
 }
 
+fn create_bigwig_latest_balances_client(config: &Config) -> Option<BigwigLatestBalancesClient> {
+    match (
+        config.infra_gateway_url.as_deref(),
+        config.infra_gateway_token.as_deref(),
+    ) {
+        (Some(url), Some(token)) => {
+            match BigwigLatestBalancesClient::new(url, token, config.bigwig_request_timeout_ms) {
+                Ok(client) => Some(client),
+                Err(error) => {
+                    warn!(%error, "Bigwig config is invalid; latest-balance integration disabled");
+                    None
+                }
+            }
+        }
+        (None, None) => None,
+        (url, token) => {
+            warn!(
+                infra_gateway_url_configured = url.is_some(),
+                infra_gateway_token_configured = token.is_some(),
+                "Bigwig config is incomplete; latest-balance integration disabled"
+            );
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,5 +157,55 @@ mod tests {
         });
 
         assert!(state.dis_client.is_none());
+    }
+
+    #[test]
+    fn missing_bigwig_config_disables_client() {
+        let state = AppState::new(Config::default());
+
+        assert!(state.bigwig_latest_balances_client.is_none());
+    }
+
+    #[test]
+    fn valid_bigwig_config_creates_client() {
+        let state = AppState::new(Config {
+            infra_gateway_url: Some("http://infra-gateway-hub:8080".to_string()),
+            infra_gateway_token: Some("test-token".to_string()),
+            ..Config::default()
+        });
+
+        let client = state
+            .bigwig_latest_balances_client
+            .expect("valid Bigwig config should create a client");
+        assert_eq!(client.base_host(), Some("infra-gateway-hub"));
+        assert_eq!(client.timeout_ms(), 30000);
+    }
+
+    #[test]
+    fn partial_bigwig_config_disables_client_without_failing_startup() {
+        for config in [
+            Config {
+                infra_gateway_url: Some("http://infra-gateway-hub:8080".to_string()),
+                ..Config::default()
+            },
+            Config {
+                infra_gateway_token: Some("test-token".to_string()),
+                ..Config::default()
+            },
+        ] {
+            let state = AppState::new(config);
+            assert!(state.bigwig_latest_balances_client.is_none());
+        }
+    }
+
+    #[test]
+    fn invalid_bigwig_url_disables_client_without_failing_startup() {
+        let state = AppState::new(Config {
+            infra_gateway_url: Some("not a url".to_string()),
+            infra_gateway_token: Some("test-token".to_string()),
+            ..Config::default()
+        });
+
+        assert!(state.bigwig_latest_balances_client.is_none());
     }
 }

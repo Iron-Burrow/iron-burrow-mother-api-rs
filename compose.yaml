@@ -57,6 +57,9 @@ services:
       DIS_BASE_URL: ${DIS_BASE_URL:-}
       DIS_REQUEST_TIMEOUT_MS: ${DIS_REQUEST_TIMEOUT_MS:-5000}
       DIS_RETRY_MAX_ATTEMPTS: ${DIS_RETRY_MAX_ATTEMPTS:-2}
+      INFRA_GATEWAY_URL: ${INFRA_GATEWAY_URL:-}
+      INFRA_GATEWAY_TOKEN: ${INFRA_GATEWAY_TOKEN:-}
+      BIGWIG_REQUEST_TIMEOUT_MS: ${BIGWIG_REQUEST_TIMEOUT_MS:-30000}
       RUST_LOG: ${RUST_LOG:-iron_burrow_mother_api_rs=info,tower_http=info}
     ports:
       - "${HOST_HTTP_PORT:-3000}:3000"
@@ -73,6 +76,7 @@ services:
       iron-burrow-public-net:
         aliases:
           - mother-api
+      infra-client: {}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health >/dev/null || exit 1"]
       interval: 30s
@@ -99,6 +103,8 @@ networks:
     name: iron-burrow-net
   iron-burrow-public-net:
     name: iron-burrow-public-net
+  infra-client:
+    name: iron-burrow-infra-client-net
 
 volumes:
   ibdb-postgres-data:

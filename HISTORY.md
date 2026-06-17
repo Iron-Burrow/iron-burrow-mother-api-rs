@@ -97,3 +97,13 @@ implementation, and documentation changes.
   unsupported-pair outcomes plus malformed-catalog rejection.
 - Updated existing asset-detail chain maps to emit canonical EVM network
   slugs. No balance endpoint or Bigwig call was added in this slice.
+- Added the authenticated, single-attempt Bigwig latest-balances client with
+  typed request/evidence DTOs, strict known-code decoding, sanitized error
+  classification, timeout handling, and `Retry-After` retention.
+- Wired optional Bigwig URL/token configuration and a 30-second default
+  timeout into application state and Compose, with only the Mother API service
+  joining the client-facing Bigwig network.
+- Added contract tests for the exact Mother-to-Bigwig request, complete,
+  partial, and failed evidence envelopes, every documented request-wide error,
+  malformed responses, redaction, and no-retry behavior. Public balance routes
+  and orchestration remain unimplemented.
