@@ -16,6 +16,8 @@ use super::{
         BalanceTarget, BalanceTargetKind, BalanceTargetResolution, CatalogBalanceTargetResolver,
         CatalogResolverError,
     },
+    decimal::{format_amount, is_unsigned_integer, multiply_amount_by_price},
+    quote::{PriceQuoteClient, PriceQuoteClientError, PriceQuoteResolution},
 };
 
 const BIGWIG_MAX_ACCOUNTS: usize = 50;
@@ -26,16 +28,19 @@ const BIGWIG_MAX_ITEMS: usize = 1_000;
 pub struct BalanceSnapshotService {
     catalog_resolver: CatalogBalanceTargetResolver,
     bigwig_client: Option<BigwigLatestBalancesClient>,
+    price_quote_client: Option<PriceQuoteClient>,
 }
 
 impl BalanceSnapshotService {
     pub fn new(
         catalog_resolver: CatalogBalanceTargetResolver,
         bigwig_client: Option<BigwigLatestBalancesClient>,
+        price_quote_client: Option<PriceQuoteClient>,
     ) -> Self {
         Self {
             catalog_resolver,
             bigwig_client,
+            price_quote_client,
         }
     }
 
@@ -71,7 +76,7 @@ impl BalanceSnapshotService {
             executions[group_index] = Some(GroupExecution::Called(response));
         }
 
-        let mut account_results = (0..request.accounts.len())
+        let mut raw_account_results = (0..request.accounts.len())
             .map(|_| None)
             .collect::<Vec<_>>();
 
@@ -82,17 +87,32 @@ impl BalanceSnapshotService {
             let group_results = assemble_group_results(plan, execution);
 
             for (account_index, result) in group_results {
-                account_results[account_index] = Some(result);
+                raw_account_results[account_index] = Some(result);
             }
         }
+
+        let raw_account_results = raw_account_results
+            .into_iter()
+            .map(|result| result.expect("every requested account must belong to one group"))
+            .collect::<Vec<_>>();
+        let pricing_asset_slugs = collect_pricing_asset_slugs(&raw_account_results);
+        let quotes = if pricing_asset_slugs.is_empty() {
+            Ok(HashMap::new())
+        } else {
+            match &self.price_quote_client {
+                Some(client) => {
+                    client
+                        .latest_quotes(&pricing_asset_slugs, &request.quote_currency)
+                        .await
+                }
+                None => Err(PriceQuoteClientError::ProviderUnavailable),
+            }
+        };
 
         Ok(BalanceSnapshotResult {
             quote_currency: request.quote_currency,
             requested_asset_slugs: request.asset_slugs,
-            accounts: account_results
-                .into_iter()
-                .map(|result| result.expect("every requested account must belong to one group"))
-                .collect(),
+            accounts: enrich_account_results(raw_account_results, quotes),
         })
     }
 
@@ -160,6 +180,8 @@ pub enum BalanceItemOutcome {
     Resolved {
         target: BalanceTarget,
         raw_amount: String,
+        amount: String,
+        quote: BalanceQuoteOutcome,
     },
     Skipped {
         network_slug: String,
@@ -175,7 +197,46 @@ pub enum BalanceItemOutcome {
 pub enum BalanceItemErrorCode {
     BalanceResolutionFailed,
     BalanceProviderUnavailable,
+    PriceResolutionFailed,
+    PriceProviderUnavailable,
     InternalError,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BalanceQuoteOutcome {
+    Available {
+        currency: String,
+        unit_price: String,
+        value: String,
+        price_as_of: String,
+    },
+    Unavailable {
+        code: BalanceItemErrorCode,
+    },
+    Unsupported,
+}
+
+#[derive(Clone, Debug)]
+struct RawBalanceAccountResult {
+    account: BalanceSnapshotAccount,
+    evidence: Option<BalanceEvidence>,
+    items: Vec<RawBalanceItemOutcome>,
+}
+
+#[derive(Clone, Debug)]
+enum RawBalanceItemOutcome {
+    Resolved {
+        target: BalanceTarget,
+        raw_amount: String,
+    },
+    Skipped {
+        network_slug: String,
+        asset_slug: String,
+    },
+    Failed {
+        target: BalanceTarget,
+        code: BalanceItemErrorCode,
+    },
 }
 
 #[derive(Debug)]
@@ -525,13 +586,14 @@ enum ResponseValidationIssue {
     WrongCardinality,
     UnexpectedCorrelation,
     DuplicateCorrelation,
+    InvalidRawAmount,
     WrongStatus,
 }
 
 fn assemble_group_results(
     plan: &NetworkGroupPlan,
     execution: GroupExecution,
-) -> Vec<(usize, BalanceAccountResult)> {
+) -> Vec<(usize, RawBalanceAccountResult)> {
     let validated = match execution {
         GroupExecution::SkippedOnly => None,
         GroupExecution::Failed(code) => {
@@ -568,7 +630,7 @@ fn assemble_group_results(
                     AssetPlan::Skipped {
                         network_slug,
                         asset_slug,
-                    } => BalanceItemOutcome::Skipped {
+                    } => RawBalanceItemOutcome::Skipped {
                         network_slug: network_slug.clone(),
                         asset_slug: asset_slug.clone(),
                     },
@@ -582,11 +644,13 @@ fn assemble_group_results(
                             .expect("supported targets require a validated Bigwig response")
                             .target_outcomes[outcome_index]
                         {
-                            TargetOutcome::Resolved(raw_amount) => BalanceItemOutcome::Resolved {
-                                target: target.clone(),
-                                raw_amount: raw_amount.clone(),
-                            },
-                            TargetOutcome::Failed => BalanceItemOutcome::Failed {
+                            TargetOutcome::Resolved(raw_amount) => {
+                                RawBalanceItemOutcome::Resolved {
+                                    target: target.clone(),
+                                    raw_amount: raw_amount.clone(),
+                                }
+                            }
+                            TargetOutcome::Failed => RawBalanceItemOutcome::Failed {
                                 target: target.clone(),
                                 code: BalanceItemErrorCode::BalanceResolutionFailed,
                             },
@@ -597,7 +661,7 @@ fn assemble_group_results(
 
             (
                 group_account.original_index,
-                BalanceAccountResult {
+                RawBalanceAccountResult {
                     account: group_account.account.clone(),
                     evidence,
                     items,
@@ -610,7 +674,7 @@ fn assemble_group_results(
 fn failed_group_results(
     plan: &NetworkGroupPlan,
     code: BalanceItemErrorCode,
-) -> Vec<(usize, BalanceAccountResult)> {
+) -> Vec<(usize, RawBalanceAccountResult)> {
     plan.accounts
         .iter()
         .map(|group_account| {
@@ -618,14 +682,14 @@ fn failed_group_results(
                 .asset_plans
                 .iter()
                 .map(|asset_plan| match asset_plan {
-                    AssetPlan::Supported { target, .. } => BalanceItemOutcome::Failed {
+                    AssetPlan::Supported { target, .. } => RawBalanceItemOutcome::Failed {
                         target: target.clone(),
                         code,
                     },
                     AssetPlan::Skipped {
                         network_slug,
                         asset_slug,
-                    } => BalanceItemOutcome::Skipped {
+                    } => RawBalanceItemOutcome::Skipped {
                         network_slug: network_slug.clone(),
                         asset_slug: asset_slug.clone(),
                     },
@@ -634,7 +698,7 @@ fn failed_group_results(
 
             (
                 group_account.original_index,
-                BalanceAccountResult {
+                RawBalanceAccountResult {
                     account: group_account.account.clone(),
                     evidence: None,
                     items,
@@ -695,6 +759,9 @@ fn validate_response(
 
         match item {
             BigwigBalanceEvidenceItem::Resolved { raw_amount, .. } => {
+                if !is_unsigned_integer(&raw_amount) {
+                    return Err(ResponseValidationIssue::InvalidRawAmount);
+                }
                 resolved_count += 1;
                 target_outcomes.push(TargetOutcome::Resolved(raw_amount));
             }
@@ -729,6 +796,115 @@ fn validate_response(
         },
         target_outcomes,
     })
+}
+
+fn collect_pricing_asset_slugs(accounts: &[RawBalanceAccountResult]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut pricing_asset_slugs = Vec::new();
+
+    for account in accounts {
+        for item in &account.items {
+            if let RawBalanceItemOutcome::Resolved { target, .. } = item {
+                let pricing_asset_slug = target.pricing_asset_slug.trim().to_ascii_lowercase();
+                if seen.insert(pricing_asset_slug.clone()) {
+                    pricing_asset_slugs.push(pricing_asset_slug);
+                }
+            }
+        }
+    }
+
+    pricing_asset_slugs
+}
+
+fn enrich_account_results(
+    accounts: Vec<RawBalanceAccountResult>,
+    quotes: Result<HashMap<String, PriceQuoteResolution>, PriceQuoteClientError>,
+) -> Vec<BalanceAccountResult> {
+    accounts
+        .into_iter()
+        .map(|account| BalanceAccountResult {
+            account: account.account,
+            evidence: account.evidence,
+            items: account
+                .items
+                .into_iter()
+                .map(|item| enrich_item(item, &quotes))
+                .collect(),
+        })
+        .collect()
+}
+
+fn enrich_item(
+    item: RawBalanceItemOutcome,
+    quotes: &Result<HashMap<String, PriceQuoteResolution>, PriceQuoteClientError>,
+) -> BalanceItemOutcome {
+    match item {
+        RawBalanceItemOutcome::Resolved { target, raw_amount } => {
+            let amount = format_amount(&raw_amount, target.decimals)
+                .expect("validated Bigwig raw amount must format exactly");
+            let quote = match quotes {
+                Ok(quotes) => quotes
+                    .get(&target.pricing_asset_slug.to_ascii_lowercase())
+                    .map(|quote| enrich_quote(quote, &raw_amount, target.decimals))
+                    .unwrap_or(BalanceQuoteOutcome::Unavailable {
+                        code: BalanceItemErrorCode::InternalError,
+                    }),
+                Err(PriceQuoteClientError::ProviderUnavailable) => {
+                    BalanceQuoteOutcome::Unavailable {
+                        code: BalanceItemErrorCode::PriceProviderUnavailable,
+                    }
+                }
+                Err(PriceQuoteClientError::InternalError) => BalanceQuoteOutcome::Unavailable {
+                    code: BalanceItemErrorCode::InternalError,
+                },
+            };
+
+            BalanceItemOutcome::Resolved {
+                target,
+                raw_amount,
+                amount,
+                quote,
+            }
+        }
+        RawBalanceItemOutcome::Skipped {
+            network_slug,
+            asset_slug,
+        } => BalanceItemOutcome::Skipped {
+            network_slug,
+            asset_slug,
+        },
+        RawBalanceItemOutcome::Failed { target, code } => {
+            BalanceItemOutcome::Failed { target, code }
+        }
+    }
+}
+
+fn enrich_quote(
+    quote: &PriceQuoteResolution,
+    raw_amount: &str,
+    decimals: u8,
+) -> BalanceQuoteOutcome {
+    match quote {
+        PriceQuoteResolution::Available {
+            unit_price,
+            quote_currency,
+            price_as_of,
+        } => match multiply_amount_by_price(raw_amount, decimals, unit_price) {
+            Ok(value) => BalanceQuoteOutcome::Available {
+                currency: quote_currency.clone(),
+                unit_price: unit_price.clone(),
+                value,
+                price_as_of: price_as_of.clone(),
+            },
+            Err(_) => BalanceQuoteOutcome::Unavailable {
+                code: BalanceItemErrorCode::InternalError,
+            },
+        },
+        PriceQuoteResolution::Unavailable => BalanceQuoteOutcome::Unavailable {
+            code: BalanceItemErrorCode::PriceResolutionFailed,
+        },
+        PriceQuoteResolution::Unsupported => BalanceQuoteOutcome::Unsupported,
+    }
 }
 
 fn map_bigwig_error(error: &BigwigLatestBalancesError) -> BalanceItemErrorCode {
@@ -790,6 +966,7 @@ mod tests {
             BigwigBalanceEvidenceBlock, BigwigBalanceEvidenceNetwork, BigwigBalanceItemError,
             BigwigBalanceItemErrorCode, BigwigRequestValidationCode,
         },
+        price_indexer::PriceIndexerClient,
         repositories::global_assets::{demo_assets, GlobalAssetRepository},
     };
 
@@ -885,6 +1062,80 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn batches_deduplicated_quotes_once_and_fans_them_out_in_caller_order() {
+        let Some((bigwig_url, bigwig_server)) = spawn_dynamic_server(2) else {
+            return;
+        };
+        let Some((price_url, price_server)) =
+            spawn_price_server(&["usdc", "ethereum"], "MXN", "2.50")
+        else {
+            return;
+        };
+        let request = BalanceSnapshotRequest {
+            accounts: vec![
+                account("base-mainnet", ACCOUNT_A, Some("base")),
+                account("eth-mainnet", ACCOUNT_B, Some("eth")),
+            ],
+            asset_slugs: vec!["usdc".to_string(), "ethereum".to_string()],
+            quote_currency: "MXN".to_string(),
+        };
+
+        let result = service_with_quote(
+            Some(bigwig_client(&bigwig_url)),
+            Some(price_quote_client(&price_url)),
+        )
+        .resolve_latest(request.clone())
+        .await
+        .unwrap();
+        bigwig_server.join().unwrap();
+        let price_request = price_server.join().unwrap();
+        let price_body = price_request
+            .split_once("\r\n\r\n")
+            .map(|(_, body)| serde_json::from_str::<Value>(body).unwrap())
+            .unwrap();
+
+        assert!(price_request.starts_with("POST /prices/latest/batch "));
+        assert_eq!(price_body["slugs"], json!(["usdc", "ethereum"]));
+        assert_eq!(price_body["quoteCurrency"], "MXN");
+        assert_eq!(
+            result
+                .accounts
+                .iter()
+                .map(|account| account.account.clone())
+                .collect::<Vec<_>>(),
+            request.accounts
+        );
+
+        let base_usdc = &result.accounts[0].items[0];
+        assert!(matches!(
+            base_usdc,
+            BalanceItemOutcome::Resolved {
+                amount,
+                quote: BalanceQuoteOutcome::Available {
+                    currency,
+                    unit_price,
+                    value,
+                    ..
+                },
+                ..
+            } if amount == "0.001000"
+                && currency == "MXN"
+                && unit_price == "2.50"
+                && value == "0.002500"
+        ));
+        let eth_native = &result.accounts[1].items[1];
+        assert!(matches!(
+            eth_native,
+            BalanceItemOutcome::Resolved {
+                amount,
+                quote: BalanceQuoteOutcome::Available { value, .. },
+                ..
+            } if amount == "0.000000000000001000"
+                && value == "0.000000000000002500"
+        ));
+    }
+
+    #[tokio::test]
     async fn deduplicates_targets_and_fans_out_duplicate_assets() {
         let Some((base_url, server)) = spawn_dynamic_server(1) else {
             return;
@@ -906,8 +1157,19 @@ mod tests {
             .items
             .iter()
             .map(|item| match item {
-                BalanceItemOutcome::Resolved { target, raw_amount } => {
+                BalanceItemOutcome::Resolved {
+                    target,
+                    raw_amount,
+                    quote,
+                    ..
+                } => {
                     assert_eq!(target.asset_slug, "usdc");
+                    assert_eq!(
+                        quote,
+                        &BalanceQuoteOutcome::Unavailable {
+                            code: BalanceItemErrorCode::PriceProviderUnavailable,
+                        }
+                    );
                     raw_amount.as_str()
                 }
                 _ => panic!("duplicate supported assets should both resolve"),
@@ -944,6 +1206,32 @@ mod tests {
                 asset_slug: "wrapped-bitcoin".to_string(),
             }]
         );
+    }
+
+    #[tokio::test]
+    async fn skipped_only_results_do_not_call_price_indexer() {
+        let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
+            return;
+        };
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let result = service_with_quote(None, Some(price_quote_client(&base_url)))
+            .resolve_latest(BalanceSnapshotRequest {
+                accounts: vec![account("mantle-mainnet", ACCOUNT_A, None)],
+                asset_slugs: vec!["wrapped-bitcoin".to_string()],
+                quote_currency: "USD".to_string(),
+            })
+            .await
+            .unwrap();
+
+        listener.set_nonblocking(true).unwrap();
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+        assert!(matches!(
+            &result.accounts[0].items[0],
+            BalanceItemOutcome::Skipped { .. }
+        ));
     }
 
     #[tokio::test]
@@ -1028,6 +1316,54 @@ mod tests {
         else {
             return;
         };
+        let result = service(Some(bigwig_client(&base_url)))
+            .resolve_latest(BalanceSnapshotRequest {
+                accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
+                asset_slugs: vec!["usdc".to_string()],
+                quote_currency: "USD".to_string(),
+            })
+            .await
+            .unwrap();
+        server.join().unwrap();
+
+        assert_eq!(result.accounts[0].evidence, None);
+        assert!(matches!(
+            &result.accounts[0].items[0],
+            BalanceItemOutcome::Failed {
+                code: BalanceItemErrorCode::InternalError,
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn malformed_raw_amount_invalidates_group_evidence_before_quote_lookup() {
+        let body = json!({
+            "primitive": "evm_latest_balances",
+            "status": "complete",
+            "network": {
+                "network_slug": "base-mainnet",
+                "chain_id": 8453
+            },
+            "observed_at": "2026-06-17T12:00:00Z",
+            "block": {
+                "number": "123",
+                "hash": format!("0x{}", "a".repeat(64))
+            },
+            "items": [{
+                "status": "resolved",
+                "account": {"address": ACCOUNT_A},
+                "target": {
+                    "kind": "erc20",
+                    "contract_address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+                },
+                "raw_amount": "1.0"
+            }]
+        });
+        let Some((base_url, server)) = spawn_static_server(StatusCode::OK, body) else {
+            return;
+        };
+
         let result = service(Some(bigwig_client(&base_url)))
             .resolve_latest(BalanceSnapshotRequest {
                 accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
@@ -1216,14 +1552,14 @@ mod tests {
             .all(|(_, account)| account.evidence.is_some()));
         assert!(matches!(
             &results[0].1.items[0],
-            BalanceItemOutcome::Resolved {
+            RawBalanceItemOutcome::Resolved {
                 raw_amount,
                 ..
             } if raw_amount == "1000"
         ));
         assert!(matches!(
             &results[0].1.items[1],
-            BalanceItemOutcome::Failed {
+            RawBalanceItemOutcome::Failed {
                 code: BalanceItemErrorCode::BalanceResolutionFailed,
                 ..
             }
@@ -1240,7 +1576,7 @@ mod tests {
             .all(|(_, account)| account.evidence.is_some()
                 && account.items.iter().all(|item| matches!(
                     item,
-                    BalanceItemOutcome::Failed {
+                    RawBalanceItemOutcome::Failed {
                         code: BalanceItemErrorCode::BalanceResolutionFailed,
                         ..
                     }
@@ -1255,7 +1591,7 @@ mod tests {
             .all(|(_, account)| account.evidence.is_none()
                 && account.items.iter().all(|item| matches!(
                     item,
-                    BalanceItemOutcome::Failed {
+                    RawBalanceItemOutcome::Failed {
                         code: BalanceItemErrorCode::BalanceResolutionFailed,
                         ..
                     }
@@ -1395,14 +1731,26 @@ mod tests {
     }
 
     fn service(client: Option<BigwigLatestBalancesClient>) -> BalanceSnapshotService {
+        service_with_quote(client, None)
+    }
+
+    fn service_with_quote(
+        client: Option<BigwigLatestBalancesClient>,
+        price_quote_client: Option<PriceQuoteClient>,
+    ) -> BalanceSnapshotService {
         BalanceSnapshotService::new(
             CatalogBalanceTargetResolver::new(GlobalAssetRepository::in_memory(demo_assets())),
             client,
+            price_quote_client,
         )
     }
 
     fn bigwig_client(base_url: &str) -> BigwigLatestBalancesClient {
         BigwigLatestBalancesClient::new(base_url, "test-token", 2_000).unwrap()
+    }
+
+    fn price_quote_client(base_url: &str) -> PriceQuoteClient {
+        PriceQuoteClient::new(PriceIndexerClient::new(base_url, "test-token", 2_000).unwrap())
     }
 
     fn account(
@@ -1585,6 +1933,66 @@ mod tests {
             let (mut stream, _) = listener.accept().unwrap();
             let _request = read_http_request(&mut stream);
             write_json_response(&mut stream, status, body);
+        });
+
+        Some((base_url, handle))
+    }
+
+    fn spawn_price_server(
+        slugs: &[&str],
+        quote_currency: &str,
+        unit_price: &str,
+    ) -> Option<(String, thread::JoinHandle<String>)> {
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
+            Err(error) => panic!("failed to bind price test server: {error}"),
+        };
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let slugs = slugs
+            .iter()
+            .map(|slug| slug.to_string())
+            .collect::<Vec<_>>();
+        let quote_currency = quote_currency.to_string();
+        let unit_price = unit_price.to_string();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let request = read_http_request(&mut stream);
+            let results = slugs
+                .iter()
+                .map(|slug| {
+                    json!({
+                        "requestedSlug": slug,
+                        "normalizedSlug": slug,
+                        "assetId": slug,
+                        "slug": slug,
+                        "name": slug,
+                        "status": "found",
+                        "freshnessStatus": "fresh",
+                        "price": {
+                            "assetId": slug,
+                            "slug": slug,
+                            "quoteCurrency": quote_currency.clone(),
+                            "price": unit_price.clone(),
+                            "sourceType": "test",
+                            "recordedAt": "2026-06-17T11:59:59Z",
+                            "freshnessStatus": "fresh"
+                        },
+                        "error": null
+                    })
+                })
+                .collect::<Vec<_>>();
+            write_json_response(
+                &mut stream,
+                StatusCode::OK,
+                json!({
+                    "quoteCurrency": quote_currency.clone(),
+                    "requestedCount": slugs.len(),
+                    "uniqueCount": slugs.len(),
+                    "results": results
+                }),
+            );
+            request
         });
 
         Some((base_url, handle))

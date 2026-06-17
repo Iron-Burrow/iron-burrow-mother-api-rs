@@ -829,11 +829,17 @@ assets and must not be silently collapsed.
 - Kept decimal conversion, quote enrichment, public response shaping,
   validation, routes, and contract changes out of this slice.
 
-### PR 5 - Quote and response shaping
+### PR 5 - Quote and response shaping (complete)
 
-- Apply catalog metadata and exact decimal conversion.
-- Resolve quote values through Price Indexer.
-- Assemble evidence, positions, skips, errors, and status.
+- Added strict, deduplicated Price Indexer batch quote resolution while
+  preserving unsupported, unavailable, provider-failure, and malformed
+  outcomes.
+- Added arbitrary-length integer and decimal-string arithmetic for catalog
+  decimal conversion and exact quote multiplication without floating point.
+- Added route-ready single and bulk response assembly for evidence, positions,
+  skips, sanitized errors, summaries, and complete/partial/failed status.
+- Kept public routes, request validation, and `CONTRACTS.md` changes out of
+  this slice.
 
 ### PR 6 - Public endpoints and contracts
 
