@@ -107,3 +107,14 @@ implementation, and documentation changes.
   partial, and failed evidence envelopes, every documented request-wide error,
   malformed responses, redaction, and no-retry behavior. Public balance routes
   and orchestration remain unimplemented.
+- Added the internal balance snapshot orchestration service with first-seen
+  network grouping, complete preflight catalog planning, defensive target
+  deduplication, unsupported-pair skips, and concurrent per-network Bigwig
+  calls.
+- Added strict Bigwig response validation for catalog chain IDs, cardinality,
+  account-target correlations, ordering, status consistency, and pinned
+  evidence, while mapping request-wide and item failures to sanitized internal
+  balance outcomes.
+- Preserved caller account and requested asset order for the later quote and
+  response-shaping slice. Public balance routes and `CONTRACTS.md` remain
+  unchanged.
