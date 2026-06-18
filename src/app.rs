@@ -1,9 +1,13 @@
-use axum::{routing::get, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use tower_http::trace::TraceLayer;
 
 use crate::{
     routes::{
         assets::{get_asset, get_price_stats_signal, get_price_trend_signal, list_assets},
+        balances::{resolve_bulk_balances, resolve_single_balance},
         health::health,
         predictions::{get_world_cup_country_prediction, get_world_cup_winner_prediction},
         resolve::resolve,
@@ -16,6 +20,8 @@ pub fn create_app(state: AppState) -> Router {
     let v1_routes = Router::new()
         .route("/status", get(status))
         .route("/resolve", get(resolve))
+        .route("/balances", post(resolve_single_balance))
+        .route("/balances/bulk", post(resolve_bulk_balances))
         .route("/assets", get(list_assets))
         .route("/assets/{slug}", get(get_asset))
         .route(

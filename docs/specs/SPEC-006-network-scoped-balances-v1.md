@@ -1,7 +1,7 @@
 ---
 status: accepted
 owner: iron-burrow
-last_reviewed: 2026-06-17
+last_reviewed: 2026-06-18
 agent_edit_policy: update_when_relevant
 external_contract:
   - iron-burrow-price-indexer/CONTRACTS.md@2026-06-02
@@ -14,11 +14,9 @@ Accepted implementation target for Mother API endpoints that resolve latest
 balances for one or more network-scoped EVM addresses across canonical Iron
 Burrow assets.
 
-This accepted spec is not a public contract. The routes remain non-binding
-until implemented and reflected in [CONTRACTS.md](../../CONTRACTS.md). The
-implementation PR that adds the public endpoints must update
-[CONTRACTS.md](../../CONTRACTS.md) and [HISTORY.md](../../HISTORY.md) in the
-same change.
+The public routes are implemented and their binding promises are captured in
+[CONTRACTS.md](../../CONTRACTS.md). This spec remains the accepted design and
+implementation record; `CONTRACTS.md` is authoritative for public callers.
 
 The Bigwig EVM latest balance evidence primitive is available in production as
 of Bigwig 3.5.0. Mother API SPEC-006 is aligned with that binding contract.
@@ -164,7 +162,7 @@ Mother API must not perform direct EVM JSON-RPC calls, price derivation,
 balance indexing, holder indexing, DeFi protocol math, or protocol-specific
 reserve lookup.
 
-## Planned public endpoints
+## Public endpoints
 
 ```http
 POST /v1/balances
@@ -187,8 +185,8 @@ PriceQuoteClient
 BalanceResponseAssembler
 ```
 
-These routes are accepted implementation targets only. They are not part of
-the public contract until implemented and added to `CONTRACTS.md`.
+These routes are implemented and are part of the public contract in
+[CONTRACTS.md](../../CONTRACTS.md).
 
 ## Request model
 
@@ -421,7 +419,7 @@ mantle-mainnet: 5000
 
 Mother must validate that Bigwig's returned `network.chain_id` matches the
 catalog chain ID for the requested `network_slug`. `chain_id` is an internal
-consistency check and is not added to Mother's planned public evidence shape.
+consistency check and is not added to Mother's public evidence shape.
 A malformed success body, unexpected correlation, duplicate or missing item,
 or inconsistent status is a Mother `internal_error`; the affected account
 results use `"evidence": null`.
@@ -841,11 +839,14 @@ assets and must not be silently collapsed.
 - Kept public routes, request validation, and `CONTRACTS.md` changes out of
   this slice.
 
-### PR 6 - Public endpoints and contracts
+### PR 6 - Public endpoints and contracts (complete)
 
-- Expose `/v1/balances` and `/v1/balances/bulk`.
-- Add validation and limit enforcement.
-- Update `CONTRACTS.md` and append `HISTORY.md` in the same PR.
+- Exposed `/v1/balances` and `/v1/balances/bulk` through the existing
+  orchestration and response-assembly layers.
+- Added JSON extraction, public validation, exact limits, canonical identifier
+  admission, and deterministic request-wide error mapping.
+- Added route-level success, degradation, validation, and contract coverage.
+- Updated `CONTRACTS.md` and appended `HISTORY.md` in the same PR.
 
 ## Acceptance tests
 

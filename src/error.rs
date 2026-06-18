@@ -45,6 +45,94 @@ impl ApiError {
         }
     }
 
+    pub fn invalid_account() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "invalid_account",
+            message: "Account address is invalid.",
+        }
+    }
+
+    pub fn unsupported_network() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "unsupported_network",
+            message: "Network is not supported for balance resolution.",
+        }
+    }
+
+    pub fn unsupported_asset() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "unsupported_asset",
+            message: "Asset is not supported.",
+        }
+    }
+
+    pub fn unsupported_quote_currency() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "unsupported_quote_currency",
+            message: "Quote currency is not supported.",
+        }
+    }
+
+    pub fn unsupported_as_of() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "unsupported_as_of",
+            message: "Only latest balance snapshots are supported.",
+        }
+    }
+
+    pub fn empty_accounts() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "empty_accounts",
+            message: "At least one account is required.",
+        }
+    }
+
+    pub fn empty_assets() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "empty_assets",
+            message: "At least one asset is required.",
+        }
+    }
+
+    pub fn duplicate_account() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "duplicate_account",
+            message: "Each network-scoped account must be unique.",
+        }
+    }
+
+    pub fn duplicate_asset() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "duplicate_asset",
+            message: "Each asset slug must be unique.",
+        }
+    }
+
+    pub fn request_too_large() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "request_too_large",
+            message: "Balance request exceeds the public limits.",
+        }
+    }
+
+    pub fn asset_network_map_unavailable() -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: "asset_network_map_unavailable",
+            message: "Balance catalog is temporarily unavailable.",
+        }
+    }
+
     pub fn asset_not_found() -> Self {
         Self {
             status: StatusCode::NOT_FOUND,

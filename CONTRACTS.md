@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-06-17
+last_reviewed: 2026-06-18
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -47,6 +47,8 @@ same change.
 | `GET`  | `/v1/assets/{slug}`                     | None | Returns one active asset, its chain maps, and a price block. |
 | `GET`  | `/v1/assets/{slug}/signal/price-stats`  | None | Returns a strict price statistics signal for one asset.      |
 | `GET`  | `/v1/assets/{slug}/signal/price-trend`  | None | Returns a strict price trend signal for one asset.           |
+| `POST` | `/v1/balances`                          | None | Resolves one latest network-scoped EVM balance snapshot.     |
+| `POST` | `/v1/balances/bulk`                     | None | Resolves latest snapshots for explicit network accounts.     |
 | `GET`  | `/v1/predictions/fifa-world-cup/winner` | None | Returns a DIS-backed World Cup winner prediction snapshot.   |
 | `GET`  | `/v1/predictions/fifa-world-cup/{country}` | None | Returns a DIS-backed country prediction snapshot.         |
 | `GET`  | `/v1/resolve`                           | None | Resolves a Sentinel search query against global assets.     |
@@ -632,6 +634,280 @@ confidence, warnings, and future informational field additions.
 
 ---
 
+### `POST /v1/balances`
+
+Resolves the latest balances for one explicitly network-scoped EVM account
+across the requested canonical assets. The endpoint accepts JSON only.
+
+The account's `network_slug` and each `asset_slug` are exact canonical
+identifiers. They are not trimmed or case-normalized. The address must be
+exactly `0x` followed by 40 ASCII hexadecimal characters; EIP-55 checksum
+validation is not required. The response preserves caller-provided address
+casing and `client_ref`.
+
+Unknown JSON fields are ignored. Missing required fields, wrong field types,
+malformed JSON, or a missing/non-JSON `Content-Type` return
+`400 invalid_request`.
+
+**Request:**
+
+```json
+{
+  "as_of": {
+    "kind": "latest"
+  },
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0x1234567890abcdef1234567890abcdef1234beef",
+    "client_ref": "main-safe"
+  },
+  "quote_currency": "MXN",
+  "assets": [
+    {
+      "asset_slug": "ethereum"
+    }
+  ]
+}
+```
+
+Request fields:
+
+| Field | Type | Required | Notes |
+| ----- | ---- | -------- | ----- |
+| `as_of.kind` | string | Yes | Must be exactly `"latest"`. |
+| `account.network_slug` | string | Yes | Exact canonical active EVM network slug. Legacy slugs are unsupported. |
+| `account.address` | string | Yes | `0x` plus 40 ASCII hex characters. |
+| `account.client_ref` | string | No | Opaque caller reference, echoed unchanged; `null` when omitted. |
+| `quote_currency` | string | Yes | Trimmed and uppercased; allowed values are `USD`, `MXN`, `USDC`, and `BTC`. |
+| `assets` | array | Yes | One to 20 unique canonical asset entries. |
+| `assets[].asset_slug` | string | Yes | Exact canonical global asset slug. Symbols and aliases are not accepted. |
+
+**Response — `200 OK`:**
+
+```json
+{
+  "ok": true,
+  "type": "balances",
+  "status": "complete",
+  "as_of": {
+    "kind": "latest",
+    "observed_at": "2026-06-18T12:00:00Z"
+  },
+  "quote_currency": "MXN",
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0x1234567890abcdef1234567890abcdef1234beef",
+    "client_ref": "main-safe"
+  },
+  "evidence": {
+    "source": "bigwig",
+    "network_slug": "eth-mainnet",
+    "block": {
+      "number": "22900000",
+      "hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "observed_at": "2026-06-18T12:00:00Z"
+  },
+  "positions": [
+    {
+      "network_slug": "eth-mainnet",
+      "asset_slug": "ethereum",
+      "symbol": "ETH",
+      "balance": {
+        "raw_amount": "1000000000000000000",
+        "amount": "1.000000000000000000",
+        "decimals": 18
+      },
+      "quote": {
+        "status": "available",
+        "currency": "MXN",
+        "unit_price": "35000.50",
+        "value": "35000.500000000000000000",
+        "price_as_of": "2026-06-18T11:59:59Z"
+      }
+    }
+  ],
+  "skipped": [],
+  "errors": []
+}
+```
+
+For this endpoint, `as_of.observed_at` equals `evidence.observed_at`. Both are
+`null` when no Bigwig evidence was established.
+
+---
+
+### `POST /v1/balances/bulk`
+
+Uses the same validation and resolution model as `/v1/balances`, but accepts
+one to 50 explicit network-scoped accounts. Resolution is the cartesian
+product `accounts[] x assets[]`; Mother API does not infer assets or expand an
+address to unrequested networks.
+
+**Request:**
+
+```json
+{
+  "as_of": {
+    "kind": "latest"
+  },
+  "accounts": [
+    {
+      "network_slug": "base-mainnet",
+      "address": "0x1234567890abcdef1234567890abcdef1234beef",
+      "client_ref": "treasury-base"
+    }
+  ],
+  "quote_currency": "USD",
+  "assets": [
+    {
+      "asset_slug": "usdc"
+    }
+  ]
+}
+```
+
+Accounts are unique by `(network_slug, lowercase(address))`. The same address
+on different networks is allowed. Assets are unique by exact `asset_slug`.
+Caller account order and asset order are preserved in the response.
+
+Public limits are enforced before orchestration:
+
+| Limit | Maximum |
+| ----- | ------- |
+| Accounts | 50 |
+| Assets | 20 |
+| Account-asset resolution items | 1,000 |
+
+Requests are rejected rather than split when a public or grouped Bigwig limit
+would be exceeded.
+
+**Response — `200 OK`:**
+
+```json
+{
+  "ok": true,
+  "type": "balances_bulk",
+  "status": "complete",
+  "as_of": {
+    "kind": "latest"
+  },
+  "quote_currency": "USD",
+  "summary": {
+    "requested_accounts": 1,
+    "requested_assets": 1,
+    "requested_resolution_items": 1,
+    "positions_returned": 1,
+    "skipped_items": 0,
+    "failed_items": 0
+  },
+  "accounts": [
+    {
+      "status": "complete",
+      "account": {
+        "network_slug": "base-mainnet",
+        "address": "0x1234567890abcdef1234567890abcdef1234beef",
+        "client_ref": "treasury-base"
+      },
+      "evidence": {
+        "source": "bigwig",
+        "network_slug": "base-mainnet",
+        "block": {
+          "number": "32000000",
+          "hash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "observed_at": "2026-06-18T12:00:00Z"
+      },
+      "positions": [
+        {
+          "network_slug": "base-mainnet",
+          "asset_slug": "usdc",
+          "symbol": "USDC",
+          "balance": {
+            "raw_amount": "1250000",
+            "amount": "1.250000",
+            "decimals": 6
+          },
+          "quote": {
+            "status": "available",
+            "currency": "USD",
+            "unit_price": "1.00",
+            "value": "1.250000",
+            "price_as_of": "2026-06-18T11:59:59Z"
+          }
+        }
+      ],
+      "skipped": [],
+      "errors": []
+    }
+  ],
+  "errors": []
+}
+```
+
+Bulk responses do not expose an aggregate `observed_at`; each account carries
+the evidence for its network call. Accounts resolved in the same network group
+share a block and observation time. Top-level `errors` is reserved for future
+whole-response diagnostics and is currently an empty array on success.
+
+Balance response rules shared by both endpoints:
+
+- `status` is `complete`, `partial`, or `failed`.
+- `complete` means every supported balance and quote resolved; unsupported
+  asset-network pairs may be skipped without degrading status.
+- `partial` means useful balance data exists but at least one supported
+  balance or quote failed, or a resolved balance has an unavailable or
+  unsupported quote.
+- `failed` means supported balance items existed but none resolved.
+- A skipped item has `network_slug`, `asset_slug`, and reason
+  `asset_not_supported_on_network`.
+- `evidence` is an object or `null`. It may expose Bigwig block number, block
+  hash, and observation time, but makes no finality claim.
+- Public evidence never exposes chain IDs, route IDs, providers, URLs,
+  authentication details, capabilities, or other Bigwig internals.
+- `balance.raw_amount`, `balance.amount`, quote prices, and quote values are
+  exact JSON strings. `balance.decimals` is an integer.
+- Quote `status` is `available`, `unavailable`, or `unsupported`. Non-available
+  quote fields (`currency`, `unit_price`, `value`, `price_as_of`) are `null`.
+
+Per-account item errors use these stable codes:
+
+| Code | Meaning |
+| ---- | ------- |
+| `balance_resolution_failed` | Bigwig could not resolve the supported balance. |
+| `balance_provider_unavailable` | Balance evidence is temporarily unavailable. |
+| `price_resolution_failed` | Price Indexer could not resolve the quote. |
+| `price_provider_unavailable` | Quote enrichment is temporarily unavailable. |
+| `internal_error` | The item could not be processed safely. |
+
+Bigwig and Price Indexer runtime failures are represented inside a
+`200 OK` balance response. They do not become request-wide HTTP errors.
+
+Request-wide errors:
+
+- `400 invalid_request` — malformed/non-JSON body, missing required field, or
+  wrong field type.
+- `400 invalid_account` — an address is not exactly `0x` plus 40 ASCII hex
+  characters.
+- `400 unsupported_network` — the network is unknown, non-EVM, legacy, or not
+  an exact canonical slug.
+- `400 unsupported_asset` — an asset is unknown or not an exact canonical
+  global asset slug.
+- `400 unsupported_quote_currency` — the normalized quote currency is not
+  `USD`, `MXN`, `USDC`, or `BTC`.
+- `400 unsupported_as_of` — `as_of.kind` is not `"latest"`.
+- `400 empty_accounts` — the bulk account array is empty.
+- `400 empty_assets` — the asset array is empty.
+- `400 duplicate_account` — a network-scoped account is repeated.
+- `400 duplicate_asset` — an exact asset slug is repeated.
+- `400 request_too_large` — a public or grouped provider limit is exceeded.
+- `503 asset_network_map_unavailable` — the Mother catalog is unconfigured or
+  temporarily unavailable.
+- `500 internal_error` — Mother API detects inconsistent catalog,
+  orchestration, or response-assembly state.
+
+---
+
 ### `GET /v1/predictions/fifa-world-cup/winner`
 
 Returns a live Polymarket-implied, DIS-backed, public/demo-facing snapshot of
@@ -1144,7 +1420,17 @@ Fields:
 
 | HTTP | `error.code`            | Trigger                                                                |
 | ---- | ----------------------- | ---------------------------------------------------------------------- |
-| 400  | `invalid_request`       | Asset-detail `quoteCurrency` or price signal query parameters are unsupported or incompatible. |
+| 400  | `invalid_request`       | A JSON body is malformed/missing required fields, or non-balance public parameters are invalid or incompatible. |
+| 400  | `invalid_account`       | A balance account address is not `0x` plus 40 ASCII hexadecimal characters. |
+| 400  | `unsupported_network`   | A balance request uses an unknown, non-EVM, legacy, or non-canonical network slug. |
+| 400  | `unsupported_asset`     | A balance request uses an unknown or non-canonical global asset slug. |
+| 400  | `unsupported_quote_currency` | A balance request uses a quote currency outside `USD`, `MXN`, `USDC`, and `BTC`. |
+| 400  | `unsupported_as_of`     | A balance request asks for anything other than the latest snapshot. |
+| 400  | `empty_accounts`        | A bulk balance request contains no accounts. |
+| 400  | `empty_assets`          | A balance request contains no assets. |
+| 400  | `duplicate_account`     | A bulk balance request repeats a network-scoped account. |
+| 400  | `duplicate_asset`       | A balance request repeats an exact asset slug. |
+| 400  | `request_too_large`     | A balance request exceeds a public or grouped provider limit. |
 | 400  | `invalid_limit`         | `limit` query parameter is not a positive integer.                     |
 | 400  | `missing_query`         | `q` query parameter is missing or empty after trimming.                |
 | 400  | `query_too_long`        | Trimmed `q` exceeds 128 characters.                                    |
@@ -1153,6 +1439,7 @@ Fields:
 | 502  | `price_indexer_error`   | Price-indexer failed while handling a valid signal request.            |
 | 502  | `upstream_invalid_response` | Price-indexer returned malformed or unexpected JSON.               |
 | 503  | `database_unavailable`  | `DATABASE_URL` is unset or Postgres is unreachable.                    |
+| 503  | `asset_network_map_unavailable` | The balance catalog is unconfigured or temporarily unavailable. |
 | 503  | `price_indexer_unavailable` | Price-indexer is unconfigured, unreachable, or timed out.          |
 | 400  | `unsupported_prediction_subject` | Requested prediction country is unsupported for the event.    |
 | 503  | `prediction_provider_unavailable` | DIS reports the prediction provider is unavailable or failed. |
@@ -1162,6 +1449,7 @@ Fields:
 | 502  | `prediction_resolver_schema_mismatch` | DIS returned HTTP 200, but Mother API could not decode the expected success schema. |
 | 502  | `prediction_resolver_malformed_response` | DIS returned a non-success body that was not a valid error envelope. |
 | 502  | `prediction_resolver_error` | DIS returned `internal_error` or an unknown code in a valid error envelope. |
+| 500  | `internal_error`        | Mother API encountered an unexpected or internally inconsistent state. |
 
 `error.code` values listed above are stable. New codes may be added in
 future contract revisions. Clients must tolerate unknown codes by

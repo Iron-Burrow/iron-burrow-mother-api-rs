@@ -129,3 +129,21 @@ implementation, and documentation changes.
   metadata, exact values, per-account evidence, skips, sanitized errors,
   summaries, and SPEC-006 complete/partial/failed status aggregation. Public
   balance routes and `CONTRACTS.md` remain unchanged.
+
+## 2026-06-18
+
+- Implemented the final SPEC-006 slice with public `POST /v1/balances` and
+  `POST /v1/balances/bulk` routes backed by the existing catalog, Bigwig,
+  Price Indexer, orchestration, and response-assembly layers.
+- Added JSON request extraction, latest-only validation, canonical network and
+  asset admission, EVM address validation, duplicate detection, quote-currency
+  normalization, and 50-account / 20-asset / 1,000-item limits.
+- Preserved Bigwig and Price Indexer runtime degradation as sanitized
+  item-level `200 OK` outcomes while mapping request-wide catalog and internal
+  failures to stable public error envelopes.
+- Added route-level coverage for complete single and bulk snapshots,
+  validation failures, strict identifiers, unsupported pair skips, provider
+  degradation, evidence, ordering, and address-case preservation.
+- Added the two endpoints and their requests, responses, limits, status
+  semantics, evidence guarantees, skips, and public error codes to
+  `CONTRACTS.md`; SPEC-006 is now fully implemented.
