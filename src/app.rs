@@ -5,7 +5,7 @@ use axum::{
     Router,
 };
 use tower_http::trace::TraceLayer;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use crate::{
     routes::{
@@ -71,14 +71,25 @@ async fn unmatched_route(method: Method, uri: Uri, headers: HeaderMap) -> Status
         .and_then(|value| value.to_str().ok())
         .unwrap_or("-");
 
-    warn!(
-        method = %method,
-        path = uri.path(),
-        user_agent,
-        request_id,
-        status = StatusCode::NOT_FOUND.as_u16(),
-        "unmatched route"
-    );
+    if uri.path() == "/v1" || uri.path().starts_with("/v1/") {
+        warn!(
+            method = %method,
+            path = uri.path(),
+            user_agent,
+            request_id,
+            status = StatusCode::NOT_FOUND.as_u16(),
+            "unmatched API route"
+        );
+    } else {
+        debug!(
+            method = %method,
+            path = uri.path(),
+            user_agent,
+            request_id,
+            status = StatusCode::NOT_FOUND.as_u16(),
+            "unmatched non-API route"
+        );
+    }
 
     StatusCode::NOT_FOUND
 }

@@ -34,8 +34,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(address).await?;
 
     info!(
-        routes = BALANCE_ROUTE_INVENTORY,
-        "Mother API routes registered"
+        balance_routes = BALANCE_ROUTE_INVENTORY,
+        "Mother API balance routes registered"
     );
     info!(
         service = "iron-burrow-mother-api",
