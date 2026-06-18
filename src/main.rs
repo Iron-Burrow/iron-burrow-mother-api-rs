@@ -17,7 +17,11 @@ use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tracing::{info, warn};
 
-use crate::{app::create_app, config::Config, state::AppState};
+use crate::{
+    app::{create_app, BALANCE_ROUTE_INVENTORY},
+    config::Config,
+    state::AppState,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -29,6 +33,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = create_app(state.clone());
     let listener = TcpListener::bind(address).await?;
 
+    info!(
+        routes = BALANCE_ROUTE_INVENTORY,
+        "Mother API routes registered"
+    );
     info!(
         service = "iron-burrow-mother-api",
         host = %state.config.http_host,
