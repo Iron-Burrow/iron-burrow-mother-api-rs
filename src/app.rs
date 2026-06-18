@@ -1,4 +1,5 @@
 use axum::{
+    middleware,
     routing::{get, post},
     Router,
 };
@@ -9,7 +10,10 @@ use crate::{
         assets::{get_asset, get_price_stats_signal, get_price_trend_signal, list_assets},
         balances::{resolve_bulk_balances, resolve_single_balance},
         health::health,
-        predictions::{get_world_cup_country_prediction, get_world_cup_winner_prediction},
+        predictions::{
+            add_deprecation_header, get_world_cup_country_prediction,
+            get_world_cup_winner_prediction,
+        },
         resolve::resolve,
         status::status,
     },
@@ -17,6 +21,17 @@ use crate::{
 };
 
 pub fn create_app(state: AppState) -> Router {
+    let deprecated_prediction_routes = Router::new()
+        .route(
+            "/predictions/fifa-world-cup/winner",
+            get(get_world_cup_winner_prediction),
+        )
+        .route(
+            "/predictions/fifa-world-cup/{country}",
+            get(get_world_cup_country_prediction),
+        )
+        .layer(middleware::map_response(add_deprecation_header));
+
     let v1_routes = Router::new()
         .route("/status", get(status))
         .route("/resolve", get(resolve))
@@ -32,14 +47,7 @@ pub fn create_app(state: AppState) -> Router {
             "/assets/{slug}/signal/price-trend",
             get(get_price_trend_signal),
         )
-        .route(
-            "/predictions/fifa-world-cup/winner",
-            get(get_world_cup_winner_prediction),
-        )
-        .route(
-            "/predictions/fifa-world-cup/{country}",
-            get(get_world_cup_country_prediction),
-        );
+        .merge(deprecated_prediction_routes);
 
     Router::new()
         .route("/health", get(health))
@@ -224,6 +232,77 @@ mod tests {
             request_body_json(&requests[0]),
             serde_json::json!({ "event_slug": "fifa-world-cup-2026-winner" })
         );
+    }
+
+    #[tokio::test]
+    async fn prediction_success_responses_include_deprecation_header() {
+        let Some((dis_url, request_handle)) = spawn_prediction_dis(vec![
+            (StatusCode::OK, winner_prediction_body()),
+            (StatusCode::OK, country_prediction_body("mexico")),
+        ]) else {
+            return;
+        };
+        let app = test_app_with_dis(&dis_url);
+
+        for uri in [
+            "/v1/predictions/fifa-world-cup/winner",
+            "/v1/predictions/fifa-world-cup/mexico",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(
+                response
+                    .headers()
+                    .get("deprecation")
+                    .and_then(|value| value.to_str().ok()),
+                Some(crate::routes::predictions::DEPRECATION_HEADER_VALUE)
+            );
+        }
+
+        assert_eq!(request_handle.await.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn prediction_error_responses_are_deprecated_without_marking_other_routes() {
+        let prediction_response = test_app()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/predictions/fifa-world-cup/winner")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            prediction_response.status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            prediction_response
+                .headers()
+                .get("deprecation")
+                .and_then(|value| value.to_str().ok()),
+            Some(crate::routes::predictions::DEPRECATION_HEADER_VALUE)
+        );
+
+        let health_response = test_app()
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(health_response.status(), StatusCode::OK);
+        assert!(health_response.headers().get("deprecation").is_none());
     }
 
     #[tokio::test]

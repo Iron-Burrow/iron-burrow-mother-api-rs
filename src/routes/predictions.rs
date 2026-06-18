@@ -1,5 +1,7 @@
 use axum::{
     extract::{Path, State},
+    http::{HeaderName, HeaderValue},
+    response::Response,
     Json,
 };
 use serde::Serialize;
@@ -16,6 +18,15 @@ use crate::{
 
 const WINNER_EVENT_SLUG: &str = "fifa-world-cup-2026-winner";
 const COUNTRY_EVENT_SLUG: &str = "fifa-world-cup-2026-country-probability";
+pub const DEPRECATION_HEADER_VALUE: &str = "@1781740800";
+
+pub async fn add_deprecation_header(mut response: Response) -> Response {
+    response.headers_mut().insert(
+        HeaderName::from_static("deprecation"),
+        HeaderValue::from_static(DEPRECATION_HEADER_VALUE),
+    );
+    response
+}
 
 #[derive(Serialize)]
 pub struct WinnerPredictionResponse {

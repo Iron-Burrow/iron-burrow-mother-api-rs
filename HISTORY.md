@@ -147,3 +147,11 @@ implementation, and documentation changes.
 - Added the two endpoints and their requests, responses, limits, status
   semantics, evidence guarantees, skips, and public error codes to
   `CONTRACTS.md`; SPEC-006 is now fully implemented.
+- Deprecated the legacy FIFA / World Cup prediction endpoints:
+  - `GET /v1/predictions/fifa-world-cup/winner`
+  - `GET /v1/predictions/fifa-world-cup/{country}`
+- Retained the routes temporarily for compatibility while marking responses
+  with deprecation metadata.
+- Recorded that the legacy demo surface is outside the COTO-focused Mother API
+  direction and is scheduled for removal in `v0.2.0`, with no replacement
+  currently promised.
