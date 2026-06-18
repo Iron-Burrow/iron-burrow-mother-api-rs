@@ -186,6 +186,13 @@ impl RepositoryError {
     fn new(source: sqlx::Error) -> Self {
         Self { source }
     }
+
+    #[cfg(test)]
+    pub(crate) fn test() -> Self {
+        Self {
+            source: sqlx::Error::PoolClosed,
+        }
+    }
 }
 
 impl std::fmt::Display for RepositoryError {
