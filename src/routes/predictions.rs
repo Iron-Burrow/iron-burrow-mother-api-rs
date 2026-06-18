@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    http::HeaderValue,
+    http::{HeaderName, HeaderValue},
     response::Response,
     Json,
 };
@@ -22,7 +22,7 @@ pub const DEPRECATION_HEADER_VALUE: &str = "@1781740800";
 
 pub async fn add_deprecation_header(mut response: Response) -> Response {
     response.headers_mut().insert(
-        "deprecation",
+        HeaderName::from_static("deprecation"),
         HeaderValue::from_static(DEPRECATION_HEADER_VALUE),
     );
     response
