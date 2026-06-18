@@ -135,19 +135,19 @@ fn validate_request(
         return Err(ApiError::invalid_account());
     }
 
-    let mut seen_accounts = HashSet::with_capacity(accounts.len());
+    let mut seen_accounts = HashSet::<(String, String)>::with_capacity(accounts.len());
     for account in &accounts {
         if !seen_accounts.insert((
-            account.network_slug.as_str(),
+            account.network_slug.clone(),
             account.address.to_ascii_lowercase(),
         )) {
             return Err(ApiError::duplicate_account());
         }
     }
 
-    let mut seen_assets = HashSet::with_capacity(assets.len());
+    let mut seen_assets = HashSet::<String>::with_capacity(assets.len());
     for asset in &assets {
-        if !seen_assets.insert(asset.asset_slug.as_str()) {
+        if !seen_assets.insert(asset.asset_slug.clone()) {
             return Err(ApiError::duplicate_asset());
         }
     }
