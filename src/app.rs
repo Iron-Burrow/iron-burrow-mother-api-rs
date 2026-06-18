@@ -1,9 +1,11 @@
 use axum::{
+    http::{header::USER_AGENT, HeaderMap, Method, StatusCode, Uri},
     middleware,
     routing::{get, post},
     Router,
 };
 use tower_http::trace::TraceLayer;
+use tracing::{debug, warn};
 
 use crate::{
     routes::{
@@ -19,6 +21,8 @@ use crate::{
     },
     state::AppState,
 };
+
+pub const BALANCE_ROUTE_INVENTORY: &str = "POST /v1/balances, POST /v1/balances/bulk";
 
 pub fn create_app(state: AppState) -> Router {
     let deprecated_prediction_routes = Router::new()
@@ -52,8 +56,42 @@ pub fn create_app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .nest("/v1", v1_routes)
+        .fallback(unmatched_route)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+async fn unmatched_route(method: Method, uri: Uri, headers: HeaderMap) -> StatusCode {
+    let user_agent = headers
+        .get(USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("-");
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("-");
+
+    if uri.path() == "/v1" || uri.path().starts_with("/v1/") {
+        warn!(
+            method = %method,
+            path = uri.path(),
+            user_agent,
+            request_id,
+            status = StatusCode::NOT_FOUND.as_u16(),
+            "unmatched API route"
+        );
+    } else {
+        debug!(
+            method = %method,
+            path = uri.path(),
+            user_agent,
+            request_id,
+            status = StatusCode::NOT_FOUND.as_u16(),
+            "unmatched non-API route"
+        );
+    }
+
+    StatusCode::NOT_FOUND
 }
 
 #[cfg(test)]
@@ -120,6 +158,64 @@ mod tests {
             dis_client: Some(dis_client),
             bigwig_latest_balances_client: None,
         })
+    }
+
+    #[tokio::test]
+    async fn balance_routes_are_registered_with_expected_methods() {
+        for uri in ["/v1/balances", "/v1/balances/bulk"] {
+            let response = test_app()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(uri)
+                        .header("content-type", "application/json")
+                        .body(Body::from("{}"))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{uri}");
+        }
+
+        let response = test_app()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/balances")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    }
+
+    #[tokio::test]
+    async fn unknown_route_returns_stable_not_found() {
+        let response = test_app()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/not-a-route")
+                    .header("user-agent", "route-smoke-test")
+                    .header("x-request-id", "request-123")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn production_caddy_forwards_all_v1_methods_to_axum() {
+        let caddyfile = include_str!("../infra/caddy/Caddyfile");
+
+        assert!(caddyfile.contains("path /health /v1/*"));
+        assert!(!caddyfile.contains("method GET"));
     }
 
     #[tokio::test]
