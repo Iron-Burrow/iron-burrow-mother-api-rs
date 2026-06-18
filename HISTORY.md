@@ -118,3 +118,14 @@ implementation, and documentation changes.
 - Preserved caller account and requested asset order for the later quote and
   response-shaping slice. Public balance routes and `CONTRACTS.md` remain
   unchanged.
+- Added strict balance quote enrichment through the Price Indexer batch
+  endpoint, preserving available, unavailable, unsupported, provider-failure,
+  and malformed-response distinctions without changing existing asset-list
+  price behavior.
+- Added arbitrary-length decimal-string balance conversion and quote
+  multiplication with catalog scales, including malformed Bigwig raw-amount
+  rejection before pinned evidence is exposed.
+- Added internal single and bulk balance response assemblers with catalog
+  metadata, exact values, per-account evidence, skips, sanitized errors,
+  summaries, and SPEC-006 complete/partial/failed status aggregation. Public
+  balance routes and `CONTRACTS.md` remain unchanged.

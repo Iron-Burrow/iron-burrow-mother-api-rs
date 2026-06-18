@@ -109,6 +109,49 @@ impl PriceIndexerClient {
         prices
     }
 
+    pub async fn latest_quotes_strict(
+        &self,
+        slugs: &[String],
+        quote_currency: &str,
+    ) -> Result<HashMap<String, StrictLatestQuote>, StrictPriceBatchError> {
+        let normalized_slugs = normalize_slugs(slugs);
+        if normalized_slugs.len() != slugs.len()
+            || normalized_slugs.is_empty()
+            || normalized_slugs.len() > PRICE_BATCH_MAX_SLUGS
+        {
+            return Err(StrictPriceBatchError::InvalidRequest);
+        }
+
+        let quote_currency = normalize_quote_currency(quote_currency);
+        let response = self
+            .client
+            .post(self.latest_price_batch_url())
+            .bearer_auth(&self.token)
+            .timeout(self.timeout)
+            .json(&LatestPriceBatchRequest {
+                slugs: &normalized_slugs,
+                quote_currency: &quote_currency,
+            })
+            .send()
+            .await
+            .map_err(map_strict_reqwest_error)?;
+
+        let status = response.status();
+        let body = response.bytes().await.map_err(map_strict_reqwest_error)?;
+
+        if status != StatusCode::OK {
+            if status.is_success() {
+                return Err(StrictPriceBatchError::MalformedResponse);
+            }
+            return Err(map_strict_error_response(status, &body));
+        }
+
+        let response = serde_json::from_slice::<LatestPriceBatchResponse>(&body)
+            .map_err(|_| StrictPriceBatchError::MalformedResponse)?;
+
+        validate_strict_price_batch(response, &normalized_slugs, &quote_currency)
+    }
+
     #[allow(dead_code)]
     pub async fn price_stats(
         &self,
@@ -431,6 +474,30 @@ pub enum PriceLookupError {
         code: Option<String>,
     },
     Unauthorized,
+    Timeout,
+    Transport,
+    MalformedResponse,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StrictLatestQuote {
+    Available {
+        unit_price: String,
+        quote_currency: String,
+        recorded_at: String,
+    },
+    Unavailable,
+    Unsupported,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StrictPriceBatchError {
+    InvalidRequest,
+    Unauthorized,
+    ProviderUnavailable {
+        status: Option<u16>,
+        code: Option<String>,
+    },
     Timeout,
     Transport,
     MalformedResponse,
@@ -767,11 +834,131 @@ fn map_latest_price_batch_response(
         .collect()
 }
 
+fn validate_strict_price_batch(
+    response: LatestPriceBatchResponse,
+    requested_slugs: &[String],
+    quote_currency: &str,
+) -> Result<HashMap<String, StrictLatestQuote>, StrictPriceBatchError> {
+    if response.quote_currency.trim().to_ascii_uppercase() != quote_currency
+        || response.requested_count != requested_slugs.len()
+        || response.unique_count != requested_slugs.len()
+        || response.results.len() != requested_slugs.len()
+    {
+        return Err(StrictPriceBatchError::MalformedResponse);
+    }
+
+    let requested = requested_slugs.iter().cloned().collect::<HashSet<_>>();
+    let mut quotes = HashMap::with_capacity(requested_slugs.len());
+
+    for result in response.results {
+        let requested_slug = result.requested_slug.trim().to_ascii_lowercase();
+        let normalized_slug = result.normalized_slug.trim().to_ascii_lowercase();
+        if requested_slug != normalized_slug
+            || !requested.contains(&normalized_slug)
+            || quotes.contains_key(&normalized_slug)
+        {
+            return Err(StrictPriceBatchError::MalformedResponse);
+        }
+
+        let quote = match result.status {
+            PriceBatchResultStatus::Found => {
+                let price = result
+                    .price
+                    .ok_or(StrictPriceBatchError::MalformedResponse)?;
+                let outer_freshness = result
+                    .freshness_status
+                    .ok_or(StrictPriceBatchError::MalformedResponse)?;
+                if result.error.is_some()
+                    || result
+                        .slug
+                        .as_deref()
+                        .is_some_and(|slug| slug.trim().to_ascii_lowercase() != normalized_slug)
+                    || price.slug.trim().to_ascii_lowercase() != normalized_slug
+                    || price.quote_currency.trim().to_ascii_uppercase() != quote_currency
+                    || price.price.trim().is_empty()
+                    || price.recorded_at.trim().is_empty()
+                    || outer_freshness != price.freshness_status
+                    || !matches!(
+                        price.freshness_status,
+                        FreshnessStatus::Fresh | FreshnessStatus::Stale | FreshnessStatus::Degraded
+                    )
+                {
+                    return Err(StrictPriceBatchError::MalformedResponse);
+                }
+
+                StrictLatestQuote::Available {
+                    unit_price: price.price,
+                    quote_currency: price.quote_currency,
+                    recorded_at: price.recorded_at,
+                }
+            }
+            PriceBatchResultStatus::Unavailable => {
+                if result.price.is_some()
+                    || result.error.is_some()
+                    || !matches!(
+                        result.freshness_status,
+                        None | Some(FreshnessStatus::Unavailable)
+                    )
+                {
+                    return Err(StrictPriceBatchError::MalformedResponse);
+                }
+                StrictLatestQuote::Unavailable
+            }
+            PriceBatchResultStatus::Unknown => {
+                if result.price.is_some() {
+                    return Err(StrictPriceBatchError::MalformedResponse);
+                }
+                StrictLatestQuote::Unsupported
+            }
+            PriceBatchResultStatus::Error => {
+                if result.price.is_some() {
+                    return Err(StrictPriceBatchError::MalformedResponse);
+                }
+                StrictLatestQuote::Unavailable
+            }
+            PriceBatchResultStatus::Other => {
+                return Err(StrictPriceBatchError::MalformedResponse);
+            }
+        };
+
+        quotes.insert(normalized_slug, quote);
+    }
+
+    if quotes.len() != requested_slugs.len() {
+        return Err(StrictPriceBatchError::MalformedResponse);
+    }
+
+    Ok(quotes)
+}
+
 fn map_reqwest_error(error: reqwest::Error) -> PriceLookupError {
     if error.is_timeout() {
         PriceLookupError::Timeout
     } else {
         PriceLookupError::Transport
+    }
+}
+
+fn map_strict_reqwest_error(error: reqwest::Error) -> StrictPriceBatchError {
+    if error.is_timeout() {
+        StrictPriceBatchError::Timeout
+    } else {
+        StrictPriceBatchError::Transport
+    }
+}
+
+fn map_strict_error_response(status: StatusCode, body: &[u8]) -> StrictPriceBatchError {
+    let code = serde_json::from_slice::<PriceIndexerErrorEnvelope>(body)
+        .ok()
+        .map(|envelope| envelope.error.code);
+
+    match status {
+        StatusCode::BAD_REQUEST => StrictPriceBatchError::InvalidRequest,
+        StatusCode::UNAUTHORIZED => StrictPriceBatchError::Unauthorized,
+        _ => StrictPriceBatchError::ProviderUnavailable {
+            status: Some(status.as_u16()),
+            code,
+        },
     }
 }
 
@@ -1164,6 +1351,214 @@ mod tests {
         for slug in ["known-no-price", "missing", "errored", "bad-found"] {
             assert_eq!(prices[slug], LatestAssetPrice::unavailable());
         }
+    }
+
+    #[test]
+    fn strict_batch_preserves_available_unavailable_and_unsupported_outcomes() {
+        let response = serde_json::from_value::<LatestPriceBatchResponse>(json!({
+            "quoteCurrency": "USD",
+            "requestedCount": 5,
+            "uniqueCount": 5,
+            "results": [
+                {
+                    "requestedSlug": "fresh",
+                    "normalizedSlug": "fresh",
+                    "status": "found",
+                    "freshnessStatus": "fresh",
+                    "price": batch_price_json("fresh", "fresh"),
+                    "error": null
+                },
+                {
+                    "requestedSlug": "stale",
+                    "normalizedSlug": "stale",
+                    "status": "found",
+                    "freshnessStatus": "stale",
+                    "price": batch_price_json("stale", "stale"),
+                    "error": null
+                },
+                {
+                    "requestedSlug": "degraded",
+                    "normalizedSlug": "degraded",
+                    "status": "found",
+                    "freshnessStatus": "degraded",
+                    "price": batch_price_json("degraded", "degraded"),
+                    "error": null
+                },
+                {
+                    "requestedSlug": "unavailable",
+                    "normalizedSlug": "unavailable",
+                    "status": "unavailable",
+                    "freshnessStatus": "unavailable",
+                    "price": null,
+                    "error": null
+                },
+                {
+                    "requestedSlug": "unsupported",
+                    "normalizedSlug": "unsupported",
+                    "status": "unknown",
+                    "freshnessStatus": null,
+                    "price": null,
+                    "error": null
+                }
+            ]
+        }))
+        .unwrap();
+        let slugs = ["fresh", "stale", "degraded", "unavailable", "unsupported"]
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+
+        let quotes = validate_strict_price_batch(response, &slugs, "USD").unwrap();
+
+        for slug in ["fresh", "stale", "degraded"] {
+            assert!(matches!(
+                &quotes[slug],
+                StrictLatestQuote::Available {
+                    unit_price,
+                    quote_currency,
+                    ..
+                } if unit_price == "2500.123456" && quote_currency == "USD"
+            ));
+        }
+        assert_eq!(quotes["unavailable"], StrictLatestQuote::Unavailable);
+        assert_eq!(quotes["unsupported"], StrictLatestQuote::Unsupported);
+    }
+
+    #[test]
+    fn strict_batch_maps_item_errors_to_unavailable() {
+        let response = serde_json::from_value::<LatestPriceBatchResponse>(json!({
+            "quoteCurrency": "USD",
+            "requestedCount": 1,
+            "uniqueCount": 1,
+            "results": [{
+                "requestedSlug": "errored",
+                "normalizedSlug": "errored",
+                "status": "error",
+                "freshnessStatus": null,
+                "price": null,
+                "error": {"code": "LOOKUP_FAILED"}
+            }]
+        }))
+        .unwrap();
+
+        let quotes =
+            validate_strict_price_batch(response, &["errored".to_string()], "USD").unwrap();
+
+        assert_eq!(quotes["errored"], StrictLatestQuote::Unavailable);
+    }
+
+    #[test]
+    fn strict_batch_rejects_inconsistent_envelopes() {
+        let valid = || {
+            serde_json::from_value::<LatestPriceBatchResponse>(json!({
+                "quoteCurrency": "USD",
+                "requestedCount": 1,
+                "uniqueCount": 1,
+                "results": [{
+                    "requestedSlug": "ethereum",
+                    "normalizedSlug": "ethereum",
+                    "status": "found",
+                    "freshnessStatus": "fresh",
+                    "price": batch_price_json("ethereum", "fresh"),
+                    "error": null
+                }]
+            }))
+            .unwrap()
+        };
+        let slugs = ["ethereum".to_string()];
+
+        let mut wrong_currency = valid();
+        wrong_currency.quote_currency = "MXN".to_string();
+        assert_eq!(
+            validate_strict_price_batch(wrong_currency, &slugs, "USD"),
+            Err(StrictPriceBatchError::MalformedResponse)
+        );
+
+        let mut wrong_count = valid();
+        wrong_count.requested_count = 2;
+        assert_eq!(
+            validate_strict_price_batch(wrong_count, &slugs, "USD"),
+            Err(StrictPriceBatchError::MalformedResponse)
+        );
+
+        let mut wrong_slug = valid();
+        wrong_slug.results[0].normalized_slug = "bitcoin".to_string();
+        assert_eq!(
+            validate_strict_price_batch(wrong_slug, &slugs, "USD"),
+            Err(StrictPriceBatchError::MalformedResponse)
+        );
+
+        let mut wrong_price_currency = valid();
+        wrong_price_currency.results[0]
+            .price
+            .as_mut()
+            .unwrap()
+            .quote_currency = "MXN".to_string();
+        assert_eq!(
+            validate_strict_price_batch(wrong_price_currency, &slugs, "USD"),
+            Err(StrictPriceBatchError::MalformedResponse)
+        );
+
+        let duplicate = serde_json::from_value::<LatestPriceBatchResponse>(json!({
+            "quoteCurrency": "USD",
+            "requestedCount": 2,
+            "uniqueCount": 2,
+            "results": [
+                {
+                    "requestedSlug": "ethereum",
+                    "normalizedSlug": "ethereum",
+                    "status": "found",
+                    "freshnessStatus": "fresh",
+                    "price": batch_price_json("ethereum", "fresh"),
+                    "error": null
+                },
+                {
+                    "requestedSlug": "ethereum",
+                    "normalizedSlug": "ethereum",
+                    "status": "found",
+                    "freshnessStatus": "fresh",
+                    "price": batch_price_json("ethereum", "fresh"),
+                    "error": null
+                }
+            ]
+        }))
+        .unwrap();
+        assert_eq!(
+            validate_strict_price_batch(
+                duplicate,
+                &["ethereum".to_string(), "bitcoin".to_string()],
+                "USD"
+            ),
+            Err(StrictPriceBatchError::MalformedResponse)
+        );
+    }
+
+    #[test]
+    fn strict_batch_maps_request_wide_errors() {
+        let unauthorized = serde_json::to_vec(&json!({
+            "error": {"code": "UNAUTHORIZED", "message": "no"}
+        }))
+        .unwrap();
+        assert_eq!(
+            map_strict_error_response(StatusCode::UNAUTHORIZED, &unauthorized),
+            StrictPriceBatchError::Unauthorized
+        );
+
+        let unavailable = serde_json::to_vec(&json!({
+            "error": {"code": "INTERNAL_ERROR", "message": "no"}
+        }))
+        .unwrap();
+        assert_eq!(
+            map_strict_error_response(StatusCode::INTERNAL_SERVER_ERROR, &unavailable),
+            StrictPriceBatchError::ProviderUnavailable {
+                status: Some(500),
+                code: Some("INTERNAL_ERROR".to_string()),
+            }
+        );
+        assert_eq!(
+            map_strict_error_response(StatusCode::BAD_REQUEST, b"not-json"),
+            StrictPriceBatchError::InvalidRequest
+        );
     }
 
     #[test]
