@@ -805,7 +805,7 @@ fn collect_pricing_asset_slugs(accounts: &[RawBalanceAccountResult]) -> Vec<Stri
     for account in accounts {
         for item in &account.items {
             if let RawBalanceItemOutcome::Resolved { target, .. } = item {
-                let pricing_asset_slug = target.pricing_asset_slug.trim().to_ascii_lowercase();
+                let pricing_asset_slug = normalize_pricing_asset_slug(&target.pricing_asset_slug);
                 if seen.insert(pricing_asset_slug.clone()) {
                     pricing_asset_slugs.push(pricing_asset_slug);
                 }
@@ -814,6 +814,10 @@ fn collect_pricing_asset_slugs(accounts: &[RawBalanceAccountResult]) -> Vec<Stri
     }
 
     pricing_asset_slugs
+}
+
+fn normalize_pricing_asset_slug(pricing_asset_slug: &str) -> String {
+    pricing_asset_slug.trim().to_ascii_lowercase()
 }
 
 fn enrich_account_results(
@@ -844,7 +848,7 @@ fn enrich_item(
                 .expect("validated Bigwig raw amount must format exactly");
             let quote = match quotes {
                 Ok(quotes) => quotes
-                    .get(&target.pricing_asset_slug.to_ascii_lowercase())
+                    .get(&normalize_pricing_asset_slug(&target.pricing_asset_slug))
                     .map(|quote| enrich_quote(quote, &raw_amount, target.decimals))
                     .unwrap_or(BalanceQuoteOutcome::Unavailable {
                         code: BalanceItemErrorCode::InternalError,
@@ -1132,6 +1136,54 @@ mod tests {
                 ..
             } if amount == "0.000000000000001000"
                 && value == "0.000000000000002500"
+        ));
+    }
+
+    #[test]
+    fn matches_quotes_with_the_same_normalized_pricing_slug_used_for_collection() {
+        let mut pricing_target = target("eth-mainnet", 1, "ethereum", BalanceTargetKind::Native);
+        pricing_target.pricing_asset_slug = " Ethereum ".to_string();
+        let accounts = vec![RawBalanceAccountResult {
+            account: account("eth-mainnet", ACCOUNT_A, None),
+            evidence: None,
+            items: vec![RawBalanceItemOutcome::Resolved {
+                target: pricing_target,
+                raw_amount: "1000000000000000000".to_string(),
+            }],
+        }];
+
+        assert_eq!(
+            collect_pricing_asset_slugs(&accounts),
+            vec!["ethereum".to_string()]
+        );
+
+        let quotes = Ok(HashMap::from([(
+            "ethereum".to_string(),
+            PriceQuoteResolution::Available {
+                unit_price: "2.50".to_string(),
+                quote_currency: "USD".to_string(),
+                price_as_of: "2026-06-17T11:59:59Z".to_string(),
+            },
+        )]));
+        let results = enrich_account_results(accounts, quotes);
+
+        assert!(matches!(
+            &results[0].items[0],
+            BalanceItemOutcome::Resolved {
+                target,
+                amount,
+                quote: BalanceQuoteOutcome::Available {
+                    currency,
+                    unit_price,
+                    value,
+                    ..
+                },
+                ..
+            } if target.pricing_asset_slug == " Ethereum "
+                && amount == "1.000000000000000000"
+                && currency == "USD"
+                && unit_price == "2.50"
+                && value == "2.500000000000000000"
         ));
     }
 
