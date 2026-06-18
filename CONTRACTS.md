@@ -37,7 +37,22 @@ same change.
 - Decimal-typed values (prices, ratios) are returned as JSON **strings**
   to preserve precision. Clients must not parse them as floats.
 
-## Endpoints
+## API lifecycle
+
+Mother API uses these lifecycle states:
+
+- **Stable**: part of the current supported public contract.
+- **Experimental**: public but subject to contract changes before promotion
+  to Stable.
+- **Deprecated**: retained temporarily for compatibility, receives no new
+  features, and has a documented removal target.
+- **Removed**: no longer exposed at runtime; retained in project history only.
+- **Internal**: service-to-service behavior that is not a public API promise.
+
+Unless an endpoint is explicitly labeled otherwise, documented public
+endpoints are Stable.
+
+## Stable endpoints
 
 | Method | Path                                    | Auth | Notes                                                       |
 | ------ | --------------------------------------- | ---- | ----------------------------------------------------------- |
@@ -49,8 +64,6 @@ same change.
 | `GET`  | `/v1/assets/{slug}/signal/price-trend`  | None | Returns a strict price trend signal for one asset.           |
 | `POST` | `/v1/balances`                          | None | Resolves one latest network-scoped EVM balance snapshot.     |
 | `POST` | `/v1/balances/bulk`                     | None | Resolves latest snapshots for explicit network accounts.     |
-| `GET`  | `/v1/predictions/fifa-world-cup/winner` | None | Returns a DIS-backed World Cup winner prediction snapshot.   |
-| `GET`  | `/v1/predictions/fifa-world-cup/{country}` | None | Returns a DIS-backed country prediction snapshot.         |
 | `GET`  | `/v1/resolve`                           | None | Resolves a Sentinel search query against global assets.     |
 
 Mother API does not currently authenticate callers. API keys, rate
@@ -908,7 +921,50 @@ Request-wide errors:
 
 ---
 
-### `GET /v1/predictions/fifa-world-cup/winner`
+## Deprecated endpoints
+
+These endpoints are retained temporarily for compatibility and historical
+demos. They are legacy Polymarket-backed prediction routes and are not part of
+the current COTO-focused Mother API direction.
+
+Deprecated endpoints receive no new features and may be removed at their
+documented removal version. No replacement endpoint is currently promised.
+Any future public prediction or intelligence surface must be specified and
+accepted separately before becoming part of this contract.
+
+### Deprecated: FIFA World Cup prediction endpoints
+
+| Property       | Value |
+| -------------- | ----- |
+| Status         | Deprecated |
+| Removal target | `v0.2.0` |
+| Reason         | Legacy Polymarket/demo surface; not part of the COTO-focused Mother API direction. |
+| Replacement    | None currently promised. |
+
+Routes:
+
+- `GET /v1/predictions/fifa-world-cup/winner`
+- `GET /v1/predictions/fifa-world-cup/{country}`
+
+Known configured country examples:
+
+- `mexico`
+- `argentina`
+- `france`
+- `colombia`
+- `spain`
+
+Successful and error responses from both routes include:
+
+```http
+Deprecation: @1781740800
+```
+
+The structured date represents June 18, 2026 at 00:00:00 UTC. Mother API does
+not emit `Sunset` for these routes because the removal promise is tied to
+version `v0.2.0`, not a specific calendar timestamp.
+
+### Deprecated: `GET /v1/predictions/fifa-world-cup/winner`
 
 Returns a live Polymarket-implied, DIS-backed, public/demo-facing snapshot of
 the 2026 FIFA World Cup winner prediction market. Mother API calls DIS for
@@ -1053,7 +1109,7 @@ Examples:
 
 ---
 
-### `GET /v1/predictions/fifa-world-cup/{country}`
+### Deprecated: `GET /v1/predictions/fifa-world-cup/{country}`
 
 Returns a live Polymarket-implied, DIS-backed, public/demo-facing prediction
 snapshot for one configured World Cup country market. Mother API calls DIS for
@@ -1215,6 +1271,8 @@ Examples:
 ```
 
 ---
+
+## Stable endpoints (continued)
 
 ### `GET /v1/resolve`
 
@@ -1480,9 +1538,9 @@ not be assumed to exist or behave consistently if encountered:
   part of this surface.
 - Direct exposure of internal DIS or read-model service shapes. Price
   signal endpoints preserve price-indexer signal payload fields inside
-  Mother API envelopes; prediction endpoints expose only the sanitized
-  SPEC-004 public shapes; other public responses are owned by this contract,
-  not by upstream services.
+  Mother API envelopes; the deprecated prediction endpoints expose only the
+  sanitized SPEC-004 public shapes until removal; other public responses are
+  owned by this contract, not by upstream services.
 
 Adding any of the above to the public surface requires an accepted RFC
 or spec under [docs/](docs/) and a coordinated update to this file.

@@ -1,8 +1,15 @@
+---
+status: active
+owner: iron-burrow
+last_reviewed: 2026-06-18
+agent_edit_policy: update_when_relevant
+---
+
 # Iron Burrow Mother API
 
 Public API boundary for **Iron Burrow**.
 
-Iron Burrow is a source-aware blockchain intelligence system built to make crypto data easier for humans, applications, and AI agents to inspect. The **Mother API** is the public interface of the burrow: the stable HTTP surface that exposes selected assets, price signals, chain mappings, health information, and demo-ready prediction snapshots.
+Iron Burrow is a source-aware blockchain intelligence system built to make crypto data easier for humans, applications, and AI agents to inspect. The **Mother API** is the public interface of the burrow: the stable HTTP surface that exposes selected assets, price signals, chain mappings, and health information.
 
 The internal burrow has more tunnels than this README needs to reveal. This repository documents the public door: what a judge, builder, frontend, or agent can call today.
 
@@ -274,13 +281,19 @@ This is especially useful for AI and frontend flows where users may search by sy
 
 ---
 
-## ETHMEX Demo: World Cup Prediction Snapshots
+## Deprecated Compatibility Surface: World Cup Predictions
 
-For the hackathon demo, Mother API also exposes a small public prediction surface related to the 2026 FIFA World Cup.
+Mother API temporarily retains two legacy FIFA World Cup prediction routes
+from the ETHMEX Polymarket demo. They are not part of the current COTO-focused
+product direction, receive no new features, and will be removed in `v0.2.0`.
 
-These endpoints are designed for demo excitement: a judge can ask about a winner market or a country-specific market and get a live, source-aware prediction snapshot.
+There is no replacement endpoint currently promised. Any future public
+prediction or intelligence surface requires a separate accepted
+specification. See [CONTRACTS.md](CONTRACTS.md) for the binding lifecycle and
+response contract.
 
-The response is market-implied data, not advice and not a guarantee. Market probabilities can move.
+Both routes remain operational for compatibility and include a `Deprecation`
+response header. Their market-implied responses are not advice or guarantees.
 
 ---
 
@@ -304,7 +317,7 @@ Look for:
 * `deterministic`
 * `captured_at`
 
-The important hackathon idea is that an AI agent does not need to invent the odds. It can ask the burrow for a deterministic, source-aware snapshot.
+This route is retained only for compatibility with the historical demo.
 
 ---
 
@@ -338,15 +351,8 @@ Expected interpretation:
 
 This endpoint returns a country-specific prediction snapshot.
 
-For example, a judge from Mexico, Colombia, Argentina, France, or Spain can call a country route and immediately see a market-implied probability related to that country.
-
-This is where the hackathon theme becomes visible:
-
-* blockchain data source;
-* public API;
-* deterministic response;
-* AI-friendly structure;
-* fun live demo.
+These examples remain documented so existing demo consumers can identify and
+migrate away from the configured country routes before `v0.2.0`.
 
 ---
 

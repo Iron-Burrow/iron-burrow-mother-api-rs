@@ -1,7 +1,7 @@
 ---
 status: accepted
 owner: iron-burrow
-last_reviewed: 2026-06-06
+last_reviewed: 2026-06-18
 agent_edit_policy: update_when_relevant
 external_contract: iron-burrow-defi-intelligence-service/CONTRACTS.md@2026-06-03
 ---
@@ -22,6 +22,12 @@ any prediction-market storage.
 Accepted and implemented. The binding public route contract now lives in
 [CONTRACTS.md](../../CONTRACTS.md); this spec records the implementation
 intent and ownership boundaries behind that contract.
+
+The two public routes are deprecated as of June 18, 2026 and are scheduled
+for removal in Mother API `v0.2.0`. They remain operational only for
+compatibility with the historical demo, receive no new features, and have no
+currently promised replacement. This accepted spec remains the implementation
+record; `CONTRACTS.md` is authoritative for the current lifecycle state.
 
 This spec is a sibling of [SPEC-001](SPEC-001-dis-aave-v3-realized-yield.md).
 Both describe Mother API → DIS integrations for different features:
