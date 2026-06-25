@@ -166,3 +166,10 @@ implementation, and documentation changes.
   unrelated future JSON fields.
 - Updated the public contract, README, and active/draft specs to keep
   canonical Mother API network identity aligned on `network_slug`.
+- Accepted SPEC-007 as the implementation target for the future public
+  ERC-20 transfer search endpoint, binding it to Bigwig 3.5.2's implemented
+  internal transfer-extraction contract, DTOs, limits, timeout behavior, and
+  error taxonomy.
+- Kept `/v1/erc20-transfers/search` outside the public contract for this
+  documentation-only slice; no Mother API route, runtime behavior, README
+  endpoint, or `CONTRACTS.md` promise was added.

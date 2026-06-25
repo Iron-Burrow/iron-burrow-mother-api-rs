@@ -1,24 +1,31 @@
 ---
-status: draft
+status: accepted
 owner: iron-burrow
 last_reviewed: 2026-06-25
 agent_edit_policy: update_when_relevant
+external_contract:
+  - iron-burrow-infra-gateway/CONTRACTS.md@3.5.2
+  - iron-burrow-infra-gateway/docs/specs/SPEC-005-bigwig-hub-extractor-module.md@accepted
+  - iron-burrow-infra-gateway/docs/specs/SPEC-008-bigwig-internal-erc20-transfer-contract-address-filters.md@accepted
 ---
 
 # SPEC-007 - Public ERC-20 Transfer Search v1
 
-Draft implementation spec for a future public Mother API ERC-20 transfer
+Accepted implementation spec for a future public Mother API ERC-20 transfer
 search endpoint.
 
-This draft does not change the current public contract. `/v1/erc20-transfers/search`
+This spec does not change the current public contract. `/v1/erc20-transfers/search`
 must not be treated as exposed or promised until the endpoint is implemented
 and [CONTRACTS.md](../../CONTRACTS.md) and [HISTORY.md](../../HISTORY.md) are
 updated in the same change.
 
-Before this draft can be accepted, it must cite the binding Bigwig
-transfer-extraction contract and version, including the internal endpoint path,
-request and response shapes, limits, and error taxonomy that Mother API will
-consume.
+The internal Bigwig transfer-extraction dependency is binding as of
+`iron-burrow-infra-gateway` 3.5.2. Mother API consumes Bigwig's Hub-only,
+authenticated `POST /internal/v1/extractions/erc20-transfers` contract as
+documented in Bigwig `CONTRACTS.md` and accepted Bigwig SPEC-005/SPEC-008.
+Those sources define the internal endpoint path, request and response shapes,
+limits, timeout behavior, all-or-nothing result behavior, and error taxonomy
+that this spec uses.
 
 ## Purpose
 
@@ -211,13 +218,15 @@ Lookback example:
 
 ```json
 "window": {
-  "lookback_blocks": 500
+  "lookback_seconds": 600,
+  "to": "latest"
 }
 ```
 
 Mother API performs public-facing validation before calling Bigwig. Bigwig's
-accepted window semantics and hard extraction limits must come from the cited
-Bigwig transfer-extraction contract before this draft is accepted.
+accepted window semantics are block range, timestamp range, or
+`lookback_seconds` with `to: "latest"`. Mother API must shape its internal
+Bigwig request to one of those forms.
 
 ## Token Filter Resolution
 
@@ -237,16 +246,28 @@ Bigwig call:
 8. Enforce Mother API's public max token filter limit.
 9. Pass the merged set to Bigwig as `contract_addresses`.
 10. If the merged set is empty, omit or pass an empty `contract_addresses`
-    filter according to the cited Bigwig contract's unfiltered-search shape.
+    filter; Bigwig treats omitted, `null`, and `[]` as no token-contract
+    filter.
 
 Mother API must never pass `asset_slug` values to Bigwig.
 
-## Internal Bigwig Request
+## Internal Bigwig Contract
 
-Mother API calls Bigwig's internal transfer-extraction endpoint with concrete
-fields only.
+Mother API calls Bigwig's implemented internal transfer-extraction endpoint:
 
-Illustrative shape:
+```http
+POST /internal/v1/extractions/erc20-transfers
+```
+
+The endpoint is Hub-only, authenticated, and registered only when Bigwig Hub
+configuration has `extraction.enabled: true`. Mother API must authenticate
+with the configured Bigwig bearer token and should identify itself with
+Bigwig's internal client-service header convention when the client layer is
+implemented.
+
+### Bigwig Request
+
+Mother API sends concrete fields only:
 
 ```json
 {
@@ -265,9 +286,109 @@ Illustrative shape:
 }
 ```
 
-The final path, auth model, limit fields, and response/error shape must be
-filled in from the binding Bigwig transfer-extraction contract before
-acceptance.
+Bigwig request fields are:
+
+| Field                | Type                    | Required | Notes |
+| -------------------- | ----------------------- | -------- | ----- |
+| `network_slug`       | string                  | Yes      | As of Bigwig 3.5.2 ERC-20 extraction supports `eth-mainnet`. |
+| `address`            | string                  | Yes      | `0x` plus 40 hex characters; Bigwig normalizes to lowercase. |
+| `direction`          | string                  | No       | `from`, `to`, or `any`; Bigwig defaults to `any`. |
+| `contract_addresses` | array of string \| null | No       | Concrete ERC-20 token contract addresses. Omitted, `null`, or `[]` means no token-contract filter. |
+| `window`             | object                  | Yes      | Exactly one supported Bigwig window shape. |
+
+Supported Bigwig windows:
+
+```json
+{"from_block": 18600000, "to_block": 18600500}
+```
+
+```json
+{
+  "from_timestamp": "2026-06-25T00:00:00Z",
+  "to_timestamp": "2026-06-25T01:00:00Z"
+}
+```
+
+```json
+{"lookback_seconds": 600, "to": "latest"}
+```
+
+Bigwig rejects unknown outer fields and unknown window fields. Bigwig does not
+accept Mother API `asset_slug`, symbol, decimals, quote, pagination, or public
+response-shaping fields.
+
+### Bigwig Response
+
+Bigwig returns raw ERC-20 transfer evidence:
+
+```json
+{
+  "extractor": "evm_erc20_transfers_by_address",
+  "network_slug": "eth-mainnet",
+  "address": "0xabc0000000000000000000000000000000000000",
+  "direction": "any",
+  "window_kind": "block",
+  "from_block": 18600000,
+  "to_block": 18600500,
+  "latest_block": 18600500,
+  "safe_block": 18600488,
+  "finality": {
+    "status": "mixed",
+    "safe_block": 18600488,
+    "latest_block": 18600500,
+    "reorg_risk": true,
+    "policy": "confirmation_lag",
+    "confirmation_lag": 12
+  },
+  "rows_extracted": 1,
+  "results": [
+    {
+      "block_number": 18600001,
+      "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
+      "log_index": 12,
+      "token": "0x1111111111111111111111111111111111111111",
+      "from": "0xabc0000000000000000000000000000000000000",
+      "to": "0x2222222222222222222222222222222222222222",
+      "value": "1000000000000000000"
+    }
+  ]
+}
+```
+
+`window_kind` is `block`, `timestamp`, or `lookback`. `finality.status` is
+`finalized`, `mixed`, or `unfinalized`; mixed and unfinalized responses are
+allowed and set `reorg_risk: true`. `rows_extracted` always equals
+`results.length`. Rows are sorted by block number, log index, then transaction
+hash.
+
+Mother API must validate successful Bigwig responses before public shaping:
+
+- `extractor` is `evm_erc20_transfers_by_address`;
+- `network_slug`, normalized `address`, and `direction` match the request;
+- returned block bounds and `window_kind` are coherent with the requested
+  window;
+- `safe_block` and `latest_block` match the nested `finality` fields;
+- `rows_extracted` equals `results.length`;
+- each result row has valid block, transaction hash, log index, token, sender,
+  recipient, and raw value fields.
+
+### Bigwig Limits
+
+Bigwig 3.5.2 production extraction limits are:
+
+| Limit | Current value | Notes |
+| ----- | ------------- | ----- |
+| Max block range | derived | `eth_getLogs.max_block_span * extraction.max_chunks`; current `eth-mainnet` is `500 * 10 = 5,000` inclusive blocks. |
+| Max lookback | `86400` seconds | `lookback_seconds` must be positive and at or below this value. |
+| Max rows | `5000` | Bigwig rejects oversized results as `result_too_large`. |
+| Max contract addresses | `20` | Applied after Bigwig normalizes and deduplicates `contract_addresses`. |
+| Overall timeout | `30` seconds | Bigwig returns `extraction_timeout` for the whole synchronous operation deadline. |
+| Per-provider timeout | route-defined | Bigwig returns `provider_timeout` for one protected upstream operation. |
+
+Bigwig's row behavior is all-or-nothing. It never returns a successful
+response containing only part of the matching rows for this extractor. If
+unique rows would exceed `max_rows`, Bigwig stops scanning, discards
+accumulated rows, and returns `422 result_too_large`.
 
 ## Response
 
@@ -334,8 +455,7 @@ acceptance.
     }
   ],
   "limits": {
-    "truncated": false,
-    "max_rows": 1000
+    "max_rows": 5000
   }
 }
 ```
@@ -376,13 +496,13 @@ Optional string.
 Included only when Mother API knows the token decimals from its catalog. For
 unknown explicit contract addresses, this field is `null` or omitted.
 
-### `limits.truncated`
+### `limits.max_rows`
 
-Boolean.
+Integer.
 
-Indicates whether internal Bigwig row limits prevented the endpoint from
-returning all matching rows. If `true`, the client should retry with a narrower
-window.
+Indicates the Bigwig row limit used for the search. Bigwig extraction is
+all-or-nothing: if the search exceeds this limit, Mother API maps Bigwig
+`result_too_large` to an error instead of returning partial rows.
 
 ## Validation Rules
 
@@ -406,9 +526,12 @@ catalog resolution before calling Bigwig whenever possible.
 | ERC-20 asset mapping lacks a contract address     |         503 | `asset_contract_mapping_unavailable` |
 | Malformed contract address                        |         400 | `invalid_contract_address`           |
 | Too many unique token filters                     |         422 | `too_many_token_filters`             |
+| Bigwig result row limit exceeded                  |         422 | `result_too_large`                   |
 | Bigwig extraction disabled or unavailable         |         503 | `extraction_unavailable`             |
+| Bigwig extraction deadline exceeded               |         504 | `extraction_timeout`                 |
 | Provider failure                                  |         502 | `upstream_provider_error`            |
 | Provider timeout                                  |         504 | `upstream_provider_timeout`          |
+| Malformed Bigwig success or impossible validation |         500 | `internal_error`                     |
 
 Asset-slug validation is request-wide. If a mixed request includes valid
 contract addresses and one invalid or incompatible asset slug, Mother API
@@ -419,9 +542,45 @@ empty successful transfer response. Returning an empty transfer list for a bad
 asset filter would incorrectly suggest that the query was valid and no logs
 matched.
 
+## Bigwig Error Taxonomy
+
+Mother API must treat Bigwig errors as internal dependency outcomes and return
+sanitized Mother API errors. It must not expose Bigwig route IDs, provider
+names, upstream URLs, authentication details, capability versions, or raw
+provider diagnostics.
+
+| Bigwig status/code | Mother result |
+| --- | --- |
+| `400 invalid_extraction_request` after Mother shaping | `500 internal_error` |
+| `400 invalid_address` after Mother validation | `500 internal_error` |
+| `400 invalid_contract_address` after Mother validation | `500 internal_error` |
+| `400 invalid_direction` after Mother validation | `500 internal_error` |
+| `400 invalid_window_shape` after Mother validation | `500 internal_error` |
+| `401 unauthorized` | `503 extraction_unavailable`; never expose authentication details |
+| `404 unsupported_network` after Mother admission | `503 extraction_unavailable` |
+| `422 reversed_block_range` | `400 invalid_window` |
+| `422 block_out_of_range` | `400 invalid_window` |
+| `422 reversed_timestamp_range` | `400 invalid_window` |
+| `422 timestamp_out_of_range` | `400 invalid_window` |
+| `422 lookback_too_large` | `422 window_too_large` |
+| `422 range_too_large` | `422 window_too_large` |
+| `422 too_many_contract_addresses` after Mother limit enforcement | `500 internal_error` |
+| `422 result_too_large` | `422 result_too_large` |
+| `429 gateway_rate_limited` | `503 extraction_unavailable`; retain `Retry-After` internally |
+| `502 rpc_error` | `502 upstream_provider_error` |
+| `503 provider_unavailable` | `503 extraction_unavailable`; retain `Retry-After` internally |
+| `504 provider_timeout` | `504 upstream_provider_timeout` |
+| `504 extraction_timeout` | `504 extraction_timeout` |
+| `500 internal_error` | `503 extraction_unavailable` |
+| Transport failure or Mother client timeout | `503 extraction_unavailable` or `504 upstream_provider_timeout`, according to the failure class |
+
+Bigwig malformed success bodies, unexpected success statuses, malformed error
+responses, or unknown Bigwig error codes are Mother API `internal_error`
+conditions.
+
 ## Error Shape
 
-This draft uses the current Mother API error envelope shape. Structured
+This accepted spec uses the current Mother API error envelope shape. Structured
 `details` are deliberately deferred unless the shared error contract is updated
 in a future accepted implementation.
 
@@ -494,10 +653,9 @@ erc20_transfers:
   max_token_filters: 20
 ```
 
-This limit must be less than or equal to the Bigwig internal max contract
-address filter count declared by the binding transfer-extraction contract.
-Mother API should fail at startup if its public limit exceeds the configured
-Bigwig limit.
+This limit equals the Bigwig 3.5.2 production
+`extraction.max_contract_addresses` value. Mother API should fail at startup
+if its public limit exceeds the configured Bigwig limit.
 
 ## DTO Names
 
@@ -540,7 +698,7 @@ automatically promoted into catalog assets.
 
 ## Acceptance Criteria
 
-This draft is implementation-ready when:
+This accepted spec is implementation-ready for code when:
 
 - the binding Bigwig transfer-extraction contract and version are cited;
 - `asset_slug` filters resolve into concrete ERC-20 contract addresses for the
