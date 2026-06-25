@@ -5,6 +5,7 @@ use axum::{
     Json,
 };
 use serde::Deserialize;
+use serde_json::Value;
 use tracing::warn;
 
 use crate::{
@@ -63,9 +64,12 @@ struct BalanceAssetRequest {
 
 pub async fn resolve_single_balance(
     State(state): State<AppState>,
-    body: Result<Json<SingleBalanceRequest>, JsonRejection>,
+    body: Result<Json<Value>, JsonRejection>,
 ) -> Result<Json<SingleBalanceResponse>, ApiError> {
-    let Json(request) = body.map_err(|_| ApiError::invalid_request())?;
+    let Json(body) = body.map_err(|_| ApiError::invalid_request())?;
+    reject_reserved_network_alias_fields(&body)?;
+    let request = serde_json::from_value::<SingleBalanceRequest>(body)
+        .map_err(|_| ApiError::invalid_request())?;
     let request = validate_request(
         request.as_of,
         vec![request.account],
@@ -82,9 +86,12 @@ pub async fn resolve_single_balance(
 
 pub async fn resolve_bulk_balances(
     State(state): State<AppState>,
-    body: Result<Json<BulkBalanceRequest>, JsonRejection>,
+    body: Result<Json<Value>, JsonRejection>,
 ) -> Result<Json<BulkBalanceResponse>, ApiError> {
-    let Json(request) = body.map_err(|_| ApiError::invalid_request())?;
+    let Json(body) = body.map_err(|_| ApiError::invalid_request())?;
+    reject_reserved_network_alias_fields(&body)?;
+    let request = serde_json::from_value::<BulkBalanceRequest>(body)
+        .map_err(|_| ApiError::invalid_request())?;
     let request = validate_request(
         request.as_of,
         request.accounts,
@@ -94,6 +101,36 @@ pub async fn resolve_bulk_balances(
     let snapshot = resolve_snapshot(&state, request).await?;
 
     Ok(Json(BalanceResponseAssembler.bulk(snapshot)))
+}
+
+fn reject_reserved_network_alias_fields(body: &Value) -> Result<(), ApiError> {
+    reject_reserved_fields(body)?;
+
+    if let Some(account) = body.get("account") {
+        reject_reserved_fields(account)?;
+    }
+    if let Some(accounts) = body.get("accounts").and_then(Value::as_array) {
+        for account in accounts {
+            reject_reserved_fields(account)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn reject_reserved_fields(value: &Value) -> Result<(), ApiError> {
+    let Some(object) = value.as_object() else {
+        return Ok(());
+    };
+
+    if ["chain", "chain_id", "chain_slug"]
+        .iter()
+        .any(|field| object.contains_key(*field))
+    {
+        return Err(ApiError::invalid_request());
+    }
+
+    Ok(())
 }
 
 fn validate_request(
@@ -396,6 +433,10 @@ mod tests {
             response["positions"][0]["quote"]["value"],
             "35000.500000000000000000"
         );
+        assert!(response["account"].get("chain").is_none());
+        assert!(response["account"].get("chain_id").is_none());
+        assert!(response["account"].get("chain_slug").is_none());
+        assert!(response["evidence"].get("chain_id").is_none());
 
         let bigwig_request = bigwig_handle.await.unwrap();
         assert!(
@@ -466,6 +507,14 @@ mod tests {
         assert_eq!(response["accounts"][0]["account"]["address"], ACCOUNT_A);
         assert_eq!(response["accounts"][1]["account"]["address"], ACCOUNT_B);
         assert_eq!(
+            response["accounts"][0]["account"]["network_slug"],
+            "eth-mainnet"
+        );
+        assert!(response["accounts"][0]["account"].get("chain").is_none());
+        assert!(response["accounts"][0]["evidence"]
+            .get("chain_id")
+            .is_none());
+        assert_eq!(
             response["accounts"][0]["positions"][0]["balance"]["amount"],
             "1.000000"
         );
@@ -506,6 +555,52 @@ mod tests {
         for (content_type, body) in requests {
             let (status, response) =
                 post_raw(app.clone(), "/v1/balances", content_type, body.to_vec()).await;
+            assert_public_error(status, &response, "invalid_request");
+        }
+    }
+
+    #[tokio::test]
+    async fn balance_routes_reject_reserved_network_alias_fields() {
+        let app = balance_app(None, None);
+        let forbidden_single_account_fields = [
+            ("chain", json!("eth-mainnet")),
+            ("chain_id", json!(1)),
+            ("chain_slug", json!("eth-mainnet")),
+        ];
+
+        for (field, value) in forbidden_single_account_fields {
+            let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+            body["account"][field] = value;
+
+            let (status, response) = post_json(app.clone(), "/v1/balances", body).await;
+            assert_public_error(status, &response, "invalid_request");
+        }
+
+        for field in ["chain", "chain_id", "chain_slug"] {
+            let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+            body[field] = json!("eth-mainnet");
+
+            let (status, response) = post_json(app.clone(), "/v1/balances", body).await;
+            assert_public_error(status, &response, "invalid_request");
+        }
+
+        let mut both_names = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+        both_names["account"]["chain"] = json!("eth-mainnet");
+        let (status, response) = post_json(app.clone(), "/v1/balances", both_names).await;
+        assert_public_error(status, &response, "invalid_request");
+
+        for field in ["chain", "chain_id", "chain_slug"] {
+            let mut body = json!({
+                "as_of": {"kind": "latest"},
+                "accounts": [
+                    {"network_slug": "eth-mainnet", "address": ACCOUNT_A}
+                ],
+                "quote_currency": "USD",
+                "assets": [{"asset_slug": "ethereum"}]
+            });
+            body["accounts"][0][field] = json!("eth-mainnet");
+
+            let (status, response) = post_json(app.clone(), "/v1/balances/bulk", body).await;
             assert_public_error(status, &response, "invalid_request");
         }
     }

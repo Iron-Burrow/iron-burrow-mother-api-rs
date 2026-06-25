@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-06-06
+last_reviewed: 2026-06-25
 agent_edit_policy: update_when_relevant
 external_contract: iron-burrow-price-indexer/CONTRACTS.md@2026-06-02
 ---
@@ -34,7 +34,7 @@ It should support a UI/demo use case where a single call can return everything
 needed to render an asset page:
 
 - asset identity
-- chain maps / asset metadata
+- asset network maps / asset metadata
 - latest price block
 - optional price stats
 - optional price trend
@@ -61,7 +61,7 @@ The `/v1/assets/{slug}` base response shape must remain stable. It returns:
 - `ok`, `type: "asset"`
 - `asset` (identity summary)
 - `price` (latest price block, always present)
-- `chain_maps`
+- `asset_network_maps`
 
 The endpoint attempts latest price enrichment as part of base asset detail.
 The latest price block is always attempted in the requested `quoteCurrency`;
@@ -162,8 +162,8 @@ upstream `/prices/series` matrix:
 
 When `include` is present, the response extends the existing asset-detail shape
 with a `signals` object and an `enrichment_errors` array. Field names follow
-the existing Mother API snake_case envelope style (`chain_maps`, `asset_id`,
-`quote_currency`).
+the existing Mother API snake_case envelope style (`asset_network_maps`,
+`asset_id`, `quote_currency`).
 
 ```json
 {
@@ -187,7 +187,7 @@ the existing Mother API snake_case envelope style (`chain_maps`, `asset_id`,
     "recorded_at": null,
     "warning": null
   },
-  "chain_maps": [],
+  "asset_network_maps": [],
   "signals": {
     "price_stats": null,
     "price_trend": null

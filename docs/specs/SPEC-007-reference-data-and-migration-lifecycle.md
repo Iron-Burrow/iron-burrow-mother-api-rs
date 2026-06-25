@@ -1,7 +1,7 @@
 ---
 status: draft
 owner: iron-burrow
-last_reviewed: 2026-06-22
+last_reviewed: 2026-06-25
 agent_edit_policy: update_when_relevant
 ---
 
@@ -135,7 +135,7 @@ Migrations may:
 - establish deterministic identity constraints needed by reference seeds.
 
 Migrations must not be used for routine additions or corrections to canonical
-assets, networks, aliases, or asset-chain mappings after the reference-seed
+assets, networks, aliases, or asset-network mappings after the reference-seed
 path is active.
 
 A catalog change still requires a migration when it cannot be represented
@@ -149,7 +149,7 @@ Reference seeds may manage:
   and sort order;
 - network identity, family, chain ID, CAIP-2 identifier, metadata, lifecycle
   status, and sort order;
-- native and deployed asset-chain mappings, including address, deployment
+- native and deployed asset-network mappings, including address, deployment
   block, decimals, token standard, metadata, lifecycle status, and sort order.
 
 Reference seeds must not:
@@ -177,7 +177,7 @@ these identities:
 | ----------- | ------------------ | ------------------ |
 | Global asset | normalized `slug` | Exactly one row across all lifecycle states. Already enforced by `0003`. |
 | Network | normalized `slug` | Exactly one row across all lifecycle states. Add normalization and full-lifecycle uniqueness. |
-| Asset-chain mapping | `(asset_id, network_id)` | Exactly one canonical mapping row across all lifecycle states. |
+| Asset-network mapping | `(asset_id, network_id)` | Exactly one canonical mapping row across all lifecycle states. |
 
 The mapping identity deliberately follows the existing
 `(asset_slug, network_slug) -> representation` model. A future need for

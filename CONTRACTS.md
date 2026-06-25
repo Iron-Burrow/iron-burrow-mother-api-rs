@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-06-18
+last_reviewed: 2026-06-25
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -59,7 +59,7 @@ endpoints are Stable.
 | `GET`  | `/health`                               | None | Dependency-free liveness probe.                             |
 | `GET`  | `/v1/status`                            | None | Informational readiness with dependency checks.             |
 | `GET`  | `/v1/assets`                            | None | Lists active global assets with optional price enrichment.  |
-| `GET`  | `/v1/assets/{slug}`                     | None | Returns one active asset, its chain maps, and a price block. |
+| `GET`  | `/v1/assets/{slug}`                     | None | Returns one active asset, its asset network maps, and a price block. |
 | `GET`  | `/v1/assets/{slug}/signal/price-stats`  | None | Returns a strict price statistics signal for one asset.      |
 | `GET`  | `/v1/assets/{slug}/signal/price-trend`  | None | Returns a strict price trend signal for one asset.           |
 | `POST` | `/v1/balances`                          | None | Resolves one latest network-scoped EVM balance snapshot.     |
@@ -217,7 +217,7 @@ Each asset list item:
 
 ### `GET /v1/assets/{slug}`
 
-Returns one active asset, the network-specific chain maps the UI can use
+Returns one active asset, the network-specific asset network maps the UI can use
 to render asset detail pages, and a stable price block. Optional price
 signals can be requested for one-call asset-page rendering.
 
@@ -277,13 +277,11 @@ populate the base `price` block without Mother API performing conversion.
     "recorded_at": "2026-05-26T12:00:05Z",
     "warning": null
   },
-  "chain_maps": [
+  "asset_network_maps": [
     {
-      "network": {
-        "slug": "eth-mainnet",
-        "name": "Ethereum Mainnet",
-        "caip2": "eip155:1"
-      },
+      "network_slug": "eth-mainnet",
+      "network_name": "Ethereum Mainnet",
+      "caip2": "eip155:1",
       "is_native": false,
       "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
     }
@@ -349,13 +347,11 @@ populate the base `price` block without Mother API performing conversion.
     "recorded_at": "2026-05-26T12:00:05Z",
     "warning": null
   },
-  "chain_maps": [
+  "asset_network_maps": [
     {
-      "network": {
-        "slug": "eth-mainnet",
-        "name": "Ethereum Mainnet",
-        "caip2": "eip155:1"
-      },
+      "network_slug": "eth-mainnet",
+      "network_name": "Ethereum Mainnet",
+      "caip2": "eip155:1",
       "is_native": false,
       "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
     }
@@ -404,13 +400,11 @@ populate the base `price` block without Mother API performing conversion.
     "recorded_at": null,
     "warning": null
   },
-  "chain_maps": [
+  "asset_network_maps": [
     {
-      "network": {
-        "slug": "eth-mainnet",
-        "name": "Ethereum Mainnet",
-        "caip2": "eip155:1"
-      },
+      "network_slug": "eth-mainnet",
+      "network_name": "Ethereum Mainnet",
+      "caip2": "eip155:1",
       "is_native": false,
       "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
     }
@@ -426,7 +420,7 @@ Top-level fields:
 | `type`       | string | Always `"asset"`.                                           |
 | `asset`      | object | Asset summary (see below).                                  |
 | `price`      | object | Price block (see [Price block](#price-block)). Always present. |
-| `chain_maps` | array  | Chain map entries (see below). May be empty.                |
+| `asset_network_maps` | array | Asset network map entries (see below). May be empty. |
 | `signals`    | object | Present only when at least one known enrichment is requested. Contains only requested enrichment keys. |
 | `enrichment_errors` | array | Present only when at least one known enrichment is requested. Empty when all requested enrichments succeed. |
 
@@ -440,17 +434,17 @@ Asset summary:
 | `category`       | string | Asset category.                                    |
 | `canonical_path` | string | Public canonical path.                             |
 
-Chain map entry:
+Asset network map entry:
 
 | Field             | Type            | Notes                                                                  |
 | ----------------- | --------------- | ---------------------------------------------------------------------- |
-| `network.slug`    | string          | Network slug (e.g., `"eth-mainnet"`).                                  |
-| `network.name`    | string          | Network display name.                                                  |
-| `network.caip2`   | string \| null  | CAIP-2 identifier when known.                                          |
+| `network_slug`    | string          | Canonical network slug (e.g., `"eth-mainnet"`).                        |
+| `network_name`    | string          | Network display name.                                                  |
+| `caip2`           | string \| null  | CAIP-2 identifier when known.                                          |
 | `is_native`       | bool            | `true` when the asset is the network's native asset.                   |
 | `address`         | string \| null  | Token contract address. `null` for native assets or when not applicable. |
 
-EVM chain maps use canonical Iron Burrow mainnet slugs, including
+EVM asset network maps use canonical Iron Burrow mainnet slugs, including
 `base-mainnet`, `mantle-mainnet`, and `arbitrum-mainnet`. The legacy catalog
 values `base`, `mantle`, and `arbitrum-one` are not emitted.
 
@@ -658,9 +652,11 @@ exactly `0x` followed by 40 ASCII hexadecimal characters; EIP-55 checksum
 validation is not required. The response preserves caller-provided address
 casing and `client_ref`.
 
-Unknown JSON fields are ignored. Missing required fields, wrong field types,
-malformed JSON, or a missing/non-JSON `Content-Type` return
-`400 invalid_request`.
+Unknown JSON fields are ignored except for reserved network alias fields.
+Requests containing `chain`, `chain_id`, or `chain_slug` at the top level,
+under `account`, or under `accounts[]` return `400 invalid_request`. Missing
+required fields, wrong field types, malformed JSON, or a missing/non-JSON
+`Content-Type` also return `400 invalid_request`.
 
 **Request:**
 
@@ -898,8 +894,8 @@ Bigwig and Price Indexer runtime failures are represented inside a
 
 Request-wide errors:
 
-- `400 invalid_request` — malformed/non-JSON body, missing required field, or
-  wrong field type.
+- `400 invalid_request` — malformed/non-JSON body, missing required field,
+  wrong field type, or a reserved `chain`/`chain_id`/`chain_slug` alias field.
 - `400 invalid_account` — an address is not exactly `0x` plus 40 ASCII hex
   characters.
 - `400 unsupported_network` — the network is unknown, non-EVM, legacy, or not
@@ -1478,7 +1474,7 @@ Fields:
 
 | HTTP | `error.code`            | Trigger                                                                |
 | ---- | ----------------------- | ---------------------------------------------------------------------- |
-| 400  | `invalid_request`       | A JSON body is malformed/missing required fields, or non-balance public parameters are invalid or incompatible. |
+| 400  | `invalid_request`       | A JSON body is malformed/missing required fields, includes a reserved balance network alias field, or non-balance public parameters are invalid or incompatible. |
 | 400  | `invalid_account`       | A balance account address is not `0x` plus 40 ASCII hexadecimal characters. |
 | 400  | `unsupported_network`   | A balance request uses an unknown, non-EVM, legacy, or non-canonical network slug. |
 | 400  | `unsupported_asset`     | A balance request uses an unknown or non-canonical global asset slug. |
@@ -1522,7 +1518,7 @@ not be assumed to exist or behave consistently if encountered:
 
 - Public price routes outside the asset signal surface (e.g.,
   `/v1/prices/*`).
-- Event, holder, or chain indexing endpoints.
+- Event, holder, or network indexing endpoints.
 - Admin, explorer, account, or tracked-token routes.
 - API keys, bearer auth, billing, x402, or rate limiting on inbound
   requests.
