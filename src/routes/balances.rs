@@ -1,11 +1,10 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use axum::{
     extract::{rejection::JsonRejection, State},
     Json,
 };
-use serde::Deserialize;
-use serde_json::Value;
+use serde::{de::IgnoredAny, Deserialize};
 use tracing::warn;
 
 use crate::{
@@ -28,6 +27,9 @@ use crate::{
 const MAX_ACCOUNTS: usize = 50;
 const MAX_ASSETS: usize = 20;
 const MAX_RESOLUTION_ITEMS: usize = 1_000;
+const RESERVED_NETWORK_ALIAS_FIELDS: [&str; 3] = ["chain", "chain_id", "chain_slug"];
+
+type ExtraFields = HashMap<String, IgnoredAny>;
 
 #[derive(Debug, Deserialize)]
 pub struct SingleBalanceRequest {
@@ -35,6 +37,8 @@ pub struct SingleBalanceRequest {
     account: BalanceAccountRequest,
     quote_currency: String,
     assets: Vec<BalanceAssetRequest>,
+    #[serde(default, flatten)]
+    extra: ExtraFields,
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,6 +47,8 @@ pub struct BulkBalanceRequest {
     accounts: Vec<BalanceAccountRequest>,
     quote_currency: String,
     assets: Vec<BalanceAssetRequest>,
+    #[serde(default, flatten)]
+    extra: ExtraFields,
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,11 +56,13 @@ struct BalanceAsOfRequest {
     kind: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Debug, Deserialize)]
 struct BalanceAccountRequest {
     network_slug: String,
     address: String,
     client_ref: Option<String>,
+    #[serde(default, flatten)]
+    extra: ExtraFields,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -64,12 +72,11 @@ struct BalanceAssetRequest {
 
 pub async fn resolve_single_balance(
     State(state): State<AppState>,
-    body: Result<Json<Value>, JsonRejection>,
+    body: Result<Json<SingleBalanceRequest>, JsonRejection>,
 ) -> Result<Json<SingleBalanceResponse>, ApiError> {
-    let Json(body) = body.map_err(|_| ApiError::invalid_request())?;
-    reject_reserved_network_alias_fields(&body)?;
-    let request = serde_json::from_value::<SingleBalanceRequest>(body)
-        .map_err(|_| ApiError::invalid_request())?;
+    let Json(request) = body.map_err(|_| ApiError::invalid_request())?;
+    reject_reserved_request_fields(&request.extra)?;
+    reject_reserved_account_fields(&request.account)?;
     let request = validate_request(
         request.as_of,
         vec![request.account],
@@ -86,12 +93,13 @@ pub async fn resolve_single_balance(
 
 pub async fn resolve_bulk_balances(
     State(state): State<AppState>,
-    body: Result<Json<Value>, JsonRejection>,
+    body: Result<Json<BulkBalanceRequest>, JsonRejection>,
 ) -> Result<Json<BulkBalanceResponse>, ApiError> {
-    let Json(body) = body.map_err(|_| ApiError::invalid_request())?;
-    reject_reserved_network_alias_fields(&body)?;
-    let request = serde_json::from_value::<BulkBalanceRequest>(body)
-        .map_err(|_| ApiError::invalid_request())?;
+    let Json(request) = body.map_err(|_| ApiError::invalid_request())?;
+    reject_reserved_request_fields(&request.extra)?;
+    for account in &request.accounts {
+        reject_reserved_account_fields(account)?;
+    }
     let request = validate_request(
         request.as_of,
         request.accounts,
@@ -103,29 +111,18 @@ pub async fn resolve_bulk_balances(
     Ok(Json(BalanceResponseAssembler.bulk(snapshot)))
 }
 
-fn reject_reserved_network_alias_fields(body: &Value) -> Result<(), ApiError> {
-    reject_reserved_fields(body)?;
-
-    if let Some(account) = body.get("account") {
-        reject_reserved_fields(account)?;
-    }
-    if let Some(accounts) = body.get("accounts").and_then(Value::as_array) {
-        for account in accounts {
-            reject_reserved_fields(account)?;
-        }
-    }
-
-    Ok(())
+fn reject_reserved_request_fields(extra: &ExtraFields) -> Result<(), ApiError> {
+    reject_reserved_fields(extra)
 }
 
-fn reject_reserved_fields(value: &Value) -> Result<(), ApiError> {
-    let Some(object) = value.as_object() else {
-        return Ok(());
-    };
+fn reject_reserved_account_fields(account: &BalanceAccountRequest) -> Result<(), ApiError> {
+    reject_reserved_fields(&account.extra)
+}
 
-    if ["chain", "chain_id", "chain_slug"]
+fn reject_reserved_fields(extra: &ExtraFields) -> Result<(), ApiError> {
+    if RESERVED_NETWORK_ALIAS_FIELDS
         .iter()
-        .any(|field| object.contains_key(*field))
+        .any(|field| extra.contains_key(*field))
     {
         return Err(ApiError::invalid_request());
     }
@@ -882,6 +879,7 @@ mod tests {
             network_slug: network_slug.to_string(),
             address: address.to_string(),
             client_ref: None,
+            extra: ExtraFields::default(),
         }
     }
 
