@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-06-01
+last_reviewed: 2026-06-25
 agent_edit_policy: update_when_relevant
 ---
 
@@ -53,6 +53,9 @@ Agents must respect the role of each document in this repo:
   explain.
 - Do not invent endpoints, contracts, or guarantees that are not implemented
   and documented.
+- Public API contracts must use `network_slug` for canonical supported network
+  identity. Do not expose or accept a generic `chain` field; keep numeric EVM
+  `chain_id` distinct when it truly means an EIP-155 chain ID.
 - Prefer additive edits to existing documents. When in doubt, add a new
   RFC, spec, or ADR rather than rewriting an existing one.
 - Preserve service boundaries described in [README.md](README.md) ("Not

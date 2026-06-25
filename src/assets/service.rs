@@ -9,8 +9,7 @@ use crate::{
         PriceSignalRequest, PriceStatus,
     },
     repositories::global_assets::{
-        AssetChainMap, GlobalAsset, GlobalAssetDetail, GlobalAssetRepository, NetworkRef,
-        RepositoryError,
+        AssetChainMap, GlobalAsset, GlobalAssetDetail, GlobalAssetRepository, RepositoryError,
     },
 };
 
@@ -242,7 +241,7 @@ pub struct AssetResponse {
     response_type: &'static str,
     asset: AssetPayload,
     price: LatestAssetPrice,
-    chain_maps: Vec<ChainMapPayload>,
+    asset_network_maps: Vec<AssetNetworkMapPayload>,
     #[serde(skip_serializing_if = "Option::is_none")]
     signals: Option<AssetSignals>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -269,10 +268,10 @@ impl AssetResponse {
             response_type: "asset",
             asset: AssetPayload::from(detail.asset),
             price,
-            chain_maps: detail
+            asset_network_maps: detail
                 .chain_maps
                 .into_iter()
-                .map(ChainMapPayload::from)
+                .map(AssetNetworkMapPayload::from)
                 .collect(),
             signals,
             enrichment_errors,
@@ -547,35 +546,24 @@ impl From<GlobalAsset> for AssetPayload {
 }
 
 #[derive(Debug, Serialize)]
-struct ChainMapPayload {
-    network: NetworkPayload,
+struct AssetNetworkMapPayload {
+    network_slug: String,
+    network_name: String,
+    caip2: Option<String>,
     is_native: bool,
     address: Option<String>,
 }
 
-impl From<AssetChainMap> for ChainMapPayload {
+impl From<AssetChainMap> for AssetNetworkMapPayload {
     fn from(chain_map: AssetChainMap) -> Self {
+        let network = chain_map.network;
+
         Self {
-            network: NetworkPayload::from(chain_map.network),
+            network_slug: network.slug,
+            network_name: network.name,
+            caip2: network.caip2,
             is_native: chain_map.is_native,
             address: chain_map.address,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct NetworkPayload {
-    slug: String,
-    name: String,
-    caip2: Option<String>,
-}
-
-impl From<NetworkRef> for NetworkPayload {
-    fn from(network: NetworkRef) -> Self {
-        Self {
-            slug: network.slug,
-            name: network.name,
-            caip2: network.caip2,
         }
     }
 }
@@ -794,9 +782,13 @@ mod tests {
         assert_eq!(json["asset"]["canonical_path"], "/assets/bitcoin");
         assert_eq!(json["price"]["status"], "unavailable");
         assert!(json["price"]["price"].is_null());
-        assert_eq!(json["chain_maps"][0]["network"]["slug"], "bitcoin-mainnet");
-        assert_eq!(json["chain_maps"][0]["is_native"], true);
-        assert!(json["chain_maps"][0]["address"].is_null());
+        assert!(json.get("chain_maps").is_none());
+        assert_eq!(
+            json["asset_network_maps"][0]["network_slug"],
+            "bitcoin-mainnet"
+        );
+        assert_eq!(json["asset_network_maps"][0]["is_native"], true);
+        assert!(json["asset_network_maps"][0]["address"].is_null());
     }
 
     #[tokio::test]

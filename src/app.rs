@@ -920,7 +920,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn asset_detail_returns_native_chain_map() {
+    async fn asset_detail_returns_native_asset_network_map() {
         let json = assets_json("/v1/assets/bitcoin").await;
 
         assert_eq!(json["ok"], true);
@@ -930,36 +930,44 @@ mod tests {
         assert_eq!(json["asset"]["canonical_path"], "/assets/bitcoin");
         assert_eq!(json["price"]["status"], "unavailable");
         assert!(json["price"]["price"].is_null());
-        assert_eq!(json["chain_maps"][0]["network"]["slug"], "bitcoin-mainnet");
-        assert_eq!(json["chain_maps"][0]["network"]["name"], "Bitcoin Mainnet");
+        assert!(json.get("chain_maps").is_none());
         assert_eq!(
-            json["chain_maps"][0]["network"]["caip2"],
+            json["asset_network_maps"][0]["network_slug"],
+            "bitcoin-mainnet"
+        );
+        assert_eq!(
+            json["asset_network_maps"][0]["network_name"],
+            "Bitcoin Mainnet"
+        );
+        assert_eq!(
+            json["asset_network_maps"][0]["caip2"],
             "bip122:000000000019d6689c085ae165831e93"
         );
-        assert_eq!(json["chain_maps"][0]["is_native"], true);
-        assert!(json["chain_maps"][0]["address"].is_null());
-        assert!(json["chain_maps"][0]["network"]["family"].is_null());
-        assert!(json["chain_maps"][0]["network"]["chain_id"].is_null());
+        assert_eq!(json["asset_network_maps"][0]["is_native"], true);
+        assert!(json["asset_network_maps"][0]["address"].is_null());
+        assert!(json["asset_network_maps"][0].get("family").is_none());
+        assert!(json["asset_network_maps"][0].get("chain_id").is_none());
         assert!(json.get("signals").is_none());
         assert!(json.get("enrichment_errors").is_none());
     }
 
     #[tokio::test]
-    async fn asset_detail_returns_deployed_chain_maps() {
+    async fn asset_detail_returns_deployed_asset_network_maps() {
         let json = assets_json("/v1/assets/usdc").await;
-        let chain_maps = json["chain_maps"].as_array().unwrap();
+        let asset_network_maps = json["asset_network_maps"].as_array().unwrap();
 
-        assert_eq!(chain_maps.len(), 5);
-        assert_eq!(chain_maps[0]["network"]["slug"], "eth-mainnet");
+        assert!(json.get("chain_maps").is_none());
+        assert_eq!(asset_network_maps.len(), 5);
+        assert_eq!(asset_network_maps[0]["network_slug"], "eth-mainnet");
         assert_eq!(
-            chain_maps[0]["address"],
+            asset_network_maps[0]["address"],
             "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
         );
-        assert_eq!(chain_maps[0]["is_native"], false);
-        assert_eq!(chain_maps[1]["network"]["slug"], "arbitrum-mainnet");
-        assert_eq!(chain_maps[2]["network"]["slug"], "base-mainnet");
-        assert_eq!(chain_maps[3]["network"]["slug"], "near");
-        assert_eq!(chain_maps[4]["network"]["slug"], "mantle-mainnet");
+        assert_eq!(asset_network_maps[0]["is_native"], false);
+        assert_eq!(asset_network_maps[1]["network_slug"], "arbitrum-mainnet");
+        assert_eq!(asset_network_maps[2]["network_slug"], "base-mainnet");
+        assert_eq!(asset_network_maps[3]["network_slug"], "near");
+        assert_eq!(asset_network_maps[4]["network_slug"], "mantle-mainnet");
     }
 
     #[tokio::test]
@@ -1081,7 +1089,8 @@ mod tests {
         assert_eq!(json["asset"]["asset_id"], "usdc");
         assert_eq!(json["price"]["status"], "unavailable");
         assert!(json["price"]["price"].is_null());
-        assert!(json["chain_maps"].as_array().unwrap().len() > 0);
+        assert!(json["asset_network_maps"].as_array().unwrap().len() > 0);
+        assert!(json.get("chain_maps").is_none());
         assert!(json.get("signals").is_none());
         assert!(json.get("enrichment_errors").is_none());
     }

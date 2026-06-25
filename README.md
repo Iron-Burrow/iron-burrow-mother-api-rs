@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-06-18
+last_reviewed: 2026-06-25
 agent_edit_policy: update_when_relevant
 ---
 
@@ -9,7 +9,7 @@ agent_edit_policy: update_when_relevant
 
 Public API boundary for **Iron Burrow**.
 
-Iron Burrow is a source-aware blockchain intelligence system built to make crypto data easier for humans, applications, and AI agents to inspect. The **Mother API** is the public interface of the burrow: the stable HTTP surface that exposes selected assets, price signals, chain mappings, and health information.
+Iron Burrow is a source-aware blockchain intelligence system built to make crypto data easier for humans, applications, and AI agents to inspect. The **Mother API** is the public interface of the burrow: the stable HTTP surface that exposes selected assets, price signals, network mappings, and health information.
 
 The internal burrow has more tunnels than this README needs to reveal. This repository documents the public door: what a judge, builder, frontend, or agent can call today.
 
@@ -174,12 +174,12 @@ Compact view:
 
 ```bash
 curl -sS "$IB_API/v1/assets/ethereum" \
-  | jq '{ok, asset, price, chain_maps}'
+  | jq '{ok, asset, price, asset_network_maps}'
 ```
 
 Expected interpretation:
 
-This endpoint returns one asset, its latest price state, and the chain mappings Mother API knows about.
+This endpoint returns one asset, its latest price state, and the network mappings Mother API knows about.
 
 For example, `ethereum` can be represented as a native asset on Ethereum Mainnet, while `usdc` can have token addresses across multiple networks.
 
@@ -215,7 +215,7 @@ This is the richer asset detail path. It can include:
 * recent price statistics;
 * trend information;
 * time series data;
-* chain mappings.
+* network mappings.
 
 This endpoint is useful for a frontend or AI assistant that wants one compact asset response instead of calling several endpoints separately.
 

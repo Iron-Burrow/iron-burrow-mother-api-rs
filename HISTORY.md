@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-06-06
+last_reviewed: 2026-06-25
 agent_edit_policy: append_only
 ---
 
@@ -155,3 +155,14 @@ implementation, and documentation changes.
 - Recorded that the legacy demo surface is outside the COTO-focused Mother API
   direction and is scheduled for removal in `v0.2.0`, with no replacement
   currently promised.
+
+## 2026-06-25
+
+- Replaced the public asset-detail `chain_maps` response field with
+  `asset_network_maps`, flattening each entry to expose `network_slug`,
+  `network_name`, `caip2`, `is_native`, and `address`.
+- Added balance request rejection for reserved network alias fields
+  `chain`, `chain_id`, and `chain_slug` while preserving tolerance for
+  unrelated future JSON fields.
+- Updated the public contract, README, and active/draft specs to keep
+  canonical Mother API network identity aligned on `network_slug`.

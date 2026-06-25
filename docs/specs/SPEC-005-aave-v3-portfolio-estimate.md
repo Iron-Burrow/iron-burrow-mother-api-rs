@@ -1,7 +1,7 @@
 ---
 status: draft
 owner: iron-burrow
-last_reviewed: 2026-06-04
+last_reviewed: 2026-06-25
 agent_edit_policy: update_when_relevant
 external_contract: iron-burrow-defi-intelligence-service/CONTRACTS.md@2026-06-01
 ---
@@ -75,7 +75,8 @@ Mother API does not own:
 
 Phase 1 supports only:
 
-- chain: Ethereum mainnet (`chain_id = 1`);
+- network: Ethereum mainnet (`network_slug = "eth-mainnet"`; DIS still uses
+  EIP-155 `chain_id = 1` internally);
 - protocol: Aave V3;
 - market: `aave-v3-ethereum`;
 - portfolio assets: `usdc`, `ethereum`, supplied as concrete quantities;
@@ -88,7 +89,7 @@ Phase 1 supports only:
 
 Out of scope:
 
-- arbitrary assets, chains, or markets;
+- arbitrary assets, networks, or markets;
 - arbitrary date ranges outside the configured demo window;
 - borrowing, rebalancing, or deposits/withdrawals after the initial date;
 - gas, taxes, fees, incentives, or reward tokens;
@@ -266,7 +267,7 @@ yields.
 {
   "ok": true,
   "protocol": "aave-v3",
-  "chain_id": 1,
+  "network_slug": "eth-mainnet",
   "market": "aave-v3-ethereum",
   "quote_currency": "USD",
   "from_datetime": "2026-01-01T00:00:00Z",
