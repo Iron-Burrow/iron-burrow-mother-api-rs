@@ -7,7 +7,7 @@ agent_edit_policy: update_when_relevant
 
 # SPEC-008 — Public API Beta "v0.2" Surface v1
 
-We need to remove al FIFA endpoints from the contract and codebase.
+We need to remove all FIFA endpoints from the contract and codebase.
 
 Goal: define the minimum stable public API surface needed to share Iron Burrow Mother API with early private beta users.
 
