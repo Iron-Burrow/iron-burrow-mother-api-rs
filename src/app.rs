@@ -11,6 +11,7 @@ use crate::{
     routes::{
         assets::{get_asset, get_price_stats_signal, get_price_trend_signal, list_assets},
         balances::{resolve_bulk_balances, resolve_single_balance},
+        erc20_transfers::search_erc20_transfers,
         health::health,
         predictions::{
             add_deprecation_header, get_world_cup_country_prediction,
@@ -36,7 +37,7 @@ pub fn create_app(state: AppState) -> Router {
         )
         .layer(middleware::map_response(add_deprecation_header));
 
-    let v1_routes = Router::new()
+    let mut v1_routes = Router::new()
         .route("/status", get(status))
         .route("/resolve", get(resolve))
         .route("/balances", post(resolve_single_balance))
@@ -52,6 +53,10 @@ pub fn create_app(state: AppState) -> Router {
             get(get_price_trend_signal),
         )
         .merge(deprecated_prediction_routes);
+
+    if state.config.erc20_transfers_enabled {
+        v1_routes = v1_routes.route("/erc20-transfers/search", post(search_erc20_transfers));
+    }
 
     Router::new()
         .route("/health", get(health))

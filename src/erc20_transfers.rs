@@ -130,6 +130,43 @@ pub struct Erc20TransferSearchLimits {
     pub max_rows: u64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Erc20TransferSearchCommand {
+    pub network_slug: String,
+    pub address: String,
+    pub direction: Erc20TransferCommandDirection,
+    pub tokens: Erc20TransferCommandTokenFilters,
+    pub window: Erc20TransferCommandWindow,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Erc20TransferCommandDirection {
+    Any,
+    From,
+    To,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct Erc20TransferCommandTokenFilters {
+    pub asset_slugs: Vec<String>,
+    pub contract_addresses: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum Erc20TransferCommandWindow {
+    Blocks {
+        from_block: u64,
+        to_block: u64,
+    },
+    Timestamps {
+        from_timestamp: String,
+        to_timestamp: String,
+    },
+    Lookback {
+        lookback_seconds: u64,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::{json, Value};
