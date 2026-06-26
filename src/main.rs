@@ -3,11 +3,11 @@ mod assets;
 #[allow(dead_code)]
 mod balances;
 mod config;
-mod db;
 mod dis;
 #[allow(dead_code)]
 mod erc20_transfers;
 mod error;
+mod infra;
 #[allow(dead_code)]
 mod openapi;
 mod price_indexer;

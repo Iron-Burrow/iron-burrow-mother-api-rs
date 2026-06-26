@@ -2,7 +2,7 @@ use sqlx::PgPool;
 use tracing::warn;
 
 use crate::{
-    balances::bigwig::BigwigLatestBalancesClient, config::Config, db, dis::DisClient,
+    balances::bigwig::BigwigLatestBalancesClient, config::Config, dis::DisClient, infra::db,
     price_indexer::PriceIndexerClient, repositories::global_assets::GlobalAssetRepository,
 };
 
