@@ -117,10 +117,10 @@ mod tests {
 
     use super::*;
     use crate::{
+        adapters::global_assets::{demo_assets, GlobalAsset, GlobalAssetRepository},
         config::Config,
         dis::DisClient,
         price_indexer::PriceIndexerClient,
-        repositories::global_assets::{demo_assets, GlobalAsset, GlobalAssetRepository},
     };
 
     const TEST_DIS_ACCEPT_TIMEOUT: Duration = Duration::from_secs(2);

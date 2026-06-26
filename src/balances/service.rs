@@ -970,12 +970,12 @@ mod tests {
 
     use super::*;
     use crate::{
+        adapters::global_assets::{demo_assets, GlobalAssetRepository},
         balances::bigwig::{
             BigwigBalanceEvidenceBlock, BigwigBalanceEvidenceNetwork, BigwigBalanceItemError,
             BigwigBalanceItemErrorCode, BigwigRequestValidationCode,
         },
         price_indexer::PriceIndexerClient,
-        repositories::global_assets::{demo_assets, GlobalAssetRepository},
     };
 
     const ACCOUNT_A: &str = "0x1111111111111111111111111111111111111111";

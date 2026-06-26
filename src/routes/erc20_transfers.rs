@@ -9,6 +9,7 @@ use serde_json::{Map, Value};
 use tracing::warn;
 
 use crate::{
+    adapters::global_assets::GlobalAssetRepository,
     balances::catalog::{
         BalanceTargetKind, BalanceTargetResolution, CatalogBalanceTargetResolver,
         CatalogIntegrityIssue, CatalogResolverError,
@@ -20,7 +21,6 @@ use crate::{
         Erc20TransferSearchWindow, Erc20TransferTimestampWindow, Erc20TransferTokenFilters,
     },
     error::ApiError,
-    repositories::global_assets::GlobalAssetRepository,
     state::AppState,
 };
 
@@ -744,9 +744,9 @@ mod tests {
 
     use super::*;
     use crate::{
+        adapters::global_assets::{demo_assets, GlobalAssetRepository},
         app::create_app,
         config::Config,
-        repositories::global_assets::{demo_assets, GlobalAssetRepository},
     };
 
     const TEST_MAX_TOKEN_FILTERS: u64 = 20;

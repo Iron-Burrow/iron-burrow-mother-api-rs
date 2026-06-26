@@ -1,3 +1,4 @@
+mod adapters;
 mod app;
 mod assets;
 #[allow(dead_code)]
@@ -11,7 +12,6 @@ mod infra;
 #[allow(dead_code)]
 mod openapi;
 mod price_indexer;
-mod repositories;
 mod resolve;
 mod routes;
 mod state;

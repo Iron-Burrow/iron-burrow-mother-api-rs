@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::repositories::global_assets::{
+use crate::adapters::global_assets::{
     AssetMatch, GlobalAsset, GlobalAssetRepository, RepositoryError,
 };
 
@@ -159,7 +159,7 @@ impl From<GlobalAsset> for Recommendation {
 mod tests {
     use super::*;
     use crate::{
-        repositories::global_assets::{demo_assets, GlobalAssetRepository},
+        adapters::global_assets::{demo_assets, GlobalAssetRepository},
         resolve::query::parse_query,
     };
 

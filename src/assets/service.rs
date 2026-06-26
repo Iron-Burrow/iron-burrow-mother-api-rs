@@ -4,12 +4,12 @@ use serde::Serialize;
 use tracing::{info, warn};
 
 use crate::{
+    adapters::global_assets::{
+        AssetChainMap, GlobalAsset, GlobalAssetDetail, GlobalAssetRepository, RepositoryError,
+    },
     price_indexer::{
         LatestAssetPrice, PriceIndexerClient, PriceLookupError, PriceSignalError,
         PriceSignalRequest, PriceStatus,
-    },
-    repositories::global_assets::{
-        AssetChainMap, GlobalAsset, GlobalAssetDetail, GlobalAssetRepository, RepositoryError,
     },
 };
 
@@ -692,7 +692,7 @@ fn enrichment_sources(include: &[AssetEnrichmentInclude]) -> Vec<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repositories::global_assets::{demo_assets, GlobalAsset, GlobalAssetRepository};
+    use crate::adapters::global_assets::{demo_assets, GlobalAsset, GlobalAssetRepository};
 
     fn service() -> AssetsService {
         AssetsService::new(GlobalAssetRepository::in_memory(demo_assets()), None)

@@ -1,8 +1,6 @@
 use std::fmt;
 
-use crate::repositories::global_assets::{
-    BalanceCatalogRow, GlobalAssetRepository, RepositoryError,
-};
+use crate::adapters::global_assets::{BalanceCatalogRow, GlobalAssetRepository, RepositoryError};
 
 #[derive(Clone, Debug)]
 pub struct CatalogBalanceTargetResolver {
@@ -354,7 +352,7 @@ fn is_evm_address(address: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repositories::global_assets::{demo_assets, GlobalAssetRepository};
+    use crate::adapters::global_assets::{demo_assets, GlobalAssetRepository};
 
     fn resolver() -> CatalogBalanceTargetResolver {
         CatalogBalanceTargetResolver::new(GlobalAssetRepository::in_memory(demo_assets()))
