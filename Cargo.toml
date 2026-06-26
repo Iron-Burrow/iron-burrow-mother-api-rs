@@ -36,6 +36,7 @@ tracing-subscriber = { version = "0.3", features = [
     "fmt",
     "json",
 ] }
+utoipa = "5"
 uuid = { version = "1", features = ["serde", "v4"] }
 
 [dev-dependencies]

@@ -7,6 +7,9 @@ pub const DEFAULT_PRICE_INDEXER_TIMEOUT_MS: u64 = 2000;
 pub const DEFAULT_DIS_REQUEST_TIMEOUT_MS: u64 = 5000;
 pub const DEFAULT_DIS_RETRY_MAX_ATTEMPTS: u64 = 2;
 pub const DEFAULT_BIGWIG_REQUEST_TIMEOUT_MS: u64 = 30000;
+pub const DEFAULT_ERC20_TRANSFERS_ENABLED: bool = false;
+pub const DEFAULT_ERC20_TRANSFERS_MAX_TOKEN_FILTERS: u64 = 20;
+pub const DEFAULT_BIGWIG_MAX_CONTRACT_ADDRESSES: u64 = 20;
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct Config {
@@ -23,11 +26,14 @@ pub struct Config {
     pub infra_gateway_url: Option<String>,
     pub infra_gateway_token: Option<String>,
     pub bigwig_request_timeout_ms: u64,
+    pub erc20_transfers_enabled: bool,
+    pub erc20_transfers_max_token_filters: u64,
+    pub bigwig_max_contract_addresses: u64,
 }
 
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
-        Ok(Self {
+        let config = Self {
             app_env: env::var("APP_ENV").unwrap_or_else(|_| DEFAULT_APP_ENV.to_string()),
             http_host: env::var("HTTP_HOST").unwrap_or_else(|_| DEFAULT_HTTP_HOST.to_string()),
             http_port: match env::var("HTTP_PORT") {
@@ -62,7 +68,26 @@ impl Config {
                 DEFAULT_BIGWIG_REQUEST_TIMEOUT_MS,
             )
             .map_err(ConfigError::InvalidBigwigRequestTimeout)?,
-        })
+            erc20_transfers_enabled: parse_optional_bool_env(
+                "ERC20_TRANSFERS_ENABLED",
+                DEFAULT_ERC20_TRANSFERS_ENABLED,
+            )
+            .map_err(ConfigError::InvalidErc20TransfersEnabled)?,
+            erc20_transfers_max_token_filters: parse_positive_optional_u64_env(
+                "ERC20_TRANSFERS_MAX_TOKEN_FILTERS",
+                DEFAULT_ERC20_TRANSFERS_MAX_TOKEN_FILTERS,
+            )
+            .map_err(ConfigError::InvalidErc20TransfersMaxTokenFilters)?,
+            bigwig_max_contract_addresses: parse_positive_optional_u64_env(
+                "BIGWIG_MAX_CONTRACT_ADDRESSES",
+                DEFAULT_BIGWIG_MAX_CONTRACT_ADDRESSES,
+            )
+            .map_err(ConfigError::InvalidBigwigMaxContractAddresses)?,
+        };
+
+        config.validate_startup()?;
+
+        Ok(config)
     }
 
     pub fn socket_addr(&self) -> Result<SocketAddr, ConfigError> {
@@ -72,6 +97,17 @@ impl Config {
                 host: self.http_host.clone(),
                 port: self.http_port,
             })
+    }
+
+    fn validate_startup(&self) -> Result<(), ConfigError> {
+        if self.erc20_transfers_max_token_filters > self.bigwig_max_contract_addresses {
+            return Err(ConfigError::Erc20TransfersPublicLimitExceedsBigwig {
+                erc20_transfers_max_token_filters: self.erc20_transfers_max_token_filters,
+                bigwig_max_contract_addresses: self.bigwig_max_contract_addresses,
+            });
+        }
+
+        Ok(())
     }
 }
 
@@ -91,6 +127,9 @@ impl Default for Config {
             infra_gateway_url: None,
             infra_gateway_token: None,
             bigwig_request_timeout_ms: DEFAULT_BIGWIG_REQUEST_TIMEOUT_MS,
+            erc20_transfers_enabled: DEFAULT_ERC20_TRANSFERS_ENABLED,
+            erc20_transfers_max_token_filters: DEFAULT_ERC20_TRANSFERS_MAX_TOKEN_FILTERS,
+            bigwig_max_contract_addresses: DEFAULT_BIGWIG_MAX_CONTRACT_ADDRESSES,
         }
     }
 }
@@ -118,6 +157,15 @@ impl std::fmt::Debug for Config {
                 &self.infra_gateway_token.as_ref().map(|_| "<redacted>"),
             )
             .field("bigwig_request_timeout_ms", &self.bigwig_request_timeout_ms)
+            .field("erc20_transfers_enabled", &self.erc20_transfers_enabled)
+            .field(
+                "erc20_transfers_max_token_filters",
+                &self.erc20_transfers_max_token_filters,
+            )
+            .field(
+                "bigwig_max_contract_addresses",
+                &self.bigwig_max_contract_addresses,
+            )
             .finish()
     }
 }
@@ -154,6 +202,25 @@ fn parse_positive_optional_u64_env(key: &str, default: u64) -> Result<u64, Strin
     Ok(value)
 }
 
+fn parse_optional_bool_env(key: &str, default: bool) -> Result<bool, String> {
+    match env::var(key) {
+        Ok(value) => {
+            let trimmed = value.trim();
+
+            if trimmed.is_empty() {
+                return Ok(default);
+            }
+
+            match trimmed.to_ascii_lowercase().as_str() {
+                "true" | "1" => Ok(true),
+                "false" | "0" => Ok(false),
+                _ => Err(value),
+            }
+        }
+        Err(_) => Ok(default),
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum ConfigError {
     InvalidHttpPort(String),
@@ -161,7 +228,17 @@ pub enum ConfigError {
     InvalidDisRequestTimeout(String),
     InvalidDisRetryMaxAttempts(String),
     InvalidBigwigRequestTimeout(String),
-    InvalidSocketAddress { host: String, port: u16 },
+    InvalidErc20TransfersEnabled(String),
+    InvalidErc20TransfersMaxTokenFilters(String),
+    InvalidBigwigMaxContractAddresses(String),
+    Erc20TransfersPublicLimitExceedsBigwig {
+        erc20_transfers_max_token_filters: u64,
+        bigwig_max_contract_addresses: u64,
+    },
+    InvalidSocketAddress {
+        host: String,
+        port: u16,
+    },
 }
 
 impl std::fmt::Display for ConfigError {
@@ -192,6 +269,33 @@ impl std::fmt::Display for ConfigError {
                 write!(
                     formatter,
                     "BIGWIG_REQUEST_TIMEOUT_MS must be a positive u64, got {value:?}"
+                )
+            }
+            Self::InvalidErc20TransfersEnabled(value) => {
+                write!(
+                    formatter,
+                    "ERC20_TRANSFERS_ENABLED must be a boolean, got {value:?}"
+                )
+            }
+            Self::InvalidErc20TransfersMaxTokenFilters(value) => {
+                write!(
+                    formatter,
+                    "ERC20_TRANSFERS_MAX_TOKEN_FILTERS must be a positive u64, got {value:?}"
+                )
+            }
+            Self::InvalidBigwigMaxContractAddresses(value) => {
+                write!(
+                    formatter,
+                    "BIGWIG_MAX_CONTRACT_ADDRESSES must be a positive u64, got {value:?}"
+                )
+            }
+            Self::Erc20TransfersPublicLimitExceedsBigwig {
+                erc20_transfers_max_token_filters,
+                bigwig_max_contract_addresses,
+            } => {
+                write!(
+                    formatter,
+                    "ERC20_TRANSFERS_MAX_TOKEN_FILTERS ({erc20_transfers_max_token_filters}) must not exceed BIGWIG_MAX_CONTRACT_ADDRESSES ({bigwig_max_contract_addresses})"
                 )
             }
             Self::InvalidSocketAddress { host, port } => {
@@ -236,6 +340,10 @@ mod tests {
         }
     }
 
+    fn capture_env_vars(keys: &[&'static str]) -> Vec<EnvVarSnapshot> {
+        keys.iter().copied().map(EnvVarSnapshot::capture).collect()
+    }
+
     #[test]
     fn default_config_matches_public_contract() {
         let config = Config::default();
@@ -253,6 +361,9 @@ mod tests {
         assert_eq!(config.infra_gateway_url, None);
         assert_eq!(config.infra_gateway_token, None);
         assert_eq!(config.bigwig_request_timeout_ms, 30000);
+        assert!(!config.erc20_transfers_enabled);
+        assert_eq!(config.erc20_transfers_max_token_filters, 20);
+        assert_eq!(config.bigwig_max_contract_addresses, 20);
         assert_eq!(
             config.socket_addr().unwrap(),
             "0.0.0.0:3000".parse::<SocketAddr>().unwrap()
@@ -299,6 +410,47 @@ mod tests {
             2
         );
         std::env::remove_var("EMPTY_DIS_RETRY_MAX_ATTEMPTS");
+    }
+
+    #[test]
+    fn boolean_config_defaults_trims_and_parses_common_values() {
+        assert_eq!(
+            parse_optional_bool_env("MISSING_ERC20_TRANSFERS_ENABLED", false).unwrap(),
+            false
+        );
+
+        std::env::set_var("EMPTY_ERC20_TRANSFERS_ENABLED", "   ");
+        std::env::set_var("TRUE_ERC20_TRANSFERS_ENABLED", " TRUE ");
+        std::env::set_var("ONE_ERC20_TRANSFERS_ENABLED", "1");
+        std::env::set_var("FALSE_ERC20_TRANSFERS_ENABLED", " false ");
+        std::env::set_var("ZERO_ERC20_TRANSFERS_ENABLED", "0");
+
+        assert_eq!(
+            parse_optional_bool_env("EMPTY_ERC20_TRANSFERS_ENABLED", true).unwrap(),
+            true
+        );
+        assert!(parse_optional_bool_env("TRUE_ERC20_TRANSFERS_ENABLED", false).unwrap());
+        assert!(parse_optional_bool_env("ONE_ERC20_TRANSFERS_ENABLED", false).unwrap());
+        assert!(!parse_optional_bool_env("FALSE_ERC20_TRANSFERS_ENABLED", true).unwrap());
+        assert!(!parse_optional_bool_env("ZERO_ERC20_TRANSFERS_ENABLED", true).unwrap());
+
+        std::env::remove_var("EMPTY_ERC20_TRANSFERS_ENABLED");
+        std::env::remove_var("TRUE_ERC20_TRANSFERS_ENABLED");
+        std::env::remove_var("ONE_ERC20_TRANSFERS_ENABLED");
+        std::env::remove_var("FALSE_ERC20_TRANSFERS_ENABLED");
+        std::env::remove_var("ZERO_ERC20_TRANSFERS_ENABLED");
+    }
+
+    #[test]
+    fn boolean_config_rejects_invalid_values() {
+        std::env::set_var("INVALID_ERC20_TRANSFERS_ENABLED", "sometimes");
+
+        assert_eq!(
+            parse_optional_bool_env("INVALID_ERC20_TRANSFERS_ENABLED", false),
+            Err("sometimes".to_string())
+        );
+
+        std::env::remove_var("INVALID_ERC20_TRANSFERS_ENABLED");
     }
 
     #[test]
@@ -383,6 +535,111 @@ mod tests {
             Err(ConfigError::InvalidBigwigRequestTimeout(
                 "eventually".to_string()
             ))
+        );
+    }
+
+    #[test]
+    fn from_env_parses_erc20_transfer_config() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let _snapshots = capture_env_vars(&[
+            "ERC20_TRANSFERS_ENABLED",
+            "ERC20_TRANSFERS_MAX_TOKEN_FILTERS",
+            "BIGWIG_MAX_CONTRACT_ADDRESSES",
+        ]);
+        std::env::set_var("ERC20_TRANSFERS_ENABLED", "true");
+        std::env::set_var("ERC20_TRANSFERS_MAX_TOKEN_FILTERS", "12");
+        std::env::set_var("BIGWIG_MAX_CONTRACT_ADDRESSES", "30");
+
+        let config = Config::from_env().unwrap();
+
+        assert!(config.erc20_transfers_enabled);
+        assert_eq!(config.erc20_transfers_max_token_filters, 12);
+        assert_eq!(config.bigwig_max_contract_addresses, 30);
+    }
+
+    #[test]
+    fn from_env_rejects_invalid_erc20_transfer_enabled_flag() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let _snapshots = capture_env_vars(&[
+            "ERC20_TRANSFERS_ENABLED",
+            "ERC20_TRANSFERS_MAX_TOKEN_FILTERS",
+            "BIGWIG_MAX_CONTRACT_ADDRESSES",
+        ]);
+        std::env::set_var("ERC20_TRANSFERS_ENABLED", "maybe");
+        std::env::remove_var("ERC20_TRANSFERS_MAX_TOKEN_FILTERS");
+        std::env::remove_var("BIGWIG_MAX_CONTRACT_ADDRESSES");
+
+        assert_eq!(
+            Config::from_env(),
+            Err(ConfigError::InvalidErc20TransfersEnabled(
+                "maybe".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn from_env_rejects_invalid_or_zero_erc20_transfer_limits() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let _snapshots = capture_env_vars(&[
+            "ERC20_TRANSFERS_ENABLED",
+            "ERC20_TRANSFERS_MAX_TOKEN_FILTERS",
+            "BIGWIG_MAX_CONTRACT_ADDRESSES",
+        ]);
+        std::env::remove_var("ERC20_TRANSFERS_ENABLED");
+        std::env::remove_var("BIGWIG_MAX_CONTRACT_ADDRESSES");
+
+        std::env::set_var("ERC20_TRANSFERS_MAX_TOKEN_FILTERS", "many");
+        assert_eq!(
+            Config::from_env(),
+            Err(ConfigError::InvalidErc20TransfersMaxTokenFilters(
+                "many".to_string()
+            ))
+        );
+
+        std::env::set_var("ERC20_TRANSFERS_MAX_TOKEN_FILTERS", "0");
+        assert_eq!(
+            Config::from_env(),
+            Err(ConfigError::InvalidErc20TransfersMaxTokenFilters(
+                "0".to_string()
+            ))
+        );
+
+        std::env::remove_var("ERC20_TRANSFERS_MAX_TOKEN_FILTERS");
+        std::env::set_var("BIGWIG_MAX_CONTRACT_ADDRESSES", "many");
+        assert_eq!(
+            Config::from_env(),
+            Err(ConfigError::InvalidBigwigMaxContractAddresses(
+                "many".to_string()
+            ))
+        );
+
+        std::env::set_var("BIGWIG_MAX_CONTRACT_ADDRESSES", "0");
+        assert_eq!(
+            Config::from_env(),
+            Err(ConfigError::InvalidBigwigMaxContractAddresses(
+                "0".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn from_env_rejects_public_erc20_limit_above_bigwig_limit() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let _snapshots = capture_env_vars(&[
+            "ERC20_TRANSFERS_ENABLED",
+            "ERC20_TRANSFERS_MAX_TOKEN_FILTERS",
+            "BIGWIG_MAX_CONTRACT_ADDRESSES",
+        ]);
+        std::env::remove_var("ERC20_TRANSFERS_ENABLED");
+        std::env::set_var("ERC20_TRANSFERS_MAX_TOKEN_FILTERS", "21");
+        std::env::set_var("BIGWIG_MAX_CONTRACT_ADDRESSES", "20");
+
+        assert_eq!(
+            Config::from_env(),
+            Err(ConfigError::Erc20TransfersPublicLimitExceedsBigwig {
+                erc20_transfers_max_token_filters: 21,
+                bigwig_max_contract_addresses: 20,
+            })
         );
     }
 

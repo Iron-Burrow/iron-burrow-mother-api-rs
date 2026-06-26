@@ -173,3 +173,7 @@ implementation, and documentation changes.
 - Kept `/v1/erc20-transfers/search` outside the public contract for this
   documentation-only slice; no Mother API route, runtime behavior, README
   endpoint, or `CONTRACTS.md` promise was added.
+- Added PR 1 groundwork for ERC-20 transfer search: strict public DTOs,
+  disabled-by-default config, startup limit validation against Bigwig's
+  contract-address limit, and feature-gated OpenAPI generation without
+  registering the public runtime route.

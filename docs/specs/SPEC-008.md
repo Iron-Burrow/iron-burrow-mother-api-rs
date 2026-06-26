@@ -7,6 +7,8 @@ agent_edit_policy: update_when_relevant
 
 # SPEC-008 — Public API Beta "v0.2" Surface v1
 
+We need to remove all FIFA endpoints from the contract and codebase.
+
 Goal: define the minimum stable public API surface needed to share Iron Burrow Mother API with early private beta users.
 
 This spec should not mention Wavy Node directly. Treat the customer as “private beta client” or “early API consumer.” Wavy-specific readiness and relationship tracking belongs in Lu, not in the public Mother API repo.
