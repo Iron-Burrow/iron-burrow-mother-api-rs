@@ -9,6 +9,10 @@ use serde_json::{Map, Value};
 use tracing::warn;
 
 use crate::{
+    balances::catalog::{
+        BalanceTargetKind, BalanceTargetResolution, CatalogBalanceTargetResolver,
+        CatalogIntegrityIssue, CatalogResolverError,
+    },
     erc20_transfers::{
         Erc20TransferBlockWindow, Erc20TransferCommandDirection, Erc20TransferCommandTokenFilters,
         Erc20TransferCommandWindow, Erc20TransferDirection, Erc20TransferLookbackTarget,
@@ -16,7 +20,7 @@ use crate::{
         Erc20TransferSearchWindow, Erc20TransferTimestampWindow, Erc20TransferTokenFilters,
     },
     error::ApiError,
-    repositories::global_assets::{BalanceCatalogRow, GlobalAssetRepository},
+    repositories::global_assets::GlobalAssetRepository,
     state::AppState,
 };
 
@@ -156,15 +160,18 @@ async fn resolve_token_filters(
 
     if !tokens.asset_slugs.is_empty() {
         let repository = repository.ok_or_else(ApiError::asset_contract_mapping_unavailable)?;
-        let rows = repository
-            .load_balance_catalog_rows(network_slug, &tokens.asset_slugs)
+        let resolver = CatalogBalanceTargetResolver::new(repository);
+        let resolved_contracts = resolver
+            .resolve_network(network_slug, &tokens.asset_slugs)
             .await
-            .map_err(|error| {
-                warn!(%error, "ERC-20 transfer asset catalog lookup failed");
-                ApiError::asset_contract_mapping_unavailable()
+            .map_err(catalog_resolver_error_to_api_error)
+            .and_then(|resolutions| {
+                resolved_contract_addresses_from_catalog(
+                    network_slug,
+                    &tokens.asset_slugs,
+                    resolutions,
+                )
             })?;
-        let resolved_contracts =
-            resolve_asset_slug_contracts(network_slug, &tokens.asset_slugs, &rows)?;
 
         for contract_address in resolved_contracts {
             push_unique_contract_address(&mut contract_addresses, &mut seen, contract_address);
@@ -178,6 +185,93 @@ async fn resolve_token_filters(
     Ok(contract_addresses)
 }
 
+fn resolved_contract_addresses_from_catalog(
+    network_slug: &str,
+    requested_asset_slugs: &[String],
+    resolutions: Vec<BalanceTargetResolution>,
+) -> Result<Vec<String>, ApiError> {
+    if resolutions.len() != requested_asset_slugs.len() {
+        warn!(
+            network_slug,
+            requested_count = requested_asset_slugs.len(),
+            resolution_count = resolutions.len(),
+            "ERC-20 transfer catalog resolver returned an unexpected resolution count"
+        );
+        return Err(ApiError::internal_error());
+    }
+
+    let mut contract_addresses = Vec::with_capacity(resolutions.len());
+
+    for (requested_asset_slug, resolution) in requested_asset_slugs.iter().zip(resolutions) {
+        match resolution {
+            BalanceTargetResolution::Resolved(target) => {
+                if target.network_slug != network_slug || target.asset_slug != *requested_asset_slug
+                {
+                    warn!(
+                        network_slug,
+                        requested_asset_slug,
+                        resolved_network_slug = target.network_slug,
+                        resolved_asset_slug = target.asset_slug,
+                        "ERC-20 transfer catalog resolver returned a mismatched resolution"
+                    );
+                    return Err(ApiError::internal_error());
+                }
+
+                match target.kind {
+                    BalanceTargetKind::Erc20 { contract_address } => {
+                        contract_addresses.push(contract_address);
+                    }
+                    BalanceTargetKind::Native => {
+                        return Err(ApiError::asset_not_erc20_on_network());
+                    }
+                }
+            }
+            BalanceTargetResolution::UnsupportedAsset { .. } => {
+                return Err(ApiError::asset_not_found());
+            }
+            BalanceTargetResolution::UnsupportedNetwork { .. }
+            | BalanceTargetResolution::UnsupportedPair { .. } => {
+                return Err(ApiError::asset_not_available_on_network());
+            }
+            BalanceTargetResolution::UnsupportedTokenStandard { .. } => {
+                return Err(ApiError::asset_not_erc20_on_network());
+            }
+        }
+    }
+
+    Ok(contract_addresses)
+}
+
+fn catalog_resolver_error_to_api_error(error: CatalogResolverError) -> ApiError {
+    match error {
+        CatalogResolverError::Repository(error) => {
+            warn!(%error, "ERC-20 transfer asset catalog lookup failed");
+            ApiError::asset_contract_mapping_unavailable()
+        }
+        CatalogResolverError::InvalidCatalog { issue, .. }
+            if matches!(
+                issue,
+                CatalogIntegrityIssue::IncompleteMapping
+                    | CatalogIntegrityIssue::InvalidDecimals
+                    | CatalogIntegrityIssue::MalformedErc20Address
+            ) =>
+        {
+            warn!(
+                ?issue,
+                "ERC-20 transfer asset catalog mapping is incomplete"
+            );
+            ApiError::asset_contract_mapping_unavailable()
+        }
+        CatalogResolverError::InvalidCatalog { issue, .. } => {
+            warn!(
+                ?issue,
+                "ERC-20 transfer asset catalog is internally inconsistent"
+            );
+            ApiError::internal_error()
+        }
+    }
+}
+
 fn push_unique_contract_address(
     contract_addresses: &mut Vec<String>,
     seen: &mut HashSet<String>,
@@ -188,149 +282,6 @@ fn push_unique_contract_address(
     if seen.insert(contract_address.clone()) {
         contract_addresses.push(contract_address);
     }
-}
-
-fn resolve_asset_slug_contracts(
-    requested_network_slug: &str,
-    ordered_asset_slugs: &[String],
-    rows: &[BalanceCatalogRow],
-) -> Result<Vec<String>, ApiError> {
-    let mut contract_addresses = Vec::with_capacity(ordered_asset_slugs.len());
-
-    for (index, requested_asset_slug) in ordered_asset_slugs.iter().enumerate() {
-        let ordinal = i64::try_from(index + 1).unwrap_or(i64::MAX);
-        let matching_rows = rows
-            .iter()
-            .filter(|row| row.ordinal == ordinal)
-            .collect::<Vec<_>>();
-
-        let contract_address = resolve_asset_slug_contract(
-            requested_network_slug,
-            requested_asset_slug,
-            ordinal,
-            &matching_rows,
-        )?;
-        contract_addresses.push(contract_address);
-    }
-
-    if rows
-        .iter()
-        .any(|row| row.ordinal < 1 || row.ordinal > ordered_asset_slugs.len() as i64)
-    {
-        warn!(
-            network_slug = requested_network_slug,
-            "ERC-20 transfer catalog lookup returned an unexpected ordinal"
-        );
-        return Err(ApiError::internal_error());
-    }
-
-    Ok(contract_addresses)
-}
-
-fn resolve_asset_slug_contract(
-    requested_network_slug: &str,
-    requested_asset_slug: &str,
-    ordinal: i64,
-    matching_rows: &[&BalanceCatalogRow],
-) -> Result<String, ApiError> {
-    if matching_rows.is_empty() {
-        warn!(
-            network_slug = requested_network_slug,
-            asset_slug = requested_asset_slug,
-            ordinal,
-            "ERC-20 transfer catalog lookup omitted a requested asset row"
-        );
-        return Err(ApiError::internal_error());
-    }
-
-    if matching_rows
-        .iter()
-        .any(|row| row.requested_asset_slug != requested_asset_slug)
-    {
-        warn!(
-            network_slug = requested_network_slug,
-            asset_slug = requested_asset_slug,
-            ordinal,
-            "ERC-20 transfer catalog lookup returned a mismatched requested asset"
-        );
-        return Err(ApiError::internal_error());
-    }
-
-    let first = matching_rows[0];
-    let Some(asset_slug) = first.asset_slug.as_deref() else {
-        return Err(ApiError::asset_not_found());
-    };
-
-    if asset_slug != requested_asset_slug
-        || matching_rows
-            .iter()
-            .any(|row| row.asset_slug.as_deref() != Some(asset_slug))
-    {
-        warn!(
-            network_slug = requested_network_slug,
-            requested_asset_slug,
-            resolved_asset_slug = asset_slug,
-            "ERC-20 transfer catalog lookup returned a mismatched asset"
-        );
-        return Err(ApiError::internal_error());
-    }
-
-    if first.network_slug.as_deref() != Some(requested_network_slug) {
-        return Err(ApiError::asset_not_available_on_network());
-    }
-
-    if first.network_family.as_deref() != Some("evm") {
-        warn!(
-            network_slug = requested_network_slug,
-            network_family = first.network_family.as_deref().unwrap_or("<missing>"),
-            "ERC-20 transfer catalog lookup returned a non-EVM admitted network"
-        );
-        return Err(ApiError::internal_error());
-    }
-
-    let concrete_rows = matching_rows
-        .iter()
-        .copied()
-        .filter(|row| row.mapping_id.is_some())
-        .collect::<Vec<_>>();
-
-    if concrete_rows.is_empty() {
-        return Err(ApiError::asset_not_available_on_network());
-    }
-
-    if concrete_rows.len() > 1 {
-        warn!(
-            network_slug = requested_network_slug,
-            asset_slug = requested_asset_slug,
-            "ERC-20 transfer catalog lookup returned ambiguous active mappings"
-        );
-        return Err(ApiError::internal_error());
-    }
-
-    let row = concrete_rows[0];
-    let Some(is_native) = row.is_native else {
-        return Err(ApiError::asset_contract_mapping_unavailable());
-    };
-
-    if is_native || row.token_standard.as_deref() != Some("erc20") {
-        return Err(ApiError::asset_not_erc20_on_network());
-    }
-
-    if row.asset_symbol.is_none()
-        || row.asset_name.is_none()
-        || row
-            .decimals
-            .and_then(|decimals| u8::try_from(decimals).ok())
-            .is_none()
-    {
-        return Err(ApiError::asset_contract_mapping_unavailable());
-    }
-
-    row.deployment_address
-        .as_deref()
-        .filter(|address| is_evm_address(address))
-        .map(str::to_ascii_lowercase)
-        .ok_or_else(ApiError::asset_contract_mapping_unavailable)
 }
 
 fn enforce_token_filter_limit(

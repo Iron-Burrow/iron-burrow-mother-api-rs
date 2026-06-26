@@ -454,6 +454,10 @@ fn plan_network_group(
             BalanceTargetResolution::UnsupportedPair {
                 network_slug,
                 asset_slug,
+            }
+            | BalanceTargetResolution::UnsupportedTokenStandard {
+                network_slug,
+                asset_slug,
             } => {
                 if network_slug != group.network_slug || asset_slug != *requested_asset_slug {
                     return Err(invalid_plan(

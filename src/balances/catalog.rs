@@ -43,6 +43,10 @@ pub enum BalanceTargetResolution {
         network_slug: String,
         asset_slug: String,
     },
+    UnsupportedTokenStandard {
+        network_slug: String,
+        asset_slug: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -244,7 +248,7 @@ fn resolve_catalog_rows(
                 ));
             }
 
-            resolutions.push(BalanceTargetResolution::UnsupportedPair {
+            resolutions.push(BalanceTargetResolution::UnsupportedTokenStandard {
                 network_slug: requested_network_slug.to_string(),
                 asset_slug: requested_asset_slug.clone(),
             });
@@ -681,7 +685,7 @@ mod tests {
     }
 
     #[test]
-    fn active_non_erc20_mapping_is_an_unsupported_pair() {
+    fn active_non_erc20_mapping_is_an_unsupported_token_standard() {
         let resolution = resolve_catalog_rows(
             "base-mainnet",
             &["usdc".to_string()],
@@ -694,7 +698,7 @@ mod tests {
 
         assert!(matches!(
             &resolution[0],
-            BalanceTargetResolution::UnsupportedPair { .. }
+            BalanceTargetResolution::UnsupportedTokenStandard { .. }
         ));
     }
 
