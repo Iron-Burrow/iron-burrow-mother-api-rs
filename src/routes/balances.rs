@@ -454,7 +454,7 @@ mod tests {
         assert!(!bigwig_request.contains("quote_currency"));
 
         let price_request = price_handle.await.unwrap();
-        assert!(price_request.starts_with("POST /internal/v1/prices/latest/by-slugs HTTP/1.1"));
+        assert!(price_request.starts_with("POST /prices/latest/batch HTTP/1.1"));
         assert_eq!(
             request_body_json(&price_request),
             json!({"slugs": ["ethereum"], "quoteCurrency": "MXN"})
