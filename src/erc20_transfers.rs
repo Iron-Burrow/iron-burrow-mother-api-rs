@@ -148,7 +148,6 @@ pub(crate) enum Erc20TransferCommandDirection {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct Erc20TransferCommandTokenFilters {
-    pub asset_slugs: Vec<String>,
     pub contract_addresses: Vec<String>,
 }
 

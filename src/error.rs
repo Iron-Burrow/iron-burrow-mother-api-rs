@@ -222,6 +222,30 @@ impl ApiError {
         }
     }
 
+    pub fn asset_not_available_on_network() -> Self {
+        Self {
+            status: StatusCode::UNPROCESSABLE_ENTITY,
+            code: "asset_not_available_on_network",
+            message: "Asset is not available on the requested network.",
+        }
+    }
+
+    pub fn asset_not_erc20_on_network() -> Self {
+        Self {
+            status: StatusCode::UNPROCESSABLE_ENTITY,
+            code: "asset_not_erc20_on_network",
+            message: "Asset is not an ERC-20 token on the requested network.",
+        }
+    }
+
+    pub fn asset_contract_mapping_unavailable() -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: "asset_contract_mapping_unavailable",
+            message: "Asset contract mapping is temporarily unavailable.",
+        }
+    }
+
     pub fn database_unavailable() -> Self {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,
