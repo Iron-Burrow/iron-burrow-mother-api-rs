@@ -1,1 +1,1 @@
-pub mod global_assets;
+pub mod postgres;

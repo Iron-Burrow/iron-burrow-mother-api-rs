@@ -970,7 +970,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        adapters::global_assets::{demo_assets, GlobalAssetRepository},
+        adapters::postgres::global_assets::{demo_assets, GlobalAssetRepository},
         balances::bigwig::{
             BigwigBalanceEvidenceBlock, BigwigBalanceEvidenceNetwork, BigwigBalanceItemError,
             BigwigBalanceItemErrorCode, BigwigRequestValidationCode,

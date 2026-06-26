@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 use tracing::warn;
 
 use crate::{
-    adapters::global_assets::GlobalAssetRepository,
+    adapters::postgres::global_assets::GlobalAssetRepository,
     balances::catalog::{
         BalanceTargetKind, BalanceTargetResolution, CatalogBalanceTargetResolver,
         CatalogIntegrityIssue, CatalogResolverError,
@@ -744,7 +744,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        adapters::global_assets::{demo_assets, GlobalAssetRepository},
+        adapters::postgres::global_assets::{demo_assets, GlobalAssetRepository},
         app::create_app,
         config::Config,
     };

@@ -284,7 +284,7 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::{
-        adapters::global_assets::{demo_assets, GlobalAssetRepository, RepositoryError},
+        adapters::postgres::global_assets::{demo_assets, GlobalAssetRepository, RepositoryError},
         app::create_app,
         balances::bigwig::BigwigLatestBalancesClient,
         balances::service::BalancePlanIssue,

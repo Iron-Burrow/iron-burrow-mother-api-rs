@@ -1274,7 +1274,7 @@ mod tests {
         .unwrap();
 
         sqlx::raw_sql(include_str!(
-            "../../migrations/0005_canonical_evm_network_slugs.sql"
+            "../../../migrations/0005_canonical_evm_network_slugs.sql"
         ))
         .execute(&mut *transaction)
         .await
@@ -1352,7 +1352,7 @@ mod tests {
         .unwrap();
 
         let result = sqlx::raw_sql(include_str!(
-            "../../migrations/0005_canonical_evm_network_slugs.sql"
+            "../../../migrations/0005_canonical_evm_network_slugs.sql"
         ))
         .execute(&mut *transaction)
         .await;

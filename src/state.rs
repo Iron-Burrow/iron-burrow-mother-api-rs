@@ -2,8 +2,9 @@ use sqlx::PgPool;
 use tracing::warn;
 
 use crate::{
-    adapters::global_assets::GlobalAssetRepository, balances::bigwig::BigwigLatestBalancesClient,
-    config::Config, dis::DisClient, infra::db, price_indexer::PriceIndexerClient,
+    adapters::postgres::global_assets::GlobalAssetRepository,
+    balances::bigwig::BigwigLatestBalancesClient, config::Config, dis::DisClient, infra::db,
+    price_indexer::PriceIndexerClient,
 };
 
 #[derive(Clone, Debug)]
