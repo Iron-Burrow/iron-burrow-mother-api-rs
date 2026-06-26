@@ -10,6 +10,7 @@ use crate::{
         Erc20TransferTokenFilterResolution, Erc20TransferTokenFilterSource,
         Erc20TransferTokenFilters, ResolvedErc20TokenFilter,
     },
+    error::{ErrorBody, ErrorResponse},
 };
 
 pub fn document(config: &Config) -> utoipa::openapi::OpenApi {
@@ -42,6 +43,8 @@ pub fn document(config: &Config) -> utoipa::openapi::OpenApi {
         Erc20TransferTokenFilterResolution,
         Erc20TransferTokenFilterSource,
         Erc20TransferTokenFilters,
+        ErrorBody,
+        ErrorResponse,
         ResolvedErc20TokenFilter
     ))
 )]
@@ -70,6 +73,8 @@ struct BaseApiDoc;
         Erc20TransferTokenFilterResolution,
         Erc20TransferTokenFilterSource,
         Erc20TransferTokenFilters,
+        ErrorBody,
+        ErrorResponse,
         ResolvedErc20TokenFilter
     ))
 )]
@@ -85,9 +90,24 @@ struct Erc20TransfersApiDoc;
     ),
     responses(
         (
-            status = 200,
-            description = "ERC-20 transfer search response",
-            body = Erc20TransferSearchResponse
+            status = 400,
+            description = "Malformed or semantically invalid transfer search request",
+            body = ErrorResponse
+        ),
+        (
+            status = 404,
+            description = "Requested network is unsupported for transfer search",
+            body = ErrorResponse
+        ),
+        (
+            status = 422,
+            description = "Transfer search request exceeds public validation limits",
+            body = ErrorResponse
+        ),
+        (
+            status = 503,
+            description = "Transfer extraction is not available in this validation-only slice",
+            body = ErrorResponse
         )
     )
 )]
@@ -139,11 +159,74 @@ mod tests {
             ..Config::default()
         });
 
-        assert!(json["paths"]
+        let operation = json["paths"]
             .as_object()
             .expect("OpenAPI paths should be an object")
             .get("/v1/erc20-transfers/search")
-            .is_some());
+            .expect("missing enabled transfer-search path");
+
+        let responses = operation["post"]["responses"]
+            .as_object()
+            .expect("transfer-search responses should be an object");
+        assert!(responses.contains_key("400"));
+        assert!(responses.contains_key("404"));
+        assert!(responses.contains_key("422"));
+        assert!(responses.contains_key("503"));
+        assert!(!responses.contains_key("200"));
+    }
+
+    #[test]
+    fn erc20_transfer_request_schema_uses_stable_public_fields() {
+        let json = document_json(&Config::default());
+        let schemas = json["components"]["schemas"]
+            .as_object()
+            .expect("OpenAPI components.schemas should be an object");
+        let request_schema = schemas
+            .get("Erc20TransferSearchRequest")
+            .expect("missing request schema");
+        let properties = request_schema["properties"]
+            .as_object()
+            .expect("request schema should have object properties");
+
+        for field in ["network_slug", "address", "direction", "tokens", "window"] {
+            assert!(
+                properties.contains_key(field),
+                "missing request field {field}"
+            );
+        }
+        for disallowed_field in ["chain", "chain_id", "chain_slug"] {
+            assert!(
+                !properties.contains_key(disallowed_field),
+                "request schema must not expose {disallowed_field}"
+            );
+        }
+
+        let required = request_schema["required"]
+            .as_array()
+            .expect("request schema should declare required fields")
+            .iter()
+            .map(|value| value.as_str().expect("required field should be a string"))
+            .collect::<Vec<_>>();
+        for field in ["network_slug", "address", "direction", "window"] {
+            assert!(required.contains(&field), "missing required field {field}");
+        }
+        assert!(!required.contains(&"tokens"));
+    }
+
+    #[test]
+    fn erc20_transfer_direction_schema_matches_public_enum_values() {
+        let json = document_json(&Config::default());
+        let schemas = json["components"]["schemas"]
+            .as_object()
+            .expect("OpenAPI components.schemas should be an object");
+        let enum_values = schemas["Erc20TransferDirection"]["enum"]
+            .as_array()
+            .expect("direction schema should define enum values")
+            .iter()
+            .map(|value| value.as_str().expect("enum value should be a string"))
+            .collect::<Vec<_>>();
+
+        assert_eq!(enum_values, ["any", "from", "to"]);
     }
 
     fn document_json(config: &Config) -> Value {

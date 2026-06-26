@@ -4,6 +4,7 @@ use axum::{
     Json,
 };
 use serde::Serialize;
+use utoipa::ToSchema;
 
 #[derive(Debug)]
 pub struct ApiError {
@@ -13,6 +14,22 @@ pub struct ApiError {
 }
 
 impl ApiError {
+    pub fn invalid_json() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "invalid_json",
+            message: "Request body must be valid JSON.",
+        }
+    }
+
+    pub fn unknown_field() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "unknown_field",
+            message: "Request contains an unknown field.",
+        }
+    }
+
     pub fn missing_query(message: &'static str) -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
@@ -45,6 +62,14 @@ impl ApiError {
         }
     }
 
+    pub fn missing_network_slug() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "missing_network_slug",
+            message: "Network slug is required.",
+        }
+    }
+
     pub fn invalid_account() -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
@@ -53,11 +78,27 @@ impl ApiError {
         }
     }
 
+    pub fn invalid_address() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "invalid_address",
+            message: "Wallet address is invalid.",
+        }
+    }
+
     pub fn unsupported_network() -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "unsupported_network",
             message: "Network is not supported for balance resolution.",
+        }
+    }
+
+    pub fn transfer_unsupported_network() -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            code: "unsupported_network",
+            message: "Network is not supported for ERC-20 transfer search.",
         }
     }
 
@@ -82,6 +123,46 @@ impl ApiError {
             status: StatusCode::BAD_REQUEST,
             code: "unsupported_as_of",
             message: "Only latest balance snapshots are supported.",
+        }
+    }
+
+    pub fn invalid_direction() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "invalid_direction",
+            message: "Direction is invalid.",
+        }
+    }
+
+    pub fn invalid_window() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "invalid_window",
+            message: "Window is invalid.",
+        }
+    }
+
+    pub fn invalid_asset_slug() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "invalid_asset_slug",
+            message: "Asset slug is invalid.",
+        }
+    }
+
+    pub fn invalid_contract_address() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "invalid_contract_address",
+            message: "Contract address is invalid.",
+        }
+    }
+
+    pub fn too_many_token_filters() -> Self {
+        Self {
+            status: StatusCode::UNPROCESSABLE_ENTITY,
+            code: "too_many_token_filters",
+            message: "Too many token filters were requested.",
         }
     }
 
@@ -154,6 +235,14 @@ impl ApiError {
             status: StatusCode::SERVICE_UNAVAILABLE,
             code: "price_indexer_unavailable",
             message: "Price signals are temporarily unavailable.",
+        }
+    }
+
+    pub fn extraction_unavailable() -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: "extraction_unavailable",
+            message: "ERC-20 transfer extraction is temporarily unavailable.",
         }
     }
 
@@ -270,16 +359,16 @@ impl IntoResponse for ApiError {
     }
 }
 
-#[derive(Serialize)]
-struct ErrorResponse {
-    ok: bool,
-    error: ErrorBody,
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+pub struct ErrorResponse {
+    pub ok: bool,
+    pub error: ErrorBody,
 }
 
-#[derive(Serialize)]
-struct ErrorBody {
-    code: &'static str,
-    message: &'static str,
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
+pub struct ErrorBody {
+    pub code: &'static str,
+    pub message: &'static str,
 }
 
 #[cfg(test)]
