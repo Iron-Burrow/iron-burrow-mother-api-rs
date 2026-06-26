@@ -538,7 +538,7 @@ fn parse_time(value: &str) -> Option<ParsedTime> {
         (parse_ascii_u32(seconds_and_fraction)?, String::new())
     };
 
-    if hour > 23 || minute > 59 || second > 60 {
+    if hour > 23 || minute > 59 || second > 59 {
         return None;
     }
 
