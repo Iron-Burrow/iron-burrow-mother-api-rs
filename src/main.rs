@@ -3,13 +3,10 @@ mod app;
 mod application;
 #[allow(dead_code)]
 mod config;
-#[allow(dead_code)]
-mod erc20_transfers;
 mod error;
 mod infra;
 #[allow(dead_code)]
 mod openapi;
-mod resolve;
 mod state;
 
 use std::net::SocketAddr;

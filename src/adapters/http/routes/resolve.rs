@@ -5,11 +5,11 @@ use axum::{
 use serde::Deserialize;
 
 use crate::{
-    error::ApiError,
-    resolve::{
+    application::resolve::{
         query::{parse_query, QueryValidationError},
         service::{ResolveResponse, ResolveService},
     },
+    error::ApiError,
     state::AppState,
 };
 

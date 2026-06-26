@@ -1,8 +1,7 @@
 use utoipa::OpenApi;
 
 use crate::{
-    config::Config,
-    erc20_transfers::{
+    application::erc20_transfers::service::{
         Erc20TransferAmount, Erc20TransferBlockWindow, Erc20TransferDirection,
         Erc20TransferLookbackTarget, Erc20TransferLookbackWindow, Erc20TransferRow,
         Erc20TransferSearchLimits, Erc20TransferSearchRequest, Erc20TransferSearchResponse,
@@ -10,6 +9,7 @@ use crate::{
         Erc20TransferTokenFilterResolution, Erc20TransferTokenFilterSource,
         Erc20TransferTokenFilters, ResolvedErc20TokenFilter,
     },
+    config::Config,
     error::{ErrorBody, ErrorResponse},
 };
 

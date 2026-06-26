@@ -160,7 +160,7 @@ mod tests {
     use super::*;
     use crate::{
         adapters::postgres::global_assets::{demo_assets, GlobalAssetRepository},
-        resolve::query::parse_query,
+        application::resolve::query::parse_query,
     };
 
     fn service() -> ResolveService {

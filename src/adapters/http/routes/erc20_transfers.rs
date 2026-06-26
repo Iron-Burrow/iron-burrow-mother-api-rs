@@ -14,7 +14,7 @@ use crate::{
         BalanceTargetKind, BalanceTargetResolution, CatalogBalanceTargetResolver,
         CatalogIntegrityIssue, CatalogResolverError,
     },
-    erc20_transfers::{
+    application::erc20_transfers::service::{
         Erc20TransferBlockWindow, Erc20TransferCommandDirection, Erc20TransferCommandTokenFilters,
         Erc20TransferCommandWindow, Erc20TransferDirection, Erc20TransferLookbackTarget,
         Erc20TransferLookbackWindow, Erc20TransferSearchCommand, Erc20TransferSearchRequest,
