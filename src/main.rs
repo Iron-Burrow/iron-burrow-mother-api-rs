@@ -4,7 +4,6 @@ mod assets;
 #[allow(dead_code)]
 mod balances;
 mod config;
-mod dis;
 #[allow(dead_code)]
 mod erc20_transfers;
 mod error;

@@ -7,7 +7,7 @@ use axum::{
 use serde::Serialize;
 
 use crate::{
-    dis::{
+    adapters::dis::{
         DisClientError, PolymarketCountrySnapshot, PolymarketCountrySubject,
         PolymarketSnapshotRequest, PolymarketSnapshotResponse, PolymarketWinnerOutcome,
         PolymarketWinnerSnapshot,

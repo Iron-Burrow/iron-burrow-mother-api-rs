@@ -117,9 +117,9 @@ mod tests {
 
     use super::*;
     use crate::{
+        adapters::dis::DisClient,
         adapters::postgres::global_assets::{demo_assets, GlobalAsset, GlobalAssetRepository},
         config::Config,
-        dis::DisClient,
         price_indexer::PriceIndexerClient,
     };
 

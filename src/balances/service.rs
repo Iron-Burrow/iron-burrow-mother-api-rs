@@ -6,12 +6,13 @@ use std::{
 use tokio::task::JoinSet;
 use tracing::warn;
 
+use crate::adapters::bigwig::balances::{
+    BigwigBalanceAccount, BigwigBalanceEvidenceItem, BigwigBalanceEvidenceStatus,
+    BigwigBalancePrimitive, BigwigBalanceTarget, BigwigLatestBalancesClient,
+    BigwigLatestBalancesError, BigwigLatestBalancesRequest, BigwigLatestBalancesResponse,
+};
+
 use super::{
-    bigwig::{
-        BigwigBalanceAccount, BigwigBalanceEvidenceItem, BigwigBalanceEvidenceStatus,
-        BigwigBalancePrimitive, BigwigBalanceTarget, BigwigLatestBalancesClient,
-        BigwigLatestBalancesError, BigwigLatestBalancesRequest, BigwigLatestBalancesResponse,
-    },
     catalog::{
         BalanceTarget, BalanceTargetKind, BalanceTargetResolution, CatalogBalanceTargetResolver,
         CatalogResolverError,
@@ -970,11 +971,11 @@ mod tests {
 
     use super::*;
     use crate::{
-        adapters::postgres::global_assets::{demo_assets, GlobalAssetRepository},
-        balances::bigwig::{
+        adapters::bigwig::balances::{
             BigwigBalanceEvidenceBlock, BigwigBalanceEvidenceNetwork, BigwigBalanceItemError,
             BigwigBalanceItemErrorCode, BigwigRequestValidationCode,
         },
+        adapters::postgres::global_assets::{demo_assets, GlobalAssetRepository},
         price_indexer::PriceIndexerClient,
     };
 

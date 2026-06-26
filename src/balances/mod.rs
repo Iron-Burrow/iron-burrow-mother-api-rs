@@ -1,4 +1,3 @@
-pub mod bigwig;
 pub mod catalog;
 pub mod decimal;
 pub mod quote;
