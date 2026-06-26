@@ -976,7 +976,7 @@ mod tests {
             BigwigBalanceItemErrorCode, BigwigRequestValidationCode,
         },
         adapters::postgres::global_assets::{demo_assets, GlobalAssetRepository},
-        price_indexer::PriceIndexerClient,
+        adapters::price_indexer::PriceIndexerClient,
     };
 
     const ACCOUNT_A: &str = "0x1111111111111111111111111111111111111111";

@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use tracing::warn;
 
-use crate::price_indexer::{PriceIndexerClient, StrictLatestQuote, StrictPriceBatchError};
+use crate::adapters::price_indexer::{
+    PriceIndexerClient, StrictLatestQuote, StrictPriceBatchError,
+};
 
 #[derive(Clone, Debug)]
 pub struct PriceQuoteClient {

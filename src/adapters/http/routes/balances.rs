@@ -8,7 +8,7 @@ use serde::{de::IgnoredAny, Deserialize};
 use tracing::warn;
 
 use crate::{
-    balances::{
+    application::balances::{
         catalog::{CatalogBalanceTargetResolver, CatalogResolverError},
         quote::PriceQuoteClient,
         response::{
@@ -211,7 +211,7 @@ fn is_evm_address(address: &str) -> bool {
 async fn resolve_snapshot(
     state: &AppState,
     request: BalanceSnapshotRequest,
-) -> Result<crate::balances::service::BalanceSnapshotResult, ApiError> {
+) -> Result<crate::application::balances::service::BalanceSnapshotResult, ApiError> {
     let repository = state
         .asset_repository
         .clone()
@@ -286,10 +286,10 @@ mod tests {
     use crate::{
         adapters::bigwig::balances::BigwigLatestBalancesClient,
         adapters::postgres::global_assets::{demo_assets, GlobalAssetRepository, RepositoryError},
+        adapters::price_indexer::PriceIndexerClient,
         app::create_app,
-        balances::service::BalancePlanIssue,
+        application::balances::service::BalancePlanIssue,
         config::Config,
-        price_indexer::PriceIndexerClient,
     };
 
     use super::*;

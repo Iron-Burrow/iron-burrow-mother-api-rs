@@ -3,8 +3,8 @@ use tracing::warn;
 
 use crate::{
     adapters::bigwig::balances::BigwigLatestBalancesClient, adapters::dis::DisClient,
-    adapters::postgres::global_assets::GlobalAssetRepository, config::Config, infra::db,
-    price_indexer::PriceIndexerClient,
+    adapters::postgres::global_assets::GlobalAssetRepository,
+    adapters::price_indexer::PriceIndexerClient, config::Config, infra::db,
 };
 
 #[derive(Clone, Debug)]

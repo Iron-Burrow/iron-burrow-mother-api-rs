@@ -458,7 +458,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::balances::{
+    use crate::application::balances::{
         catalog::BalanceTargetKind,
         service::{BalanceQuoteOutcome, BalanceSnapshotAccount},
     };

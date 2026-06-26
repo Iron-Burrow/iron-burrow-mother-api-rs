@@ -7,7 +7,7 @@ use crate::{
     adapters::postgres::global_assets::{
         AssetChainMap, GlobalAsset, GlobalAssetDetail, GlobalAssetRepository, RepositoryError,
     },
-    price_indexer::{
+    adapters::price_indexer::{
         LatestAssetPrice, PriceIndexerClient, PriceLookupError, PriceSignalError,
         PriceSignalRequest, PriceStatus,
     },

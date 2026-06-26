@@ -1,8 +1,7 @@
 mod adapters;
 mod app;
-mod assets;
+mod application;
 #[allow(dead_code)]
-mod balances;
 mod config;
 #[allow(dead_code)]
 mod erc20_transfers;
@@ -10,9 +9,7 @@ mod error;
 mod infra;
 #[allow(dead_code)]
 mod openapi;
-mod price_indexer;
 mod resolve;
-mod routes;
 mod state;
 
 use std::net::SocketAddr;

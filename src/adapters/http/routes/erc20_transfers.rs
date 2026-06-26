@@ -10,7 +10,7 @@ use tracing::warn;
 
 use crate::{
     adapters::postgres::global_assets::GlobalAssetRepository,
-    balances::catalog::{
+    application::balances::catalog::{
         BalanceTargetKind, BalanceTargetResolution, CatalogBalanceTargetResolver,
         CatalogIntegrityIssue, CatalogResolverError,
     },

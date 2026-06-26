@@ -8,7 +8,7 @@ use tower_http::trace::TraceLayer;
 use tracing::{debug, warn};
 
 use crate::{
-    routes::{
+    adapters::http::routes::{
         assets::{get_asset, get_price_stats_signal, get_price_trend_signal, list_assets},
         balances::{resolve_bulk_balances, resolve_single_balance},
         erc20_transfers::search_erc20_transfers,
@@ -119,8 +119,8 @@ mod tests {
     use crate::{
         adapters::dis::DisClient,
         adapters::postgres::global_assets::{demo_assets, GlobalAsset, GlobalAssetRepository},
+        adapters::price_indexer::PriceIndexerClient,
         config::Config,
-        price_indexer::PriceIndexerClient,
     };
 
     const TEST_DIS_ACCEPT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -361,7 +361,7 @@ mod tests {
                     .headers()
                     .get("deprecation")
                     .and_then(|value| value.to_str().ok()),
-                Some(crate::routes::predictions::DEPRECATION_HEADER_VALUE)
+                Some(crate::adapters::http::routes::predictions::DEPRECATION_HEADER_VALUE)
             );
         }
 
@@ -389,7 +389,7 @@ mod tests {
                 .headers()
                 .get("deprecation")
                 .and_then(|value| value.to_str().ok()),
-            Some(crate::routes::predictions::DEPRECATION_HEADER_VALUE)
+            Some(crate::adapters::http::routes::predictions::DEPRECATION_HEADER_VALUE)
         );
 
         let health_response = test_app()
