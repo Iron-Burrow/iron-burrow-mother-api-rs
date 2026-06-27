@@ -6,12 +6,12 @@ use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use crate::{
+    adapters::http::error::ApiError,
     adapters::price_indexer::{PriceIndexerClient, PriceSignalError, PriceSignalRequest},
     application::assets::service::{
         AssetEnrichmentInclude, AssetEnrichmentParams, AssetEnrichmentQuery, AssetResponse,
         AssetsResponse, AssetsService, AssetsServiceError,
     },
-    error::ApiError,
     state::AppState,
 };
 

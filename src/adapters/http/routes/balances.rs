@@ -8,6 +8,7 @@ use serde::{de::IgnoredAny, Deserialize};
 use tracing::warn;
 
 use crate::{
+    adapters::http::error::ApiError,
     application::balances::{
         catalog::{CatalogBalanceTargetResolver, CatalogResolverError},
         quote::PriceQuoteClient,
@@ -20,7 +21,6 @@ use crate::{
             BalanceSnapshotServiceError,
         },
     },
-    error::ApiError,
     state::AppState,
 };
 
@@ -283,13 +283,13 @@ mod tests {
     use serde_json::{json, Value};
     use tower::ServiceExt;
 
+    use crate::adapters::postgres::errors::RepositoryError;
+    use crate::test_utils::global_assets::asset_fixtures;
     use crate::{
         adapters::bigwig::balances::BigwigLatestBalancesClient,
-        adapters::postgres::global_assets::{demo_assets, GlobalAssetRepository, RepositoryError},
-        adapters::price_indexer::PriceIndexerClient,
-        app::create_app,
-        application::balances::service::BalancePlanIssue,
-        config::Config,
+        adapters::postgres::global_assets::GlobalAssetRepository,
+        adapters::price_indexer::PriceIndexerClient, app::create_app,
+        application::balances::service::BalancePlanIssue, config::Config,
     };
 
     use super::*;
@@ -899,7 +899,7 @@ mod tests {
             config: Config::default(),
             version: env!("CARGO_PKG_VERSION"),
             database_pool: None,
-            asset_repository: Some(GlobalAssetRepository::in_memory(demo_assets())),
+            asset_repository: Some(GlobalAssetRepository::in_memory(asset_fixtures())),
             price_indexer_client,
             dis_client: None,
             bigwig_latest_balances_client,

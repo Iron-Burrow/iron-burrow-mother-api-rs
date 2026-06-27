@@ -1,16 +1,18 @@
 use utoipa::OpenApi;
 
+use crate::adapters::http::dto::onchain_window::{
+    BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO, TimestampWindowDTO,
+};
+
+use crate::adapters::http::dto::erc20_transfers::{
+    Erc20TransferAmount, Erc20TransferDirection, Erc20TransferRow, Erc20TransferSearchLimits,
+    Erc20TransferSearchRequest, Erc20TransferSearchResponse, Erc20TransferToken,
+    Erc20TransferTokenFilterResolution, Erc20TransferTokenFilterSource, Erc20TransferTokenFilters,
+    ResolvedErc20TokenFilter,
+};
 use crate::{
-    application::erc20_transfers::service::{
-        Erc20TransferAmount, Erc20TransferBlockWindow, Erc20TransferDirection,
-        Erc20TransferLookbackTarget, Erc20TransferLookbackWindow, Erc20TransferRow,
-        Erc20TransferSearchLimits, Erc20TransferSearchRequest, Erc20TransferSearchResponse,
-        Erc20TransferSearchWindow, Erc20TransferTimestampWindow, Erc20TransferToken,
-        Erc20TransferTokenFilterResolution, Erc20TransferTokenFilterSource,
-        Erc20TransferTokenFilters, ResolvedErc20TokenFilter,
-    },
+    adapters::http::error::{ErrorBody, ErrorResponse},
     config::Config,
-    error::{ErrorBody, ErrorResponse},
 };
 
 pub fn document(config: &Config) -> utoipa::openapi::OpenApi {
@@ -29,16 +31,16 @@ pub fn document(config: &Config) -> utoipa::openapi::OpenApi {
     ),
     components(schemas(
         Erc20TransferAmount,
-        Erc20TransferBlockWindow,
+        BlockWindowDTO,
         Erc20TransferDirection,
-        Erc20TransferLookbackTarget,
-        Erc20TransferLookbackWindow,
+        LookbackTargetDTO,
+        LookbackWindowDTO,
         Erc20TransferRow,
         Erc20TransferSearchLimits,
         Erc20TransferSearchRequest,
         Erc20TransferSearchResponse,
-        Erc20TransferSearchWindow,
-        Erc20TransferTimestampWindow,
+        OnchainWindowDTO,
+        TimestampWindowDTO,
         Erc20TransferToken,
         Erc20TransferTokenFilterResolution,
         Erc20TransferTokenFilterSource,
@@ -59,16 +61,16 @@ struct BaseApiDoc;
     paths(erc20_transfer_search_operation),
     components(schemas(
         Erc20TransferAmount,
-        Erc20TransferBlockWindow,
+        BlockWindowDTO,
         Erc20TransferDirection,
-        Erc20TransferLookbackTarget,
-        Erc20TransferLookbackWindow,
+        LookbackTargetDTO,
+        LookbackWindowDTO,
         Erc20TransferRow,
         Erc20TransferSearchLimits,
         Erc20TransferSearchRequest,
         Erc20TransferSearchResponse,
-        Erc20TransferSearchWindow,
-        Erc20TransferTimestampWindow,
+        OnchainWindowDTO,
+        TimestampWindowDTO,
         Erc20TransferToken,
         Erc20TransferTokenFilterResolution,
         Erc20TransferTokenFilterSource,
@@ -130,7 +132,7 @@ mod tests {
         for schema in [
             "Erc20TransferSearchRequest",
             "Erc20TransferSearchResponse",
-            "Erc20TransferSearchWindow",
+            "OnchainWindowDTO",
             "Erc20TransferTokenFilters",
             "ResolvedErc20TokenFilter",
             "Erc20TransferRow",

@@ -44,10 +44,12 @@ impl BigwigLatestBalancesClient {
         })
     }
 
+    #[cfg(test)]
     pub fn base_host(&self) -> Option<&str> {
         self.base_url.host_str()
     }
 
+    #[cfg(test)]
     pub fn timeout_ms(&self) -> u128 {
         self.timeout.as_millis()
     }

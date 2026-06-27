@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use serde::Serialize;
 use tracing::{info, warn};
 
+use crate::adapters::postgres::errors::RepositoryError;
+use crate::domain::asset_chain_map::AssetChainMap;
+use crate::domain::global_assets::{GlobalAsset, GlobalAssetDetail};
 use crate::{
-    adapters::postgres::global_assets::{
-        AssetChainMap, GlobalAsset, GlobalAssetDetail, GlobalAssetRepository, RepositoryError,
-    },
+    adapters::postgres::global_assets::GlobalAssetRepository,
     adapters::price_indexer::{
         LatestAssetPrice, PriceIndexerClient, PriceLookupError, PriceSignalError,
         PriceSignalRequest, PriceStatus,
@@ -692,12 +693,11 @@ fn enrichment_sources(include: &[AssetEnrichmentInclude]) -> Vec<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::postgres::global_assets::{
-        demo_assets, GlobalAsset, GlobalAssetRepository,
-    };
+    use crate::adapters::postgres::global_assets::GlobalAssetRepository;
+    use crate::test_utils::global_assets::asset_fixtures;
 
     fn service() -> AssetsService {
-        AssetsService::new(GlobalAssetRepository::in_memory(demo_assets()), None)
+        AssetsService::new(GlobalAssetRepository::in_memory(asset_fixtures()), None)
     }
 
     #[tokio::test]

@@ -1,8 +1,9 @@
 use serde::Serialize;
 
-use crate::adapters::postgres::global_assets::{
-    AssetMatch, GlobalAsset, GlobalAssetRepository, RepositoryError,
-};
+use crate::adapters::postgres::errors::RepositoryError;
+use crate::adapters::postgres::global_assets::GlobalAssetRepository;
+use crate::domain::asset_match::AssetMatch;
+use crate::domain::global_assets::GlobalAsset;
 
 use super::query::NormalizedQuery;
 
@@ -158,13 +159,14 @@ impl From<GlobalAsset> for Recommendation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::global_assets::asset_fixtures;
     use crate::{
-        adapters::postgres::global_assets::{demo_assets, GlobalAssetRepository},
+        adapters::postgres::global_assets::GlobalAssetRepository,
         application::resolve::query::parse_query,
     };
 
     fn service() -> ResolveService {
-        ResolveService::new(GlobalAssetRepository::in_memory(demo_assets()))
+        ResolveService::new(GlobalAssetRepository::in_memory(asset_fixtures()))
     }
 
     #[tokio::test]

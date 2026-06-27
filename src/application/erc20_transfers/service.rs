@@ -1,134 +1,21 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use tracing::warn;
 use utoipa::ToSchema;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Erc20TransferSearchRequest {
-    pub network_slug: String,
-    pub address: String,
-    pub direction: Erc20TransferDirection,
-    pub tokens: Option<Erc20TransferTokenFilters>,
-    pub window: Erc20TransferSearchWindow,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub struct Erc20TransferSearchResponse {
-    pub ok: bool,
-    #[serde(rename = "type")]
-    pub response_type: String,
-    pub network_slug: String,
-    pub address: String,
-    pub direction: Erc20TransferDirection,
-    pub window: Erc20TransferSearchWindow,
-    pub token_filters: Erc20TransferTokenFilterResolution,
-    pub transfers: Vec<Erc20TransferRow>,
-    pub limits: Erc20TransferSearchLimits,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(untagged)]
-pub enum Erc20TransferSearchWindow {
-    Block(Erc20TransferBlockWindow),
-    Timestamp(Erc20TransferTimestampWindow),
-    Lookback(Erc20TransferLookbackWindow),
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Erc20TransferBlockWindow {
-    pub from_block: u64,
-    pub to_block: u64,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Erc20TransferTimestampWindow {
-    pub from_timestamp: String,
-    pub to_timestamp: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Erc20TransferLookbackWindow {
-    pub lookback_seconds: u64,
-    pub to: Erc20TransferLookbackTarget,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum Erc20TransferLookbackTarget {
-    Latest,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Erc20TransferTokenFilters {
-    #[serde(default)]
-    pub asset_slugs: Vec<String>,
-    #[serde(default)]
-    pub contract_addresses: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub struct Erc20TransferTokenFilterResolution {
-    pub requested: Erc20TransferTokenFilters,
-    pub resolved_contract_addresses: Vec<ResolvedErc20TokenFilter>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub struct ResolvedErc20TokenFilter {
-    pub contract_address: String,
-    pub asset_slug: Option<String>,
-    pub symbol: Option<String>,
-    pub decimals: Option<u8>,
-    pub source: Erc20TransferTokenFilterSource,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum Erc20TransferTokenFilterSource {
-    AssetSlug,
-    ContractAddress,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub struct Erc20TransferRow {
-    pub block_number: u64,
-    pub tx_hash: String,
-    pub log_index: u64,
-    pub token: Erc20TransferToken,
-    pub from: String,
-    pub to: String,
-    pub amount: Erc20TransferAmount,
-    pub direction: Erc20TransferDirection,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub struct Erc20TransferToken {
-    pub contract_address: String,
-    pub asset_slug: Option<String>,
-    pub symbol: Option<String>,
-    pub decimals: Option<u8>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub struct Erc20TransferAmount {
-    pub raw: String,
-    pub decimal: Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum Erc20TransferDirection {
-    Any,
-    From,
-    To,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub struct Erc20TransferSearchLimits {
-    pub max_rows: u64,
-}
+use crate::adapters::http::dto::erc20_transfers::{
+    Erc20TransferDirection, Erc20TransferSearchRequest, Erc20TransferSearchResponse,
+    Erc20TransferTokenFilterResolution, Erc20TransferTokenFilterSource, Erc20TransferTokenFilters,
+    ResolvedErc20TokenFilter,
+};
+use crate::adapters::http::dto::onchain_window::{BlockWindowDTO, OnchainWindowDTO};
+use crate::adapters::http::error::ApiError;
+use crate::adapters::postgres::global_assets::GlobalAssetRepository;
+use crate::application::balances::catalog::{
+    BalanceTargetKind, BalanceTargetResolution, CatalogBalanceTargetResolver,
+    CatalogIntegrityIssue, CatalogResolverError,
+};
+use crate::domain::onchain_window::{BlockWindow, OnchainWindow};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Erc20TransferSearchCommand {
@@ -136,7 +23,7 @@ pub(crate) struct Erc20TransferSearchCommand {
     pub address: String,
     pub direction: Erc20TransferCommandDirection,
     pub tokens: Erc20TransferCommandTokenFilters,
-    pub window: Erc20TransferCommandWindow,
+    pub window: OnchainWindow,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -151,24 +38,223 @@ pub(crate) struct Erc20TransferCommandTokenFilters {
     pub contract_addresses: Vec<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum Erc20TransferCommandWindow {
-    Blocks {
-        from_block: u64,
-        to_block: u64,
-    },
-    Timestamps {
-        from_timestamp: String,
-        to_timestamp: String,
-    },
-    Lookback {
-        lookback_seconds: u64,
-    },
+// #[derive(Clone, Debug, Eq, PartialEq)]
+// pub(crate) enum Erc20TransferCommandWindow {
+//     Blocks {
+//         from_block: u64,
+//         to_block: u64,
+//     },
+//     Timestamps {
+//         from_timestamp: String,
+//         to_timestamp: String,
+//     },
+//     Lookback {
+//         lookback_seconds: u64,
+//     },
+// }
+
+pub(crate) async fn build_command(
+    request: Erc20TransferSearchRequest,
+    repository: Option<GlobalAssetRepository>,
+    max_token_filters: u64,
+) -> Result<Erc20TransferSearchCommand, ApiError> {
+    let tokens = request.tokens.unwrap_or_default();
+    let contract_addresses =
+        resolve_token_filters(repository, &request.network_slug, tokens).await?;
+    enforce_token_filter_limit(&contract_addresses, max_token_filters)?;
+
+    Ok(Erc20TransferSearchCommand {
+        network_slug: request.network_slug,
+        address: request.address.to_ascii_lowercase(),
+        direction: command_direction(request.direction),
+        tokens: Erc20TransferCommandTokenFilters { contract_addresses },
+        window: command_window(request.window),
+    })
+}
+
+pub(crate) async fn extraction_unavailable_placeholder(
+    _command: Erc20TransferSearchCommand,
+) -> Result<(), ApiError> {
+    Err(ApiError::extraction_unavailable())
+}
+
+fn command_direction(direction: Erc20TransferDirection) -> Erc20TransferCommandDirection {
+    match direction {
+        Erc20TransferDirection::Any => Erc20TransferCommandDirection::Any,
+        Erc20TransferDirection::From => Erc20TransferCommandDirection::From,
+        Erc20TransferDirection::To => Erc20TransferCommandDirection::To,
+    }
+}
+
+fn command_window(window: OnchainWindowDTO) -> OnchainWindow {
+    match window {
+        OnchainWindowDTO::Block(window) => {
+            OnchainWindow::Block(BlockWindow::new(window.from_block, window.to_block))
+        }
+        OnchainWindowDTO::Timestamp(window) => OnchainWindow::Timestamp {
+            from_timestamp: window.from_timestamp,
+            to_timestamp: window.to_timestamp,
+        },
+        OnchainWindowDTO::Lookback(window) => OnchainWindow::Lookback {
+            lookback_seconds: window.lookback_seconds,
+        },
+    }
+}
+
+async fn resolve_token_filters(
+    repository: Option<GlobalAssetRepository>,
+    network_slug: &str,
+    tokens: Erc20TransferTokenFilters,
+) -> Result<Vec<String>, ApiError> {
+    let mut contract_addresses = Vec::new();
+    let mut seen = HashSet::new();
+
+    if !tokens.asset_slugs.is_empty() {
+        let repository = repository.ok_or_else(ApiError::asset_contract_mapping_unavailable)?;
+        let resolver = CatalogBalanceTargetResolver::new(repository);
+        let resolved_contracts = resolver
+            .resolve_network(network_slug, &tokens.asset_slugs)
+            .await
+            .map_err(catalog_resolver_error_to_api_error)
+            .and_then(|resolutions| {
+                resolved_contract_addresses_from_catalog(
+                    network_slug,
+                    &tokens.asset_slugs,
+                    resolutions,
+                )
+            })?;
+
+        for contract_address in resolved_contracts {
+            push_unique_contract_address(&mut contract_addresses, &mut seen, contract_address);
+        }
+    }
+
+    for contract_address in tokens.contract_addresses {
+        push_unique_contract_address(&mut contract_addresses, &mut seen, contract_address);
+    }
+
+    Ok(contract_addresses)
+}
+
+fn resolved_contract_addresses_from_catalog(
+    network_slug: &str,
+    requested_asset_slugs: &[String],
+    resolutions: Vec<BalanceTargetResolution>,
+) -> Result<Vec<String>, ApiError> {
+    if resolutions.len() != requested_asset_slugs.len() {
+        warn!(
+            network_slug,
+            requested_count = requested_asset_slugs.len(),
+            resolution_count = resolutions.len(),
+            "ERC-20 transfer catalog resolver returned an unexpected resolution count"
+        );
+        return Err(ApiError::internal_error());
+    }
+
+    let mut contract_addresses = Vec::with_capacity(resolutions.len());
+
+    for (requested_asset_slug, resolution) in requested_asset_slugs.iter().zip(resolutions) {
+        match resolution {
+            BalanceTargetResolution::Resolved(target) => {
+                if target.network_slug != network_slug || target.asset_slug != *requested_asset_slug
+                {
+                    warn!(
+                        network_slug,
+                        requested_asset_slug,
+                        resolved_network_slug = target.network_slug,
+                        resolved_asset_slug = target.asset_slug,
+                        "ERC-20 transfer catalog resolver returned a mismatched resolution"
+                    );
+                    return Err(ApiError::internal_error());
+                }
+
+                match target.kind {
+                    BalanceTargetKind::Erc20 { contract_address } => {
+                        contract_addresses.push(contract_address);
+                    }
+                    BalanceTargetKind::Native => {
+                        return Err(ApiError::asset_not_erc20_on_network());
+                    }
+                }
+            }
+            BalanceTargetResolution::UnsupportedAsset { .. } => {
+                return Err(ApiError::asset_not_found());
+            }
+            BalanceTargetResolution::UnsupportedNetwork { .. }
+            | BalanceTargetResolution::UnsupportedPair { .. } => {
+                return Err(ApiError::asset_not_available_on_network());
+            }
+            BalanceTargetResolution::UnsupportedTokenStandard { .. } => {
+                return Err(ApiError::asset_not_erc20_on_network());
+            }
+        }
+    }
+
+    Ok(contract_addresses)
+}
+
+fn catalog_resolver_error_to_api_error(error: CatalogResolverError) -> ApiError {
+    match error {
+        CatalogResolverError::Repository(error) => {
+            warn!(%error, "ERC-20 transfer asset catalog lookup failed");
+            ApiError::asset_contract_mapping_unavailable()
+        }
+        CatalogResolverError::InvalidCatalog { issue, .. }
+            if matches!(
+                issue,
+                CatalogIntegrityIssue::IncompleteMapping
+                    | CatalogIntegrityIssue::InvalidDecimals
+                    | CatalogIntegrityIssue::MalformedErc20Address
+            ) =>
+        {
+            warn!(
+                ?issue,
+                "ERC-20 transfer asset catalog mapping is incomplete"
+            );
+            ApiError::asset_contract_mapping_unavailable()
+        }
+        CatalogResolverError::InvalidCatalog { issue, .. } => {
+            warn!(
+                ?issue,
+                "ERC-20 transfer asset catalog is internally inconsistent"
+            );
+            ApiError::internal_error()
+        }
+    }
+}
+
+fn push_unique_contract_address(
+    contract_addresses: &mut Vec<String>,
+    seen: &mut HashSet<String>,
+    contract_address: String,
+) {
+    let contract_address = contract_address.to_ascii_lowercase();
+
+    if seen.insert(contract_address.clone()) {
+        contract_addresses.push(contract_address);
+    }
+}
+
+fn enforce_token_filter_limit(
+    contract_addresses: &[String],
+    max_token_filters: u64,
+) -> Result<(), ApiError> {
+    let token_filter_count = u64::try_from(contract_addresses.len()).unwrap_or(u64::MAX);
+
+    if token_filter_count > max_token_filters {
+        Err(ApiError::too_many_token_filters())
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use serde_json::{json, Value};
+
+    use crate::adapters::http::dto::erc20_transfers::{
+        Erc20TransferAmount, Erc20TransferRow, Erc20TransferSearchLimits, Erc20TransferToken,
+    };
 
     use super::*;
 
@@ -182,7 +268,7 @@ mod tests {
                 asset_slugs: vec!["usdc".to_string(), "usdt".to_string()],
                 contract_addresses: vec!["0x1111111111111111111111111111111111111111".to_string()],
             }),
-            window: Erc20TransferSearchWindow::Block(Erc20TransferBlockWindow {
+            window: OnchainWindowDTO::Block(BlockWindowDTO {
                 from_block: 18_600_000,
                 to_block: 18_600_500,
             }),
@@ -219,7 +305,7 @@ mod tests {
             network_slug: "eth-mainnet".to_string(),
             address: "0xabc0000000000000000000000000000000000000".to_string(),
             direction: Erc20TransferDirection::Any,
-            window: Erc20TransferSearchWindow::Block(Erc20TransferBlockWindow {
+            window: OnchainWindowDTO::Block(BlockWindowDTO {
                 from_block: 18_600_000,
                 to_block: 18_600_500,
             }),
@@ -370,7 +456,7 @@ mod tests {
             serde_json::from_value::<Erc20TransferSearchRequest>(timestamp).unwrap();
         assert!(matches!(
             timestamp_request.window,
-            Erc20TransferSearchWindow::Timestamp(_)
+            OnchainWindowDTO::Timestamp(_)
         ));
 
         let mut lookback = valid_request_body();
@@ -382,7 +468,7 @@ mod tests {
             .expect("lookback window should deserialize");
         assert!(matches!(
             lookback_request.window,
-            Erc20TransferSearchWindow::Lookback(_)
+            OnchainWindowDTO::Lookback(_)
         ));
     }
 

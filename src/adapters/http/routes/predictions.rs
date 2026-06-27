@@ -12,7 +12,7 @@ use crate::{
         PolymarketSnapshotRequest, PolymarketSnapshotResponse, PolymarketWinnerOutcome,
         PolymarketWinnerSnapshot,
     },
-    error::ApiError,
+    adapters::http::error::ApiError,
     state::AppState,
 };
 

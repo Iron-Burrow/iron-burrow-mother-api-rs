@@ -970,12 +970,13 @@ mod tests {
     use serde_json::{json, Value};
 
     use super::*;
+    use crate::test_utils::global_assets::asset_fixtures;
     use crate::{
         adapters::bigwig::balances::{
             BigwigBalanceEvidenceBlock, BigwigBalanceEvidenceNetwork, BigwigBalanceItemError,
             BigwigBalanceItemErrorCode, BigwigRequestValidationCode,
         },
-        adapters::postgres::global_assets::{demo_assets, GlobalAssetRepository},
+        adapters::postgres::global_assets::GlobalAssetRepository,
         adapters::price_indexer::PriceIndexerClient,
     };
 
@@ -1796,7 +1797,7 @@ mod tests {
         price_quote_client: Option<PriceQuoteClient>,
     ) -> BalanceSnapshotService {
         BalanceSnapshotService::new(
-            CatalogBalanceTargetResolver::new(GlobalAssetRepository::in_memory(demo_assets())),
+            CatalogBalanceTargetResolver::new(GlobalAssetRepository::in_memory(asset_fixtures())),
             client,
             price_quote_client,
         )

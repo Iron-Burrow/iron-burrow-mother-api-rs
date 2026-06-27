@@ -1,7 +1,43 @@
 use std::sync::Arc;
 
-use serde::Serialize;
 use sqlx::{FromRow, PgPool};
+
+use crate::domain::asset_match::{confidence_rank, AssetMatch, MatchConfidence};
+use crate::domain::global_assets::{GlobalAsset, GlobalAssetDetail};
+use crate::domain::networks::NetworkRef;
+
+use super::asset_chain_map::{
+    demo_chain_maps_for_assets, map_chain_map_row, AssetChainMapRow, InMemoryAssetChainMap,
+};
+use super::asset_match::{map_match_row, AssetMatchRow};
+use super::balance_catalog::BalanceCatalogRow;
+use super::errors::RepositoryError;
+
+#[derive(FromRow)]
+struct GlobalAssetRow {
+    id: String,
+    slug: String,
+    symbol: String,
+    name: String,
+    category: Option<String>,
+    canonical_path: String,
+    aliases: Vec<String>,
+    sort_order: i32,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct InMemoryGlobalAssets {
+    assets: Vec<GlobalAsset>,
+    chain_maps: Vec<InMemoryAssetChainMap>,
+}
+
+impl InMemoryGlobalAssets {
+    pub(super) fn new(assets: Vec<GlobalAsset>) -> Self {
+        let chain_maps = demo_chain_maps_for_assets(&assets);
+
+        Self { assets, chain_maps }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum GlobalAssetRepository {
@@ -95,170 +131,6 @@ impl GlobalAssetRepository {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct GlobalAsset {
-    pub id: String,
-    pub slug: String,
-    pub symbol: String,
-    pub name: String,
-    pub category: String,
-    pub canonical_path: String,
-    pub aliases: Vec<String>,
-    pub sort_order: i32,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GlobalAssetDetail {
-    pub asset: GlobalAsset,
-    pub chain_maps: Vec<AssetChainMap>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AssetChainMap {
-    pub network: NetworkRef,
-    pub is_native: bool,
-    pub address: Option<String>,
-    pub decimals: Option<i32>,
-    pub token_standard: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NetworkRef {
-    pub slug: String,
-    pub name: String,
-    pub caip2: Option<String>,
-    pub family: String,
-    pub chain_id: Option<i64>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AssetMatch {
-    pub asset: GlobalAsset,
-    pub confidence: MatchConfidence,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MatchConfidence {
-    SlugExact,
-    SymbolExact,
-    NameExact,
-    AliasExact,
-}
-
-impl MatchConfidence {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::SlugExact => "slug_exact",
-            Self::SymbolExact => "symbol_exact",
-            Self::NameExact => "name_exact",
-            Self::AliasExact => "alias_exact",
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct InMemoryGlobalAssets {
-    assets: Vec<GlobalAsset>,
-    chain_maps: Vec<InMemoryAssetChainMap>,
-}
-
-impl InMemoryGlobalAssets {
-    fn new(assets: Vec<GlobalAsset>) -> Self {
-        let chain_maps = demo_chain_maps_for_assets(&assets);
-
-        Self { assets, chain_maps }
-    }
-}
-
-#[derive(Clone, Debug)]
-struct InMemoryAssetChainMap {
-    asset_slug: String,
-    chain_map: AssetChainMap,
-    sort_order: i32,
-}
-
-#[derive(Debug)]
-pub struct RepositoryError {
-    source: sqlx::Error,
-}
-
-impl RepositoryError {
-    fn new(source: sqlx::Error) -> Self {
-        Self { source }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn test() -> Self {
-        Self {
-            source: sqlx::Error::PoolClosed,
-        }
-    }
-}
-
-impl std::fmt::Display for RepositoryError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "global asset repository error: {}", self.source)
-    }
-}
-
-impl std::error::Error for RepositoryError {}
-
-#[derive(FromRow)]
-struct GlobalAssetRow {
-    id: String,
-    slug: String,
-    symbol: String,
-    name: String,
-    category: Option<String>,
-    canonical_path: String,
-    aliases: Vec<String>,
-    sort_order: i32,
-}
-
-#[derive(FromRow)]
-struct AssetMatchRow {
-    id: String,
-    slug: String,
-    symbol: String,
-    name: String,
-    category: Option<String>,
-    canonical_path: String,
-    aliases: Vec<String>,
-    sort_order: i32,
-    match_kind: String,
-}
-
-#[derive(FromRow)]
-struct AssetChainMapRow {
-    network_slug: String,
-    network_name: String,
-    network_caip2: Option<String>,
-    network_family: String,
-    network_chain_id: Option<i64>,
-    is_native: bool,
-    address: Option<String>,
-    decimals: Option<i32>,
-    token_standard: Option<String>,
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Debug, FromRow)]
-pub(crate) struct BalanceCatalogRow {
-    pub ordinal: i64,
-    pub requested_asset_slug: String,
-    pub network_slug: Option<String>,
-    pub network_family: Option<String>,
-    pub network_chain_id: Option<i64>,
-    pub asset_slug: Option<String>,
-    pub asset_symbol: Option<String>,
-    pub asset_name: Option<String>,
-    pub mapping_id: Option<String>,
-    pub is_native: Option<bool>,
-    pub deployment_address: Option<String>,
-    pub decimals: Option<i32>,
-    pub token_standard: Option<String>,
-}
-
 fn map_row(row: GlobalAssetRow) -> GlobalAsset {
     GlobalAsset {
         id: row.id,
@@ -269,45 +141,6 @@ fn map_row(row: GlobalAssetRow) -> GlobalAsset {
         canonical_path: row.canonical_path,
         aliases: row.aliases,
         sort_order: row.sort_order,
-    }
-}
-
-fn map_chain_map_row(row: AssetChainMapRow) -> AssetChainMap {
-    AssetChainMap {
-        network: NetworkRef {
-            slug: row.network_slug,
-            name: row.network_name,
-            caip2: row.network_caip2,
-            family: row.network_family,
-            chain_id: row.network_chain_id,
-        },
-        is_native: row.is_native,
-        address: row.address,
-        decimals: row.decimals,
-        token_standard: row.token_standard,
-    }
-}
-
-fn map_match_row(row: AssetMatchRow) -> AssetMatch {
-    let confidence = match row.match_kind.as_str() {
-        "slug_exact" => MatchConfidence::SlugExact,
-        "symbol_exact" => MatchConfidence::SymbolExact,
-        "name_exact" => MatchConfidence::NameExact,
-        _ => MatchConfidence::AliasExact,
-    };
-
-    AssetMatch {
-        asset: GlobalAsset {
-            id: row.id,
-            slug: row.slug,
-            symbol: row.symbol,
-            name: row.name,
-            category: row.category.unwrap_or_else(|| "asset".to_string()),
-            canonical_path: row.canonical_path,
-            aliases: row.aliases,
-            sort_order: row.sort_order,
-        },
-        confidence,
     }
 }
 
@@ -740,164 +573,6 @@ fn in_memory_balance_catalog_row(
     }
 }
 
-fn demo_chain_maps_for_assets(assets: &[GlobalAsset]) -> Vec<InMemoryAssetChainMap> {
-    let mut chain_maps = Vec::new();
-
-    for asset in assets {
-        match asset.slug.as_str() {
-            "bitcoin" => chain_maps.push(in_memory_chain_map(
-                "bitcoin",
-                "bitcoin-mainnet",
-                "Bitcoin Mainnet",
-                Some("bip122:000000000019d6689c085ae165831e93"),
-                true,
-                None,
-                10,
-            )),
-            "ethereum" => chain_maps.extend([
-                in_memory_chain_map(
-                    "ethereum",
-                    "eth-mainnet",
-                    "Ethereum Mainnet",
-                    Some("eip155:1"),
-                    true,
-                    None,
-                    20,
-                ),
-                in_memory_chain_map(
-                    "ethereum",
-                    "arbitrum-mainnet",
-                    "Arbitrum One",
-                    Some("eip155:42161"),
-                    true,
-                    None,
-                    30,
-                ),
-                in_memory_chain_map(
-                    "ethereum",
-                    "base-mainnet",
-                    "Base",
-                    Some("eip155:8453"),
-                    true,
-                    None,
-                    40,
-                ),
-            ]),
-            "usdc" => chain_maps.extend([
-                in_memory_chain_map(
-                    "usdc",
-                    "eth-mainnet",
-                    "Ethereum Mainnet",
-                    Some("eip155:1"),
-                    false,
-                    Some("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
-                    240,
-                ),
-                in_memory_chain_map(
-                    "usdc",
-                    "arbitrum-mainnet",
-                    "Arbitrum One",
-                    Some("eip155:42161"),
-                    false,
-                    Some("0xaf88d065e77c8cc2239327c5edb3a432268e5831"),
-                    250,
-                ),
-                in_memory_chain_map(
-                    "usdc",
-                    "base-mainnet",
-                    "Base",
-                    Some("eip155:8453"),
-                    false,
-                    Some("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"),
-                    260,
-                ),
-                in_memory_chain_map(
-                    "usdc",
-                    "near",
-                    "NEAR Mainnet",
-                    Some("near:mainnet"),
-                    false,
-                    Some("17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1"),
-                    270,
-                ),
-                in_memory_chain_map(
-                    "usdc",
-                    "mantle-mainnet",
-                    "Mantle",
-                    Some("eip155:5000"),
-                    false,
-                    Some("0x09bc4e0d864854c6afb6eb9a9cdf58ac190d0df9"),
-                    280,
-                ),
-            ]),
-            "mantle" => chain_maps.push(in_memory_chain_map(
-                "mantle",
-                "mantle-mainnet",
-                "Mantle",
-                Some("eip155:5000"),
-                true,
-                None,
-                50,
-            )),
-            _ => {}
-        }
-    }
-
-    chain_maps
-}
-
-fn in_memory_chain_map(
-    asset_slug: &str,
-    network_slug: &str,
-    network_name: &str,
-    caip2: Option<&str>,
-    is_native: bool,
-    address: Option<&str>,
-    sort_order: i32,
-) -> InMemoryAssetChainMap {
-    let (family, chain_id) = match caip2 {
-        Some(value) if value.starts_with("eip155:") => (
-            "evm",
-            value
-                .strip_prefix("eip155:")
-                .and_then(|chain_id| chain_id.parse::<i64>().ok()),
-        ),
-        Some(value) if value.starts_with("bip122:") => ("bitcoin", None),
-        Some(value) if value.starts_with("near:") => ("near", None),
-        _ => ("unknown", None),
-    };
-    let decimals = match asset_slug {
-        "bitcoin" => 8,
-        "usdc" => 6,
-        _ => 18,
-    };
-    let token_standard = if is_native {
-        "native"
-    } else if family == "evm" {
-        "erc20"
-    } else {
-        "nep141"
-    };
-
-    InMemoryAssetChainMap {
-        asset_slug: asset_slug.to_string(),
-        chain_map: AssetChainMap {
-            network: NetworkRef {
-                slug: network_slug.to_string(),
-                name: network_name.to_string(),
-                caip2: caip2.map(str::to_string),
-                family: family.to_string(),
-                chain_id,
-            },
-            is_native,
-            address: address.map(str::to_string),
-            decimals: Some(decimals),
-            token_standard: Some(token_standard.to_string()),
-        },
-        sort_order,
-    }
-}
-
 fn list_recommendations_in_memory(
     assets: &[GlobalAsset],
     normalized_query: &str,
@@ -944,15 +619,6 @@ fn asset_contains(asset: &GlobalAsset, normalized_query: &str) -> bool {
             .any(|alias| alias.to_ascii_lowercase().contains(&query))
 }
 
-fn confidence_rank(confidence: MatchConfidence) -> u8 {
-    match confidence {
-        MatchConfidence::SlugExact => 0,
-        MatchConfidence::SymbolExact => 1,
-        MatchConfidence::NameExact => 2,
-        MatchConfidence::AliasExact => 3,
-    }
-}
-
 fn escape_like_pattern(value: &str) -> String {
     value
         .replace('\\', "\\\\")
@@ -962,14 +628,27 @@ fn escape_like_pattern(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::GlobalAssetRepository;
+    use crate::adapters::postgres::asset_chain_map::in_memory_chain_map;
+    use crate::test_utils::global_assets::{asset_fixtures, format_sample_asset};
+
+    #[tokio::test]
+    async fn list_assets_truncates_to_limit() {
+        let repository = GlobalAssetRepository::in_memory(asset_fixtures());
+
+        let assets = repository.list_assets(2).await.unwrap();
+
+        assert_eq!(assets.len(), 2);
+        assert_eq!(assets[0].slug, "bitcoin");
+        assert_eq!(assets[1].slug, "ethereum");
+    }
 
     #[tokio::test]
     async fn list_assets_returns_assets_in_stable_order() {
         let repository = GlobalAssetRepository::in_memory(vec![
-            demo_asset("zeta", "ZZZ", "Zeta", "crypto", "/assets/zeta", &[], 20),
-            demo_asset("alpha", "BBB", "Alpha", "crypto", "/assets/alpha", &[], 10),
-            demo_asset("beta", "AAA", "Beta", "crypto", "/assets/beta", &[], 10),
+            format_sample_asset("zeta", "ZZZ", "Zeta", "crypto", "/assets/zeta", &[], 20),
+            format_sample_asset("alpha", "BBB", "Alpha", "crypto", "/assets/alpha", &[], 10),
+            format_sample_asset("beta", "AAA", "Beta", "crypto", "/assets/beta", &[], 10),
         ]);
 
         let assets = repository.list_assets(10).await.unwrap();
@@ -984,19 +663,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_assets_truncates_to_limit() {
-        let repository = GlobalAssetRepository::in_memory(demo_assets());
-
-        let assets = repository.list_assets(2).await.unwrap();
-
-        assert_eq!(assets.len(), 2);
-        assert_eq!(assets[0].slug, "bitcoin");
-        assert_eq!(assets[1].slug, "ethereum");
-    }
-
-    #[tokio::test]
     async fn asset_detail_lookup_is_case_insensitive() {
-        let repository = GlobalAssetRepository::in_memory(demo_assets());
+        let repository = GlobalAssetRepository::in_memory(asset_fixtures());
 
         let detail = repository
             .get_asset_detail_by_slug("BitCoin")
@@ -1013,7 +681,7 @@ mod tests {
     #[tokio::test]
     async fn asset_detail_returns_chain_maps_in_stable_order() {
         let repository = GlobalAssetRepository::in_memory_with_chain_maps(
-            vec![demo_asset(
+            vec![format_sample_asset(
                 "sample",
                 "SMP",
                 "Sample",
@@ -1059,537 +727,5 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["beta", "alpha", "zeta"]
         );
-    }
-
-    #[tokio::test]
-    async fn global_asset_slug_is_unique_in_database() {
-        let Ok(database_url) = std::env::var("DATABASE_URL") else {
-            return;
-        };
-
-        let pool = PgPool::connect(&database_url).await.unwrap();
-        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
-
-        let mut transaction = pool.begin().await.unwrap();
-        let slug = format!("slug-unique-test-{}", uuid::Uuid::new_v4());
-        let canonical_path = format!("/assets/{slug}");
-
-        sqlx::query(
-            r#"
-            insert into mother_api.global_asset (
-              slug,
-              symbol,
-              name,
-              canonical_path,
-              status
-            )
-            values ($1, $2, $3, $4, 'inactive'::mother_api.global_asset_status)
-            "#,
-        )
-        .bind(&slug)
-        .bind("SLUGUNIQUEA")
-        .bind("Slug Unique Test A")
-        .bind(&canonical_path)
-        .execute(&mut *transaction)
-        .await
-        .unwrap();
-
-        let duplicate_result = sqlx::query(
-            r#"
-            insert into mother_api.global_asset (
-              slug,
-              symbol,
-              name,
-              canonical_path,
-              status
-            )
-            values ($1, $2, $3, $4, 'inactive'::mother_api.global_asset_status)
-            "#,
-        )
-        .bind(&slug)
-        .bind("SLUGUNIQUEB")
-        .bind("Slug Unique Test B")
-        .bind(&canonical_path)
-        .execute(&mut *transaction)
-        .await;
-
-        let error = duplicate_result.expect_err("duplicate slug should violate constraint");
-        let sqlx::Error::Database(database_error) = error else {
-            panic!("expected database error for duplicate slug");
-        };
-
-        assert_eq!(
-            database_error.constraint(),
-            Some("global_asset_slug_unique")
-        );
-
-        transaction.rollback().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn global_asset_slug_is_normalized_in_database() {
-        let Ok(database_url) = std::env::var("DATABASE_URL") else {
-            return;
-        };
-
-        let pool = PgPool::connect(&database_url).await.unwrap();
-        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
-
-        let mut transaction = pool.begin().await.unwrap();
-        let insert_result = sqlx::query(
-            r#"
-            insert into mother_api.global_asset (
-              slug,
-              symbol,
-              name,
-              canonical_path,
-              status
-            )
-            values ($1, $2, $3, $4, 'inactive'::mother_api.global_asset_status)
-            "#,
-        )
-        .bind("Slug-Normalized-Test")
-        .bind("SLUGNORMALIZED")
-        .bind("Slug Normalized Test")
-        .bind("/assets/slug-normalized-test")
-        .execute(&mut *transaction)
-        .await;
-
-        let error = insert_result.expect_err("mixed-case slug should violate constraint");
-        let sqlx::Error::Database(database_error) = error else {
-            panic!("expected database error for non-normalized slug");
-        };
-
-        assert_eq!(
-            database_error.constraint(),
-            Some("global_asset_slug_normalized")
-        );
-
-        transaction.rollback().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn full_migration_uses_canonical_evm_network_slugs() {
-        let Ok(database_url) = std::env::var("DATABASE_URL") else {
-            return;
-        };
-
-        let pool = PgPool::connect(&database_url).await.unwrap();
-        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
-
-        let canonical_networks = sqlx::query_as::<_, (String, i64, String)>(
-            r#"
-            select slug, chain_id, caip2
-            from mother_api.network
-            where status = 'active'
-              and slug in ('base-mainnet', 'mantle-mainnet', 'arbitrum-mainnet')
-            order by chain_id
-            "#,
-        )
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-        let legacy_count = sqlx::query_scalar::<_, i64>(
-            r#"
-            select count(*)
-            from mother_api.network
-            where status = 'active'
-              and slug in ('base', 'mantle', 'arbitrum-one')
-            "#,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-
-        assert_eq!(
-            canonical_networks,
-            vec![
-                (
-                    "mantle-mainnet".to_string(),
-                    5000,
-                    "eip155:5000".to_string()
-                ),
-                ("base-mainnet".to_string(), 8453, "eip155:8453".to_string()),
-                (
-                    "arbitrum-mainnet".to_string(),
-                    42161,
-                    "eip155:42161".to_string()
-                ),
-            ]
-        );
-        assert_eq!(legacy_count, 0);
-    }
-
-    #[tokio::test]
-    async fn canonical_network_migration_preserves_ids_and_mapping_counts() {
-        let Ok(database_url) = std::env::var("DATABASE_URL") else {
-            return;
-        };
-
-        let pool = PgPool::connect(&database_url).await.unwrap();
-        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
-        let mut transaction = pool.begin().await.unwrap();
-
-        let before = sqlx::query_as::<_, (String, String, i64)>(
-            r#"
-            select
-              network.id::text,
-              network.slug,
-              count(asset_chain_map.id)
-            from mother_api.network network
-            left join mother_api.asset_chain_map asset_chain_map
-              on asset_chain_map.network_id = network.id
-            where network.status = 'active'
-              and network.slug in (
-                'base-mainnet',
-                'mantle-mainnet',
-                'arbitrum-mainnet'
-              )
-            group by network.id, network.slug
-            order by network.id
-            "#,
-        )
-        .fetch_all(&mut *transaction)
-        .await
-        .unwrap();
-
-        sqlx::query(
-            r#"
-            update mother_api.network
-            set slug = case slug
-              when 'base-mainnet' then 'base'
-              when 'mantle-mainnet' then 'mantle'
-              when 'arbitrum-mainnet' then 'arbitrum-one'
-            end
-            where status = 'active'
-              and slug in (
-                'base-mainnet',
-                'mantle-mainnet',
-                'arbitrum-mainnet'
-              )
-            "#,
-        )
-        .execute(&mut *transaction)
-        .await
-        .unwrap();
-
-        sqlx::raw_sql(include_str!(
-            "../../../migrations/0005_canonical_evm_network_slugs.sql"
-        ))
-        .execute(&mut *transaction)
-        .await
-        .unwrap();
-
-        let after = sqlx::query_as::<_, (String, String, i64)>(
-            r#"
-            select
-              network.id::text,
-              network.slug,
-              count(asset_chain_map.id)
-            from mother_api.network network
-            left join mother_api.asset_chain_map asset_chain_map
-              on asset_chain_map.network_id = network.id
-            where network.status = 'active'
-              and network.slug in (
-                'base-mainnet',
-                'mantle-mainnet',
-                'arbitrum-mainnet'
-              )
-            group by network.id, network.slug
-            order by network.id
-            "#,
-        )
-        .fetch_all(&mut *transaction)
-        .await
-        .unwrap();
-
-        assert_eq!(after, before);
-
-        transaction.rollback().await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn canonical_network_migration_rejects_conflicting_rows() {
-        let Ok(database_url) = std::env::var("DATABASE_URL") else {
-            return;
-        };
-
-        let pool = PgPool::connect(&database_url).await.unwrap();
-        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
-        let mut transaction = pool.begin().await.unwrap();
-
-        sqlx::query(
-            r#"
-            update mother_api.network
-            set slug = 'base'
-            where status = 'active'
-              and slug = 'base-mainnet'
-            "#,
-        )
-        .execute(&mut *transaction)
-        .await
-        .unwrap();
-        sqlx::query(
-            r#"
-            insert into mother_api.network (
-              slug,
-              name,
-              family,
-              chain_id,
-              status
-            )
-            values (
-              'base-mainnet',
-              'Conflicting Base Mainnet',
-              'evm',
-              8453,
-              'inactive'
-            )
-            "#,
-        )
-        .execute(&mut *transaction)
-        .await
-        .unwrap();
-
-        let result = sqlx::raw_sql(include_str!(
-            "../../../migrations/0005_canonical_evm_network_slugs.sql"
-        ))
-        .execute(&mut *transaction)
-        .await;
-
-        assert!(result.is_err());
-        transaction.rollback().await.unwrap();
-    }
-}
-
-#[cfg(test)]
-pub fn demo_assets() -> Vec<GlobalAsset> {
-    vec![
-        demo_asset(
-            "bitcoin",
-            "BTC",
-            "Bitcoin",
-            "crypto",
-            "/assets/bitcoin",
-            &["btc", "bitcoin", "bit coin"],
-            10,
-        ),
-        demo_asset(
-            "ethereum",
-            "ETH",
-            "Ethereum",
-            "crypto",
-            "/assets/ethereum",
-            &["eth", "ether", "ethereum"],
-            20,
-        ),
-        demo_asset(
-            "usdc",
-            "USDC",
-            "USD Coin",
-            "crypto",
-            "/assets/usdc",
-            &[
-                "usdc",
-                "usd coin",
-                "usdc coin",
-                "usdc coin usd",
-                "circle usd coin",
-                "circle usdc",
-                "dollar coin",
-            ],
-            30,
-        ),
-        demo_asset(
-            "wrapped-bitcoin",
-            "WBTC",
-            "Wrapped Bitcoin",
-            "crypto",
-            "/assets/wrapped-bitcoin",
-            &["wbtc", "wrapped bitcoin", "wrapped btc"],
-            35,
-        ),
-        demo_asset(
-            "gold",
-            "XAU",
-            "Gold",
-            "commodity",
-            "/assets/gold",
-            &[
-                "gold",
-                "oro",
-                "oro de ley",
-                "xau",
-                "precious metal",
-                "metal precioso",
-            ],
-            40,
-        ),
-        demo_asset(
-            "mantle",
-            "MNT",
-            "Mantle",
-            "crypto",
-            "/assets/mantle",
-            &["mnt", "mantle"],
-            50,
-        ),
-        demo_asset(
-            "near",
-            "NEAR",
-            "NEAR Protocol",
-            "crypto",
-            "/assets/near",
-            &["near", "near protocol"],
-            60,
-        ),
-        demo_asset(
-            "aave",
-            "AAVE",
-            "Aave",
-            "crypto",
-            "/assets/aave",
-            &["aave"],
-            70,
-        ),
-        demo_asset(
-            "ausd",
-            "AUSD",
-            "AUSD",
-            "stablecoin",
-            "/assets/ausd",
-            &["ausd"],
-            80,
-        ),
-        demo_asset(
-            "usds",
-            "USDS",
-            "Sky Dollar",
-            "stablecoin",
-            "/assets/usds",
-            &["usds", "sky dollar"],
-            90,
-        ),
-        demo_asset(
-            "fbtc",
-            "FBTC",
-            "FBTC",
-            "crypto",
-            "/assets/fbtc",
-            &["fbtc"],
-            100,
-        ),
-        demo_asset(
-            "gho",
-            "GHO",
-            "GHO",
-            "stablecoin",
-            "/assets/gho",
-            &["gho"],
-            110,
-        ),
-        demo_asset(
-            "mpdao",
-            "MPDAO",
-            "MPDAO",
-            "crypto",
-            "/assets/mpdao",
-            &["mpdao"],
-            120,
-        ),
-        demo_asset(
-            "stnear",
-            "STNEAR",
-            "Staked NEAR",
-            "crypto",
-            "/assets/stnear",
-            &["stnear", "staked near"],
-            130,
-        ),
-        demo_asset(
-            "usdt",
-            "USDT",
-            "Tether USD",
-            "stablecoin",
-            "/assets/usdt",
-            &["usdt", "tether", "tether usd"],
-            140,
-        ),
-        demo_asset(
-            "usdt0",
-            "USDT0",
-            "USDT0",
-            "stablecoin",
-            "/assets/usdt0",
-            &["usdt0", "usdt zero"],
-            150,
-        ),
-        demo_asset(
-            "usde",
-            "USDe",
-            "USDe",
-            "stablecoin",
-            "/assets/usde",
-            &["usde"],
-            160,
-        ),
-        demo_asset(
-            "wrapped-ether",
-            "WETH",
-            "Wrapped Ether",
-            "crypto",
-            "/assets/wrapped-ether",
-            &["weth", "wrapped ether", "wrapped eth"],
-            170,
-        ),
-        demo_asset(
-            "cmeth",
-            "cmETH",
-            "cmETH",
-            "crypto",
-            "/assets/cmeth",
-            &["cmeth", "cmeth token"],
-            180,
-        ),
-        demo_asset(
-            "meth",
-            "mETH",
-            "mETH",
-            "crypto",
-            "/assets/meth",
-            &["meth", "meth token"],
-            190,
-        ),
-        demo_asset(
-            "susde",
-            "sUSDe",
-            "sUSDe",
-            "stablecoin",
-            "/assets/susde",
-            &["susde", "staked usde"],
-            200,
-        ),
-    ]
-}
-
-#[cfg(test)]
-fn demo_asset(
-    slug: &str,
-    symbol: &str,
-    name: &str,
-    category: &str,
-    canonical_path: &str,
-    aliases: &[&str],
-    sort_order: i32,
-) -> GlobalAsset {
-    GlobalAsset {
-        id: format!("test-{slug}"),
-        slug: slug.to_string(),
-        symbol: symbol.to_string(),
-        name: name.to_string(),
-        category: category.to_string(),
-        canonical_path: canonical_path.to_string(),
-        aliases: aliases.iter().map(|alias| alias.to_string()).collect(),
-        sort_order,
     }
 }

@@ -6,11 +6,14 @@ use axum::{
 use serde::Serialize;
 use utoipa::ToSchema;
 
+use crate::domain::onchain_window::OnchainWindowError;
+
 #[derive(Debug)]
 pub struct ApiError {
     status: StatusCode,
     code: &'static str,
-    message: &'static str,
+    // message: &'static str,
+    message: String,
 }
 
 impl ApiError {
@@ -18,7 +21,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "invalid_json",
-            message: "Request body must be valid JSON.",
+            message: "Request body must be valid JSON.".to_string(),
         }
     }
 
@@ -26,7 +29,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "unknown_field",
-            message: "Request contains an unknown field.",
+            message: "Request contains an unknown field.".to_string(),
         }
     }
 
@@ -34,7 +37,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "missing_query",
-            message,
+            message: message.to_string(),
         }
     }
 
@@ -42,7 +45,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "query_too_long",
-            message: "Query parameter `q` must be 128 characters or fewer.",
+            message: "Query parameter `q` must be 128 characters or fewer.".to_string(),
         }
     }
 
@@ -50,7 +53,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "invalid_limit",
-            message: "Query parameter `limit` must be a positive integer.",
+            message: "Query parameter `limit` must be a positive integer.".to_string(),
         }
     }
 
@@ -58,7 +61,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "invalid_request",
-            message: "Request parameters are invalid.",
+            message: "Request parameters are invalid.".to_string(),
         }
     }
 
@@ -66,7 +69,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "missing_network_slug",
-            message: "Network slug is required.",
+            message: "Network slug is required.".to_string(),
         }
     }
 
@@ -74,7 +77,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "invalid_account",
-            message: "Account address is invalid.",
+            message: "Account address is invalid.".to_string(),
         }
     }
 
@@ -82,7 +85,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "invalid_address",
-            message: "Wallet address is invalid.",
+            message: "Wallet address is invalid.".to_string(),
         }
     }
 
@@ -90,7 +93,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "unsupported_network",
-            message: "Network is not supported for balance resolution.",
+            message: "Network is not supported for balance resolution.".to_string(),
         }
     }
 
@@ -98,7 +101,7 @@ impl ApiError {
         Self {
             status: StatusCode::NOT_FOUND,
             code: "unsupported_network",
-            message: "Network is not supported for ERC-20 transfer search.",
+            message: "Network is not supported for ERC-20 transfer search.".to_string(),
         }
     }
 
@@ -106,7 +109,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "unsupported_asset",
-            message: "Asset is not supported.",
+            message: "Asset is not supported.".to_string(),
         }
     }
 
@@ -114,7 +117,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "unsupported_quote_currency",
-            message: "Quote currency is not supported.",
+            message: "Quote currency is not supported.".to_string(),
         }
     }
 
@@ -122,7 +125,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "unsupported_as_of",
-            message: "Only latest balance snapshots are supported.",
+            message: "Only latest balance snapshots are supported.".to_string(),
         }
     }
 
@@ -130,7 +133,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "invalid_direction",
-            message: "Direction is invalid.",
+            message: "Direction is invalid.".to_string(),
         }
     }
 
@@ -138,7 +141,15 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "invalid_window",
-            message: "Window is invalid.",
+            message: "Window is invalid.".to_string(),
+        }
+    }
+
+    pub fn invalid_window_with_message(message: String) -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "invalid_window",
+            message: message,
         }
     }
 
@@ -146,7 +157,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "invalid_asset_slug",
-            message: "Asset slug is invalid.",
+            message: "Asset slug is invalid.".to_string(),
         }
     }
 
@@ -154,7 +165,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "invalid_contract_address",
-            message: "Contract address is invalid.",
+            message: "Contract address is invalid.".to_string(),
         }
     }
 
@@ -162,7 +173,7 @@ impl ApiError {
         Self {
             status: StatusCode::UNPROCESSABLE_ENTITY,
             code: "too_many_token_filters",
-            message: "Too many token filters were requested.",
+            message: "Too many token filters were requested.".to_string(),
         }
     }
 
@@ -170,7 +181,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "empty_accounts",
-            message: "At least one account is required.",
+            message: "At least one account is required.".to_string(),
         }
     }
 
@@ -178,7 +189,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "empty_assets",
-            message: "At least one asset is required.",
+            message: "At least one asset is required.".to_string(),
         }
     }
 
@@ -186,7 +197,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "duplicate_account",
-            message: "Each network-scoped account must be unique.",
+            message: "Each network-scoped account must be unique.".to_string(),
         }
     }
 
@@ -194,7 +205,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "duplicate_asset",
-            message: "Each asset slug must be unique.",
+            message: "Each asset slug must be unique.".to_string(),
         }
     }
 
@@ -202,7 +213,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "request_too_large",
-            message: "Balance request exceeds the public limits.",
+            message: "Balance request exceeds the public limits.".to_string(),
         }
     }
 
@@ -210,7 +221,7 @@ impl ApiError {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,
             code: "asset_network_map_unavailable",
-            message: "Balance catalog is temporarily unavailable.",
+            message: "Balance catalog is temporarily unavailable.".to_string(),
         }
     }
 
@@ -218,7 +229,7 @@ impl ApiError {
         Self {
             status: StatusCode::NOT_FOUND,
             code: "asset_not_found",
-            message: "Asset was not found.",
+            message: "Asset was not found.".to_string(),
         }
     }
 
@@ -226,7 +237,7 @@ impl ApiError {
         Self {
             status: StatusCode::UNPROCESSABLE_ENTITY,
             code: "asset_not_available_on_network",
-            message: "Asset is not available on the requested network.",
+            message: "Asset is not available on the requested network.".to_string(),
         }
     }
 
@@ -234,7 +245,7 @@ impl ApiError {
         Self {
             status: StatusCode::UNPROCESSABLE_ENTITY,
             code: "asset_not_erc20_on_network",
-            message: "Asset is not an ERC-20 token on the requested network.",
+            message: "Asset is not an ERC-20 token on the requested network.".to_string(),
         }
     }
 
@@ -242,7 +253,7 @@ impl ApiError {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,
             code: "asset_contract_mapping_unavailable",
-            message: "Asset contract mapping is temporarily unavailable.",
+            message: "Asset contract mapping is temporarily unavailable.".to_string(),
         }
     }
 
@@ -250,7 +261,7 @@ impl ApiError {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,
             code: "database_unavailable",
-            message: "Asset resolution is temporarily unavailable.",
+            message: "Asset resolution is temporarily unavailable.".to_string(),
         }
     }
 
@@ -258,7 +269,7 @@ impl ApiError {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,
             code: "price_indexer_unavailable",
-            message: "Price signals are temporarily unavailable.",
+            message: "Price signals are temporarily unavailable.".to_string(),
         }
     }
 
@@ -266,7 +277,7 @@ impl ApiError {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,
             code: "extraction_unavailable",
-            message: "ERC-20 transfer extraction is temporarily unavailable.",
+            message: "ERC-20 transfer extraction is temporarily unavailable.".to_string(),
         }
     }
 
@@ -274,7 +285,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_GATEWAY,
             code: "upstream_auth_failed",
-            message: "Price signals are temporarily unavailable.",
+            message: "Price signals are temporarily unavailable.".to_string(),
         }
     }
 
@@ -282,7 +293,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_GATEWAY,
             code: "price_indexer_error",
-            message: "Price signals are temporarily unavailable.",
+            message: "Price signals are temporarily unavailable.".to_string(),
         }
     }
 
@@ -290,7 +301,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_GATEWAY,
             code: "upstream_invalid_response",
-            message: "Price signals are temporarily unavailable.",
+            message: "Price signals are temporarily unavailable.".to_string(),
         }
     }
 
@@ -298,7 +309,7 @@ impl ApiError {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             code: "internal_error",
-            message: "Mother API encountered an unexpected error.",
+            message: "Mother API encountered an unexpected error.".to_string(),
         }
     }
 
@@ -306,7 +317,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "unsupported_prediction_subject",
-            message: "Prediction subject is not supported for this event.",
+            message: "Prediction subject is not supported for this event.".to_string(),
         }
     }
 
@@ -314,7 +325,7 @@ impl ApiError {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,
             code: "prediction_provider_unavailable",
-            message: "Prediction provider is temporarily unavailable.",
+            message: "Prediction provider is temporarily unavailable.".to_string(),
         }
     }
 
@@ -322,7 +333,7 @@ impl ApiError {
         Self {
             status: StatusCode::GATEWAY_TIMEOUT,
             code: "prediction_provider_timeout",
-            message: "Prediction provider timed out.",
+            message: "Prediction provider timed out.".to_string(),
         }
     }
 
@@ -330,7 +341,7 @@ impl ApiError {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,
             code: "prediction_resolver_unavailable",
-            message: "Prediction resolver is temporarily unavailable.",
+            message: "Prediction resolver is temporarily unavailable.".to_string(),
         }
     }
 
@@ -338,7 +349,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_GATEWAY,
             code: "prediction_resolver_schema_mismatch",
-            message: "Prediction resolver returned an unsupported response.",
+            message: "Prediction resolver returned an unsupported response.".to_string(),
         }
     }
 
@@ -346,7 +357,7 @@ impl ApiError {
         Self {
             status: StatusCode::GATEWAY_TIMEOUT,
             code: "prediction_resolver_timeout",
-            message: "Prediction resolver timed out.",
+            message: "Prediction resolver timed out.".to_string(),
         }
     }
 
@@ -354,7 +365,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_GATEWAY,
             code: "prediction_resolver_malformed_response",
-            message: "Prediction resolver returned a malformed error response.",
+            message: "Prediction resolver returned a malformed error response.".to_string(),
         }
     }
 
@@ -362,7 +373,38 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_GATEWAY,
             code: "prediction_resolver_error",
-            message: "Prediction resolver returned an unclassified error.",
+            message: "Prediction resolver returned an unclassified error.".to_string(),
+        }
+    }
+}
+
+impl From<OnchainWindowError> for ApiError {
+    fn from(error: OnchainWindowError) -> Self {
+        match error {
+            OnchainWindowError::InvalidBlockRange {
+                from_block,
+                to_block,
+            } => ApiError::invalid_window_with_message(format!(
+                "from_block must be less than or equal to to_block: from_block={from_block}, to_block={to_block}"
+            )),
+
+            OnchainWindowError::InvalidTimestampRange {
+                from_timestamp,
+                to_timestamp,
+            } => ApiError::invalid_window_with_message(format!(
+                "from_timestamp must be less than or equal to to_timestamp: from_timestamp={from_timestamp}, to_timestamp={to_timestamp}"
+            )),
+
+            OnchainWindowError::InvalidLookbackSeconds {
+                lookback_seconds,
+            } => ApiError::invalid_window_with_message(format!(
+                "lookback_seconds must be greater than zero: lookback_seconds={lookback_seconds}"
+            )),
+            OnchainWindowError::InvalidTimestamp { field, value } => {
+                ApiError::invalid_window_with_message(format!(
+                    "{field} must be a valid RFC3339 timestamp: {value}"
+                ))
+            }
         }
     }
 }
@@ -392,7 +434,7 @@ pub struct ErrorResponse {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, ToSchema)]
 pub struct ErrorBody {
     pub code: &'static str,
-    pub message: &'static str,
+    pub message: String,
 }
 
 #[cfg(test)]

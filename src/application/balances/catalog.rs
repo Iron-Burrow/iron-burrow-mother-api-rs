@@ -1,8 +1,8 @@
 use std::fmt;
 
-use crate::adapters::postgres::global_assets::{
-    BalanceCatalogRow, GlobalAssetRepository, RepositoryError,
-};
+use crate::adapters::postgres::balance_catalog::BalanceCatalogRow;
+use crate::adapters::postgres::errors::RepositoryError;
+use crate::adapters::postgres::global_assets::GlobalAssetRepository;
 
 #[derive(Clone, Debug)]
 pub struct CatalogBalanceTargetResolver {
@@ -354,10 +354,11 @@ fn is_evm_address(address: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::postgres::global_assets::{demo_assets, GlobalAssetRepository};
+    use crate::adapters::postgres::global_assets::GlobalAssetRepository;
+    use crate::test_utils::global_assets::asset_fixtures;
 
     fn resolver() -> CatalogBalanceTargetResolver {
-        CatalogBalanceTargetResolver::new(GlobalAssetRepository::in_memory(demo_assets()))
+        CatalogBalanceTargetResolver::new(GlobalAssetRepository::in_memory(asset_fixtures()))
     }
 
     #[tokio::test]

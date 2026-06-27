@@ -116,11 +116,11 @@ mod tests {
     use tower::ServiceExt;
 
     use super::*;
+    use crate::domain::global_assets::GlobalAsset;
+    use crate::test_utils::global_assets::asset_fixtures;
     use crate::{
-        adapters::dis::DisClient,
-        adapters::postgres::global_assets::{demo_assets, GlobalAsset, GlobalAssetRepository},
-        adapters::price_indexer::PriceIndexerClient,
-        config::Config,
+        adapters::dis::DisClient, adapters::postgres::global_assets::GlobalAssetRepository,
+        adapters::price_indexer::PriceIndexerClient, config::Config,
     };
 
     const TEST_DIS_ACCEPT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -128,7 +128,7 @@ mod tests {
     fn test_app() -> Router {
         create_app(AppState::with_asset_repository(
             Config::default(),
-            GlobalAssetRepository::in_memory(demo_assets()),
+            GlobalAssetRepository::in_memory(asset_fixtures()),
         ))
     }
 
@@ -140,7 +140,7 @@ mod tests {
             config: Config::default(),
             version: env!("CARGO_PKG_VERSION"),
             database_pool: None,
-            asset_repository: Some(GlobalAssetRepository::in_memory(demo_assets())),
+            asset_repository: Some(GlobalAssetRepository::in_memory(asset_fixtures())),
             price_indexer_client: Some(price_indexer_client),
             dis_client: None,
             bigwig_latest_balances_client: None,
@@ -158,7 +158,7 @@ mod tests {
             config: Config::default(),
             version: env!("CARGO_PKG_VERSION"),
             database_pool: None,
-            asset_repository: Some(GlobalAssetRepository::in_memory(demo_assets())),
+            asset_repository: Some(GlobalAssetRepository::in_memory(asset_fixtures())),
             price_indexer_client: None,
             dis_client: Some(dis_client),
             bigwig_latest_balances_client: None,

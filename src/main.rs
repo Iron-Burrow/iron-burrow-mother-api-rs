@@ -1,13 +1,17 @@
 mod adapters;
 mod app;
 mod application;
+mod common;
 #[allow(dead_code)]
 mod config;
-mod error;
+mod domain;
 mod infra;
 #[allow(dead_code)]
 mod openapi;
 mod state;
+
+#[cfg(test)]
+mod test_utils;
 
 use std::net::SocketAddr;
 
