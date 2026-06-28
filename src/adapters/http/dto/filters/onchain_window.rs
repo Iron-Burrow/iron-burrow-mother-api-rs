@@ -6,8 +6,10 @@ use utoipa::ToSchema;
 
 use crate::{
     adapters::http::{error::ApiError, types::JsonObject},
+    application::filters::onchain_window::{
+        BlockWindow, LookbackWindow, OnchainWindow, TimestampWindow,
+    },
     common::rfc3339::{compare_rfc3339, parse_rfc3339},
-    domain::onchain_window::{BlockWindow, LookbackWindow, OnchainWindow, TimestampWindow},
 };
 
 const WINDOW_FIELDS: [&str; 5] = [
@@ -21,7 +23,7 @@ const LOOKBACK_WINDOW_FIELDS: [&str; 2] = ["lookback_seconds", "to"];
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(untagged)]
-pub enum OnchainWindowDTO {
+pub(crate) enum OnchainWindowDTO {
     Block(BlockWindowDTO),
     Timestamp(TimestampWindowDTO),
     Lookback(LookbackWindowDTO),
@@ -84,7 +86,7 @@ pub enum LookbackTargetDTO {
     Latest,
 }
 
-pub(super) fn validate_window(value: Option<&Value>) -> Result<OnchainWindowDTO, ApiError> {
+pub(crate) fn validate_window(value: Option<&Value>) -> Result<OnchainWindowDTO, ApiError> {
     let Some(Value::Object(window)) = value else {
         return Err(ApiError::invalid_window());
     };

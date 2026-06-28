@@ -112,7 +112,10 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::config::Config;
+    use crate::{
+        config::Config,
+        test_utils::constants::{DIS_BASE_URL, PRICE_INDEXER_URL},
+    };
 
     #[test]
     fn status_response_reports_unreachable_database_without_live_postgres() {
@@ -166,7 +169,7 @@ mod tests {
     fn status_response_reports_valid_price_indexer_config() {
         let response = status_response(
             &AppState::new(Config {
-                price_indexer_url: Some("http://price-indexer:3010".to_string()),
+                price_indexer_url: Some(PRICE_INDEXER_URL.to_string()),
                 price_ql_internal_token: Some("test-token".to_string()),
                 ..Config::default()
             }),
@@ -198,7 +201,7 @@ mod tests {
     fn status_response_reports_incomplete_price_indexer_config_without_failing_ok() {
         let response = status_response(
             &AppState::new(Config {
-                price_indexer_url: Some("http://price-indexer:3010".to_string()),
+                price_indexer_url: Some(PRICE_INDEXER_URL.to_string()),
                 ..Config::default()
             }),
             DatabaseCheck::Skipped,
@@ -213,7 +216,7 @@ mod tests {
     fn status_response_reports_valid_dis_config() {
         let response = status_response(
             &AppState::new(Config {
-                dis_base_url: Some("http://dis:8000".to_string()),
+                dis_base_url: Some(DIS_BASE_URL.to_string()),
                 ..Config::default()
             }),
             DatabaseCheck::Skipped,

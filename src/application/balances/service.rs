@@ -12,12 +12,10 @@ use crate::adapters::bigwig::balances::{
 };
 use crate::adapters::bigwig::client::BigwigClient;
 use crate::adapters::bigwig::error::BigwigError;
+use crate::domain::balance_catalog::{BalanceTarget, BalanceTargetKind, CatalogResolverError};
 
 use super::{
-    catalog::{
-        BalanceTarget, BalanceTargetKind, BalanceTargetResolution, CatalogBalanceTargetResolver,
-        CatalogResolverError,
-    },
+    catalog::{BalanceTargetResolution, CatalogBalanceTargetResolver},
     decimal::{format_amount, is_unsigned_integer, multiply_amount_by_price},
     quote::{PriceQuoteClient, PriceQuoteClientError, PriceQuoteResolution},
 };
@@ -967,7 +965,7 @@ mod tests {
     use serde_json::{json, Value};
 
     use super::*;
-    use crate::test_utils::global_assets::asset_fixtures;
+    use crate::test_utils::fixtures::global_assets::sample_assets;
     use crate::{
         adapters::bigwig::balances::{
             BigwigEvidenceBlock, BigwigEvidenceNetwork, BigwigItemError, BigwigItemErrorCode,
@@ -1775,7 +1773,7 @@ mod tests {
         price_quote_client: Option<PriceQuoteClient>,
     ) -> BalanceSnapshotService {
         BalanceSnapshotService::new(
-            CatalogBalanceTargetResolver::new(GlobalAssetRepository::in_memory(asset_fixtures())),
+            CatalogBalanceTargetResolver::new(GlobalAssetRepository::in_memory(sample_assets())),
             client,
             price_quote_client,
         )

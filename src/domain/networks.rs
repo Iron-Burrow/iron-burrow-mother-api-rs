@@ -1,8 +1,8 @@
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NetworkRef {
-    pub slug: String,
-    pub name: String,
-    pub caip2: Option<String>,
-    pub family: String,
-    pub chain_id: Option<i64>,
+pub(crate) struct NetworkRef {
+    pub(crate) slug: String,
+    pub(crate) name: String,
+    pub(crate) caip2: Option<String>,
+    pub(crate) family: String,
+    pub(crate) chain_id: Option<i64>,
 }

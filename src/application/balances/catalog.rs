@@ -1,8 +1,8 @@
-use std::fmt;
-
 use crate::adapters::postgres::balance_catalog::BalanceCatalogRow;
-use crate::adapters::postgres::errors::RepositoryError;
 use crate::adapters::postgres::global_assets::GlobalAssetRepository;
+use crate::domain::balance_catalog::{
+    BalanceTarget, BalanceTargetKind, CatalogIntegrityIssue, CatalogResolverError,
+};
 
 #[derive(Clone, Debug)]
 pub struct CatalogBalanceTargetResolver {
@@ -48,76 +48,6 @@ pub enum BalanceTargetResolution {
         asset_slug: String,
     },
 }
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BalanceTarget {
-    pub network_slug: String,
-    pub chain_id: i64,
-    pub asset_slug: String,
-    pub symbol: String,
-    pub name: String,
-    pub decimals: u8,
-    pub pricing_asset_slug: String,
-    pub kind: BalanceTargetKind,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum BalanceTargetKind {
-    Native,
-    Erc20 { contract_address: String },
-}
-
-#[derive(Debug)]
-pub enum CatalogResolverError {
-    Repository(RepositoryError),
-    InvalidCatalog {
-        network_slug: String,
-        asset_slug: Option<String>,
-        issue: CatalogIntegrityIssue,
-    },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CatalogIntegrityIssue {
-    MissingLookupRow,
-    UnexpectedLookupRow,
-    InvalidChainId,
-    AmbiguousMapping,
-    IncompleteMapping,
-    InvalidDecimals,
-    ContradictoryNativeMapping,
-    MalformedErc20Address,
-}
-
-impl From<RepositoryError> for CatalogResolverError {
-    fn from(error: RepositoryError) -> Self {
-        Self::Repository(error)
-    }
-}
-
-impl fmt::Display for CatalogResolverError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Repository(error) => write!(formatter, "balance catalog lookup failed: {error}"),
-            Self::InvalidCatalog {
-                network_slug,
-                asset_slug,
-                issue,
-            } => {
-                write!(
-                    formatter,
-                    "invalid balance catalog for network {network_slug}"
-                )?;
-                if let Some(asset_slug) = asset_slug {
-                    write!(formatter, " and asset {asset_slug}")?;
-                }
-                write!(formatter, ": {issue:?}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for CatalogResolverError {}
 
 fn resolve_catalog_rows(
     requested_network_slug: &str,
@@ -355,10 +285,10 @@ fn is_evm_address(address: &str) -> bool {
 mod tests {
     use super::*;
     use crate::adapters::postgres::global_assets::GlobalAssetRepository;
-    use crate::test_utils::global_assets::asset_fixtures;
+    use crate::test_utils::fixtures::global_assets::sample_assets;
 
     fn resolver() -> CatalogBalanceTargetResolver {
-        CatalogBalanceTargetResolver::new(GlobalAssetRepository::in_memory(asset_fixtures()))
+        CatalogBalanceTargetResolver::new(GlobalAssetRepository::in_memory(sample_assets()))
     }
 
     #[tokio::test]

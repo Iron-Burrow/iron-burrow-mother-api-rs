@@ -1,4 +1,4 @@
-pub const MAX_QUERY_LENGTH: usize = 128;
+use super::constants::MAX_QUERY_LENGTH;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NormalizedQuery {

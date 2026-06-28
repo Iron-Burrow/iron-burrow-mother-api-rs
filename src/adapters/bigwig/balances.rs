@@ -182,6 +182,8 @@ mod tests {
         time::{Duration, Instant},
     };
 
+    use crate::test_utils::constants::*;
+
     use serde_json::{json, Value};
 
     use crate::adapters::bigwig::{
@@ -467,8 +469,7 @@ mod tests {
 
     #[test]
     fn client_debug_redacts_token() {
-        let client =
-            BigwigClient::new("http://infra-gateway-hub:8080", "super-secret", 30000).unwrap();
+        let client = BigwigClient::new(INFRA_GATEWAY_URL, "super-secret", 30000).unwrap();
         let debug = format!("{client:?}");
 
         assert!(debug.contains("<redacted>"));
@@ -482,11 +483,11 @@ mod tests {
             Err(BigwigClientInitError::InvalidBaseUrl(_))
         ));
         assert!(matches!(
-            BigwigClient::new("http://infra-gateway-hub:8080", " ", 30000),
+            BigwigClient::new(INFRA_GATEWAY_URL, " ", 30000),
             Err(BigwigClientInitError::EmptyToken)
         ));
         assert!(matches!(
-            BigwigClient::new("http://infra-gateway-hub:8080", "test-token", 0),
+            BigwigClient::new(INFRA_GATEWAY_URL, "test-token", 0),
             Err(BigwigClientInitError::InvalidTimeout)
         ));
     }

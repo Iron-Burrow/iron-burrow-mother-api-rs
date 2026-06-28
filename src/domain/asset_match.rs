@@ -1,13 +1,13 @@
 use crate::domain::global_assets::GlobalAsset;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AssetMatch {
-    pub asset: GlobalAsset,
-    pub confidence: MatchConfidence,
+pub(crate) struct AssetMatch {
+    pub(crate) asset: GlobalAsset,
+    pub(crate) confidence: MatchConfidence,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MatchConfidence {
+pub(crate) enum MatchConfidence {
     SlugExact,
     SymbolExact,
     NameExact,
@@ -15,7 +15,7 @@ pub enum MatchConfidence {
 }
 
 impl MatchConfidence {
-    pub fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::SlugExact => "slug_exact",
             Self::SymbolExact => "symbol_exact",

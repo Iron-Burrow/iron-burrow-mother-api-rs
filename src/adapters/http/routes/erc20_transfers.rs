@@ -1,6 +1,6 @@
 use axum::{body::Bytes, extract::State, http::HeaderMap};
 
-use crate::adapters::http::dto::erc20_transfers::validate_request;
+use crate::adapters::http::dto::erc20_transfers::Erc20TransferSearchRequest;
 use crate::adapters::http::json_body::parse_json_object_body;
 use crate::adapters::http::validation::ensure_json_content_type;
 use crate::application::erc20_transfers::service::{
@@ -15,7 +15,7 @@ pub async fn search_erc20_transfers(
 ) -> Result<(), ApiError> {
     ensure_json_content_type(&headers)?;
     let request = parse_json_object_body(&body)?;
-    let request = validate_request(&request)?;
+    let request = Erc20TransferSearchRequest::try_from(&request)?;
     let command = build_command(
         request,
         state.asset_repository.clone(),
@@ -40,86 +40,68 @@ mod tests {
     use super::*;
     use crate::{
         adapters::http::{
-            dto::{
-                erc20_transfers::{Erc20TransferDirection, Erc20TransferTokenFilters},
+            dto::filters::{
                 onchain_window::{BlockWindowDTO, OnchainWindowDTO},
+                token_filters::TokenFilterDTO,
+                transfer_direction::TransferDirectionDTO,
             },
+            router::build_router,
             types::JsonObject,
         },
-        application::erc20_transfers::service::{
-            Erc20TransferCommandDirection, Erc20TransferCommandTokenFilters,
-            Erc20TransferSearchCommand,
+        application::{
+            erc20_transfers::service::{
+                Erc20TransferCommandTokenFilters, Erc20TransferSearchCommand,
+            },
+            filters::{
+                onchain_window::{BlockWindow, OnchainWindow},
+                transfer_direction::TransferDirection,
+            },
         },
         common::rfc3339::parse_rfc3339,
-        domain::onchain_window::{BlockWindow, OnchainWindow},
-        test_utils::global_assets::asset_fixtures,
+        test_utils::{
+            fixtures::erc20_transfers::valid_erc20_transfers_request_body,
+            fixtures::global_assets::sample_assets, json::json_object,
+        },
     };
-    use crate::{
-        adapters::postgres::global_assets::GlobalAssetRepository, app::create_app, config::Config,
-    };
+    use crate::{adapters::postgres::global_assets::GlobalAssetRepository, config::Config};
 
     const TEST_MAX_TOKEN_FILTERS: u64 = 20;
 
     #[test]
-    fn validation_accepts_supported_window_shapes() {
-        let block = validate_request(&json_object(valid_request_body())).unwrap();
-        assert!(matches!(
-            block.window,
-            OnchainWindowDTO::Block(BlockWindowDTO {
-                from_block: 18_600_000,
-                to_block: 18_600_500,
-            })
-        ));
-
-        let mut timestamp_body = valid_request_body();
-        timestamp_body["window"] = json!({
-            "from_timestamp": "2026-06-25T00:00:00Z",
-            "to_timestamp": "2026-06-25T01:00:00Z"
-        });
-        let timestamp = validate_request(&json_object(timestamp_body)).unwrap();
-        assert!(matches!(timestamp.window, OnchainWindowDTO::Timestamp(_)));
-
-        let mut lookback_body = valid_request_body();
-        lookback_body["window"] = json!({
-            "lookback_seconds": 600,
-            "to": "latest"
-        });
-        let lookback = validate_request(&json_object(lookback_body)).unwrap();
-        assert!(matches!(lookback.window, OnchainWindowDTO::Lookback(_)));
-    }
-
-    #[test]
     fn validation_accepts_omitted_null_and_empty_tokens() {
-        let omitted_tokens = validate_request(&json_object(body_without_tokens())).unwrap();
+        let omitted_tokens =
+            Erc20TransferSearchRequest::try_from(&json_object(body_without_tokens())).unwrap();
         assert_eq!(
             omitted_tokens.tokens.unwrap_or_default(),
-            Erc20TransferTokenFilters::default()
+            TokenFilterDTO::default()
         );
 
-        let mut null_tokens_body = valid_request_body();
+        let mut null_tokens_body = valid_erc20_transfers_request_body();
         null_tokens_body["tokens"] = Value::Null;
-        let null_tokens = validate_request(&json_object(null_tokens_body)).unwrap();
+        let null_tokens =
+            Erc20TransferSearchRequest::try_from(&json_object(null_tokens_body)).unwrap();
         assert_eq!(
             null_tokens.tokens.unwrap_or_default(),
-            Erc20TransferTokenFilters::default()
+            TokenFilterDTO::default()
         );
 
-        let mut empty_tokens_body = valid_request_body();
+        let mut empty_tokens_body = valid_erc20_transfers_request_body();
         empty_tokens_body["tokens"] = json!({});
-        let empty_tokens = validate_request(&json_object(empty_tokens_body)).unwrap();
+        let empty_tokens =
+            Erc20TransferSearchRequest::try_from(&json_object(empty_tokens_body)).unwrap();
         assert_eq!(
             empty_tokens.tokens.unwrap_or_default(),
-            Erc20TransferTokenFilters::default()
+            TokenFilterDTO::default()
         );
     }
 
     #[test]
     fn validation_normalizes_explicit_contract_addresses_to_lowercase() {
-        let mut body = valid_request_body();
+        let mut body = valid_erc20_transfers_request_body();
         body["tokens"]["contract_addresses"] =
             json!(["0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"]);
 
-        let request = validate_request(&json_object(body)).unwrap();
+        let request = Erc20TransferSearchRequest::try_from(&json_object(body)).unwrap();
 
         assert_eq!(
             request.tokens.unwrap().contract_addresses,
@@ -129,7 +111,7 @@ mod tests {
 
     #[tokio::test]
     async fn command_resolves_usdc_and_dedupes_duplicate_explicit_address() {
-        let mut body = valid_request_body();
+        let mut body = valid_erc20_transfers_request_body();
         body["address"] = json!("0xABC0000000000000000000000000000000000000");
         body["tokens"]["contract_addresses"] =
             json!(["0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"]);
@@ -141,7 +123,7 @@ mod tests {
             Erc20TransferSearchCommand {
                 network_slug: "eth-mainnet".to_string(),
                 address: "0xabc0000000000000000000000000000000000000".to_string(),
-                direction: Erc20TransferCommandDirection::Any,
+                direction: TransferDirection::Any,
                 tokens: Erc20TransferCommandTokenFilters {
                     contract_addresses: vec![
                         "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string()
@@ -155,12 +137,12 @@ mod tests {
     #[test]
     fn validation_accepts_minimal_asset_contract_and_mixed_token_filter_shapes() {
         let cases = [
-            (body_without_tokens(), Erc20TransferTokenFilters::default()),
+            (body_without_tokens(), TokenFilterDTO::default()),
             (
                 request_with_tokens(json!({
                     "asset_slugs": ["usdc", "wrapped-ether"]
                 })),
-                Erc20TransferTokenFilters {
+                TokenFilterDTO {
                     asset_slugs: vec!["usdc".to_string(), "wrapped-ether".to_string()],
                     contract_addresses: Vec::new(),
                 },
@@ -172,7 +154,7 @@ mod tests {
                         "0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
                     ]
                 })),
-                Erc20TransferTokenFilters {
+                TokenFilterDTO {
                     asset_slugs: Vec::new(),
                     contract_addresses: vec![
                         "0x1111111111111111111111111111111111111111".to_string(),
@@ -181,8 +163,8 @@ mod tests {
                 },
             ),
             (
-                valid_request_body(),
-                Erc20TransferTokenFilters {
+                valid_erc20_transfers_request_body(),
+                TokenFilterDTO {
                     asset_slugs: vec!["usdc".to_string()],
                     contract_addresses: vec![
                         "0x1111111111111111111111111111111111111111".to_string()
@@ -192,14 +174,14 @@ mod tests {
         ];
 
         for (body, expected_tokens) in cases {
-            let request = validate_request(&json_object(body)).unwrap();
+            let request = Erc20TransferSearchRequest::try_from(&json_object(body)).unwrap();
 
             assert_eq!(request.network_slug, "eth-mainnet");
             assert_eq!(
                 request.address,
                 "0xabc0000000000000000000000000000000000000"
             );
-            assert_eq!(request.direction, Erc20TransferDirection::Any);
+            assert_eq!(request.direction, TransferDirectionDTO::Any);
             assert_eq!(request.tokens.unwrap_or_default(), expected_tokens);
             assert!(matches!(
                 request.window,
@@ -227,7 +209,7 @@ mod tests {
             "asset_slugs": ["usdc"],
             "contract_addresses": ["0x1111111111111111111111111111111111111111"]
         }));
-        let request = validate_request(&json_object(body)).unwrap();
+        let request = Erc20TransferSearchRequest::try_from(&json_object(body)).unwrap();
         let error = build_command(request, Some(repository()), 1)
             .await
             .unwrap_err();
@@ -249,7 +231,7 @@ mod tests {
                     .uri("/v1/erc20-transfers/search")
                     .header("content-type", "application/json")
                     .body(Body::from(
-                        serde_json::to_vec(&valid_request_body()).unwrap(),
+                        serde_json::to_vec(&valid_erc20_transfers_request_body()).unwrap(),
                     ))
                     .unwrap(),
             )
@@ -280,7 +262,7 @@ mod tests {
         let (status, response) = post_json(
             transfers_app(enabled_config()),
             "/v1/erc20-transfers/search",
-            valid_request_body(),
+            valid_erc20_transfers_request_body(),
         )
         .await;
 
@@ -453,7 +435,7 @@ mod tests {
 
     #[tokio::test]
     async fn validation_failures_do_not_require_catalog_or_bigwig_to_exist() {
-        let mut body = valid_request_body();
+        let mut body = valid_erc20_transfers_request_body();
         body["tokens"]["asset_slugs"] = json!(["USDC"]);
 
         let (status, response) = post_json(
@@ -491,7 +473,7 @@ mod tests {
                 transfers_app(enabled_config()),
                 "/v1/erc20-transfers/search",
                 content_type,
-                serde_json::to_vec(&valid_request_body()).unwrap(),
+                serde_json::to_vec(&valid_erc20_transfers_request_body()).unwrap(),
             )
             .await;
 
@@ -512,7 +494,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["future"] = json!(true);
                     body
                 })
@@ -523,7 +505,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["tokens"]["symbol"] = json!("USDC");
                     body
                 })
@@ -534,7 +516,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["window"]["cursor"] = json!("next");
                     body
                 })
@@ -545,7 +527,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body.as_object_mut().unwrap().remove("network_slug");
                     body
                 })
@@ -556,7 +538,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["network_slug"] = json!("");
                     body
                 })
@@ -567,7 +549,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["network_slug"] = json!(null);
                     body
                 })
@@ -578,7 +560,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["network_slug"] = json!("ETH-MAINNET");
                     body
                 })
@@ -589,7 +571,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["network_slug"] = json!("base-mainnet");
                     body
                 })
@@ -600,7 +582,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["address"] = json!("0x1234");
                     body
                 })
@@ -611,7 +593,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["direction"] = json!("ANY");
                     body
                 })
@@ -622,7 +604,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["direction"] = json!("sideways");
                     body
                 })
@@ -633,7 +615,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body.as_object_mut().unwrap().remove("window");
                     body
                 })
@@ -644,7 +626,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["window"] = json!({});
                     body
                 })
@@ -655,7 +637,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["window"] = json!({
                         "from_block": "18600000",
                         "to_block": 18_600_500
@@ -669,7 +651,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["window"] = json!({
                         "from_block": 18_600_500,
                         "to_block": 18_600_000
@@ -683,7 +665,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["window"] = json!({
                         "from_timestamp": "not-a-timestamp",
                         "to_timestamp": "2026-06-25T01:00:00Z"
@@ -697,7 +679,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["window"] = json!({
                         "from_timestamp": "2026-06-25T02:00:00Z",
                         "to_timestamp": "2026-06-25T01:00:00Z"
@@ -711,7 +693,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["window"] = json!({
                         "from_block": 18_600_000,
                         "to_block": 18_600_500,
@@ -727,7 +709,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["window"] = json!({
                         "lookback_seconds": 0,
                         "to": "latest"
@@ -741,7 +723,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["tokens"]["asset_slugs"] = json!(["USDC"]);
                     body
                 })
@@ -752,7 +734,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["tokens"]["asset_slugs"] = json!([""]);
                     body
                 })
@@ -763,7 +745,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["tokens"]["asset_slugs"] = json!(null);
                     body
                 })
@@ -774,7 +756,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["tokens"]["contract_addresses"] = json!(["0x1234"]);
                     body
                 })
@@ -785,7 +767,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["tokens"]["contract_addresses"] = json!([""]);
                     body
                 })
@@ -796,7 +778,7 @@ mod tests {
             (
                 Some("application/json"),
                 serde_json::to_vec(&{
-                    let mut body = valid_request_body();
+                    let mut body = valid_erc20_transfers_request_body();
                     body["tokens"]["contract_addresses"] = json!(null);
                     body
                 })
@@ -847,7 +829,8 @@ mod tests {
 
     #[tokio::test]
     async fn command_token_filters_have_no_asset_slug_field() {
-        let command = command_from_body(valid_request_body(), TEST_MAX_TOKEN_FILTERS).await;
+        let command =
+            command_from_body(valid_erc20_transfers_request_body(), TEST_MAX_TOKEN_FILTERS).await;
         let debug = format!("{:?}", command.tokens);
 
         assert!(!debug.contains("asset_slugs"));
@@ -878,31 +861,15 @@ mod tests {
     }
 
     fn transfers_app(config: Config) -> Router {
-        create_app(AppState::with_asset_repository(config, repository()))
+        build_router(AppState::with_asset_repository(config, repository()))
     }
 
     fn transfers_app_without_repository(config: Config) -> Router {
-        create_app(AppState::new(config))
-    }
-
-    fn valid_request_body() -> Value {
-        json!({
-            "network_slug": "eth-mainnet",
-            "address": "0xabc0000000000000000000000000000000000000",
-            "direction": "any",
-            "tokens": {
-                "asset_slugs": ["usdc"],
-                "contract_addresses": ["0x1111111111111111111111111111111111111111"]
-            },
-            "window": {
-                "from_block": 18600000,
-                "to_block": 18600500
-            }
-        })
+        build_router(AppState::new(config))
     }
 
     fn body_without_tokens() -> Value {
-        let mut body = valid_request_body();
+        let mut body = valid_erc20_transfers_request_body();
         body.as_object_mut().unwrap().remove("tokens");
         body
     }
@@ -914,21 +881,14 @@ mod tests {
     }
 
     fn repository() -> GlobalAssetRepository {
-        GlobalAssetRepository::in_memory(asset_fixtures())
+        GlobalAssetRepository::in_memory(sample_assets())
     }
 
     async fn command_from_body(body: Value, max_token_filters: u64) -> Erc20TransferSearchCommand {
-        let request = validate_request(&json_object(body)).unwrap();
+        let request = Erc20TransferSearchRequest::try_from(&json_object(body)).unwrap();
         build_command(request, Some(repository()), max_token_filters)
             .await
             .unwrap()
-    }
-
-    fn json_object(value: Value) -> JsonObject {
-        match value {
-            Value::Object(object) => object,
-            other => panic!("expected JSON object, got {other:?}"),
-        }
     }
 
     async fn post_json(app: Router, uri: &str, body: Value) -> (StatusCode, Value) {

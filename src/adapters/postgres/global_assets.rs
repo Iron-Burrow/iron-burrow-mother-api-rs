@@ -630,11 +630,11 @@ fn escape_like_pattern(value: &str) -> String {
 mod tests {
     use super::GlobalAssetRepository;
     use crate::adapters::postgres::asset_chain_map::in_memory_chain_map;
-    use crate::test_utils::global_assets::{asset_fixtures, format_sample_asset};
+    use crate::test_utils::fixtures::global_assets::{sample_asset, sample_assets};
 
     #[tokio::test]
     async fn list_assets_truncates_to_limit() {
-        let repository = GlobalAssetRepository::in_memory(asset_fixtures());
+        let repository = GlobalAssetRepository::in_memory(sample_assets());
 
         let assets = repository.list_assets(2).await.unwrap();
 
@@ -646,9 +646,9 @@ mod tests {
     #[tokio::test]
     async fn list_assets_returns_assets_in_stable_order() {
         let repository = GlobalAssetRepository::in_memory(vec![
-            format_sample_asset("zeta", "ZZZ", "Zeta", "crypto", "/assets/zeta", &[], 20),
-            format_sample_asset("alpha", "BBB", "Alpha", "crypto", "/assets/alpha", &[], 10),
-            format_sample_asset("beta", "AAA", "Beta", "crypto", "/assets/beta", &[], 10),
+            sample_asset("zeta", "ZZZ", "Zeta", "crypto", "/assets/zeta", &[], 20),
+            sample_asset("alpha", "BBB", "Alpha", "crypto", "/assets/alpha", &[], 10),
+            sample_asset("beta", "AAA", "Beta", "crypto", "/assets/beta", &[], 10),
         ]);
 
         let assets = repository.list_assets(10).await.unwrap();
@@ -664,7 +664,7 @@ mod tests {
 
     #[tokio::test]
     async fn asset_detail_lookup_is_case_insensitive() {
-        let repository = GlobalAssetRepository::in_memory(asset_fixtures());
+        let repository = GlobalAssetRepository::in_memory(sample_assets());
 
         let detail = repository
             .get_asset_detail_by_slug("BitCoin")
@@ -681,7 +681,7 @@ mod tests {
     #[tokio::test]
     async fn asset_detail_returns_chain_maps_in_stable_order() {
         let repository = GlobalAssetRepository::in_memory_with_chain_maps(
-            vec![format_sample_asset(
+            vec![sample_asset(
                 "sample",
                 "SMP",
                 "Sample",

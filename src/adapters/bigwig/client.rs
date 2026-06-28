@@ -1,12 +1,14 @@
 use std::time::Duration;
 
 use reqwest::{header::RETRY_AFTER, StatusCode, Url};
+use tracing::warn;
 
 use crate::adapters::bigwig::error::{map_error_response, BigwigError};
 use crate::adapters::bigwig::{
     balances::{BigwigClientInitError, BigwigRequest, BigwigResponse},
     error::map_reqwest_error,
 };
+use crate::config::Config;
 
 const CLIENT_SERVICE: &str = "mother-api";
 const LATEST_BALANCES_PATH: &str = "/internal/v1/primitives/evm/latest-balances";
@@ -111,5 +113,31 @@ impl std::fmt::Debug for BigwigClient {
             .field("token", &"<redacted>")
             .field("timeout", &self.timeout)
             .finish()
+    }
+}
+
+pub fn create_bigwig_client(config: &Config) -> Option<BigwigClient> {
+    match (
+        config.infra_gateway_url.as_deref(),
+        config.infra_gateway_token.as_deref(),
+    ) {
+        (Some(url), Some(token)) => {
+            match BigwigClient::new(url, token, config.bigwig_request_timeout_ms) {
+                Ok(client) => Some(client),
+                Err(error) => {
+                    warn!(%error, "Bigwig config is invalid; latest-balance integration disabled");
+                    None
+                }
+            }
+        }
+        (None, None) => None,
+        (url, token) => {
+            warn!(
+                infra_gateway_url_configured = url.is_some(),
+                infra_gateway_token_configured = token.is_some(),
+                "Bigwig config is incomplete; latest-balance integration disabled"
+            );
+            None
+        }
     }
 }

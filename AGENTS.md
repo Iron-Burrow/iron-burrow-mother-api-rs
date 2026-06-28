@@ -62,7 +62,7 @@ Agents must respect the role of each document in this repo:
   Ported" section) and reinforced across the Iron Burrow system:
   - Mother API owns the public HTTPS surface, the canonical
     `mother_api.global_asset` / `network` / `asset_chain_map` catalog, and
-    `/v1/resolve`.
+    `/v1/search-engine`.
   - `iron-burrow-price-indexer` Query Layer owns price availability,
     derivation, and historical price data. Mother API consumes it read-only.
   - `iron-burrow-defi-intelligence-service` (DIS) owns protocol-specific

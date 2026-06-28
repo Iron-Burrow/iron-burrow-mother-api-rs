@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use tracing::warn;
 
+use crate::config::Config;
+
 const POLYMARKET_SNAPSHOT_PATH: &str = "/internal/v1/prediction-markets/polymarket/snapshot";
 const RETRY_BACKOFF: Duration = Duration::from_millis(50);
 const MAX_LOGGED_TOP_LEVEL_FIELDS: usize = 16;
@@ -388,6 +390,23 @@ fn map_error_response(_status: StatusCode, body: &[u8]) -> DisClientError {
         "prediction_resolver_unavailable" => DisClientError::ResolverUnavailable,
         "internal_error" => DisClientError::ResolverError,
         code => DisClientError::UnknownResolverErrorCode(code.to_string()),
+    }
+}
+
+pub(crate) fn create_dis_client(config: &Config) -> Option<DisClient> {
+    match config.dis_base_url.as_deref() {
+        Some(url) => match DisClient::new(
+            url,
+            config.dis_request_timeout_ms,
+            config.dis_retry_max_attempts,
+        ) {
+            Ok(client) => Some(client),
+            Err(error) => {
+                warn!(%error, "DIS config is invalid; DIS integration disabled");
+                None
+            }
+        },
+        None => None,
     }
 }
 

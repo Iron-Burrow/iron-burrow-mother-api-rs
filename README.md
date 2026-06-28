@@ -258,15 +258,15 @@ Use this when an agent or application wants to reason about recent price directi
 ### 8. Asset Search / Resolve
 
 ```bash
-curl -sS "$IB_API/v1/resolve?q=usdc" | jq
+curl -sS "$IB_API/v1/assets/resolve?q=usdc" | jq
 ```
 
 ```bash
-curl -sS "$IB_API/v1/resolve?q=oro%20de%20ley" | jq
+curl -sS "$IB_API/v1/assets/resolve?q=oro%20de%20ley" | jq
 ```
 
 ```bash
-curl -sS "$IB_API/v1/resolve?q=some%20unknown%20thing" | jq
+curl -sS "$IB_API/v1/assets/resolve?q=some%20unknown%20thing" | jq
 ```
 
 Expected interpretation:
@@ -384,7 +384,7 @@ Basic local checks:
 ```bash
 curl -i http://localhost:3000/health
 curl -i 'http://localhost:3000/v1/assets?limit=20'
-curl -i 'http://localhost:3000/v1/resolve?q=usdc'
+curl -i 'http://localhost:3000/v1/assets/resolve?q=usdc'
 ```
 
 Development checks:

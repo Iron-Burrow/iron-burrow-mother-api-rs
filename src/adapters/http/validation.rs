@@ -1,15 +1,9 @@
 use axum::http::{header::CONTENT_TYPE, HeaderMap};
-
-use super::types::JsonObject;
-use crate::adapters::http::dto::erc20_transfers::{
-    Erc20TransferDirection, Erc20TransferTokenFilters,
-};
-use crate::adapters::http::error::ApiError;
-use crate::domain::validation::{is_asset_slug, is_evm_address};
-
 use serde_json::Value;
 
-const TOKEN_FIELDS: [&str; 2] = ["asset_slugs", "contract_addresses"];
+use super::types::JsonObject;
+use crate::adapters::http::error::ApiError;
+use crate::domain::validation::{is_asset_slug, is_evm_address};
 
 pub(super) fn ensure_json_content_type(headers: &HeaderMap) -> Result<(), ApiError> {
     if headers
@@ -83,37 +77,6 @@ pub(super) fn validate_address(value: Option<&Value>) -> Result<String, ApiError
     }
 
     Ok(address.to_ascii_lowercase())
-}
-
-pub(super) fn validate_direction(
-    value: Option<&Value>,
-) -> Result<Erc20TransferDirection, ApiError> {
-    match value {
-        Some(Value::String(direction)) => match direction.as_str() {
-            "any" => Ok(Erc20TransferDirection::Any),
-            "from" => Ok(Erc20TransferDirection::From),
-            "to" => Ok(Erc20TransferDirection::To),
-            _ => Err(ApiError::invalid_direction()),
-        },
-        _ => Err(ApiError::invalid_direction()),
-    }
-}
-
-pub(super) fn validate_tokens(
-    value: Option<&Value>,
-) -> Result<Option<Erc20TransferTokenFilters>, ApiError> {
-    match value {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Object(tokens)) => {
-            reject_unknown_fields(tokens, &TOKEN_FIELDS)?;
-
-            Ok(Some(Erc20TransferTokenFilters {
-                asset_slugs: validate_asset_slugs(tokens.get("asset_slugs"))?,
-                contract_addresses: validate_contract_addresses(tokens.get("contract_addresses"))?,
-            }))
-        }
-        Some(_) => Err(ApiError::invalid_json()),
-    }
 }
 
 pub(super) fn validate_asset_slugs(value: Option<&Value>) -> Result<Vec<String>, ApiError> {

@@ -6,13 +6,12 @@ use axum::{
 use serde::Serialize;
 use utoipa::ToSchema;
 
-use crate::domain::onchain_window::OnchainWindowError;
+use crate::application::filters::onchain_window::OnchainWindowError;
 
 #[derive(Debug)]
 pub struct ApiError {
     status: StatusCode,
     code: &'static str,
-    // message: &'static str,
     message: String,
 }
 

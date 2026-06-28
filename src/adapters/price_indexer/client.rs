@@ -7,6 +7,8 @@ use reqwest::{StatusCode, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tracing::warn;
 
+use crate::{adapters::price_indexer::error::PriceIndexerClientInitError, config::Config};
+
 const PRICE_BATCH_MAX_SLUGS: usize = 50;
 const DEFAULT_QUOTE_CURRENCY: &str = "USD";
 
@@ -367,23 +369,6 @@ impl std::fmt::Debug for PriceIndexerClient {
             .finish()
     }
 }
-
-#[derive(Debug)]
-pub enum PriceIndexerClientInitError {
-    InvalidBaseUrl(String),
-}
-
-impl std::fmt::Display for PriceIndexerClientInitError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidBaseUrl(error) => {
-                write!(formatter, "invalid PRICE_INDEXER_URL: {error}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for PriceIndexerClientInitError {}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct LatestAssetPrice {
@@ -998,6 +983,35 @@ fn map_signal_error_response(status: StatusCode, body: &[u8]) -> PriceSignalErro
         (StatusCode::UNAUTHORIZED, "UNAUTHORIZED") => PriceSignalError::Unauthorized,
         (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR") => PriceSignalError::UpstreamInternal,
         _ => PriceSignalError::MalformedResponse,
+    }
+}
+
+pub(crate) fn create_price_indexer_client(config: &Config) -> Option<PriceIndexerClient> {
+    match (
+        config.price_indexer_url.as_deref(),
+        config.price_ql_internal_token.as_deref(),
+    ) {
+        (Some(url), Some(token)) => {
+            match PriceIndexerClient::new(url, token, config.price_indexer_timeout_ms) {
+                Ok(client) => Some(client),
+                Err(error) => {
+                    warn!(
+                        %error,
+                        "Price indexer config is invalid; price enrichment disabled"
+                    );
+                    None
+                }
+            }
+        }
+        (None, None) => None,
+        (url, token) => {
+            warn!(
+                price_indexer_url_configured = url.is_some(),
+                price_ql_internal_token_configured = token.is_some(),
+                "Price indexer config is incomplete; price enrichment disabled"
+            );
+            None
+        }
     }
 }
 

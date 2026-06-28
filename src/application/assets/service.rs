@@ -694,10 +694,10 @@ fn enrichment_sources(include: &[AssetEnrichmentInclude]) -> Vec<&'static str> {
 mod tests {
     use super::*;
     use crate::adapters::postgres::global_assets::GlobalAssetRepository;
-    use crate::test_utils::global_assets::asset_fixtures;
+    use crate::test_utils::fixtures::global_assets::sample_assets;
 
     fn service() -> AssetsService {
-        AssetsService::new(GlobalAssetRepository::in_memory(asset_fixtures()), None)
+        AssetsService::new(GlobalAssetRepository::in_memory(sample_assets()), None)
     }
 
     #[tokio::test]

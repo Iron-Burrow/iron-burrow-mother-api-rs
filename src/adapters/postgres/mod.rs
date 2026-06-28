@@ -5,5 +5,7 @@ pub mod errors;
 pub mod global_assets;
 pub mod networks;
 
+pub use global_assets::GlobalAssetRepository;
+
 #[cfg(test)]
 mod tests;

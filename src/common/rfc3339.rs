@@ -3,12 +3,37 @@ use super::time::{
 };
 use std::cmp::Ordering;
 
+/// Parsed RFC 3339 timestamp normalized for comparison.
+///
+/// `epoch_seconds` stores the timestamp normalized to seconds relative to the
+/// Unix epoch, after applying the UTC offset.
+///
+/// `fraction` stores the fractional second digits without the leading `.`.
+/// It is kept separately so timestamps with the same epoch second can still be
+/// ordered by subsecond precision.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ParsedRfc3339 {
     epoch_seconds: i64,
     fraction: String,
 }
 
+/// Parses an RFC 3339 timestamp into a normalized comparable representation.
+///
+/// Accepts timestamps shaped like:
+///
+/// - `YYYY-MM-DDTHH:MM:SSZ`
+/// - `YYYY-MM-DDTHH:MM:SS.sssZ`
+/// - `YYYY-MM-DDTHH:MM:SS+HH:MM`
+/// - `YYYY-MM-DDTHH:MM:SS-HH:MM`
+///
+/// The returned `epoch_seconds` value is normalized to UTC by applying the
+/// timestamp offset. Fractional second digits are preserved separately.
+///
+/// Returns `None` when the timestamp has an invalid date, time, offset,
+/// separator layout, or when epoch-second arithmetic overflows.
+///
+/// Leap seconds are not accepted because `parse_time` only accepts seconds in
+/// the range `0..=59`.
 pub(crate) fn parse_rfc3339(value: &str) -> Option<ParsedRfc3339> {
     let (date, time_and_offset) = value.split_once('T')?;
     if time_and_offset.contains('T') {
@@ -31,12 +56,23 @@ pub(crate) fn parse_rfc3339(value: &str) -> Option<ParsedRfc3339> {
     })
 }
 
+/// Compares two parsed RFC 3339 timestamps chronologically.
+///
+/// Comparison first uses normalized epoch seconds. If both timestamps fall
+/// within the same second, fractional seconds are compared numerically with
+/// implicit trailing zeroes.
+///
+/// For example, `.1`, `.10`, and `.100` compare as equal.
 pub(crate) fn compare_rfc3339(left: &ParsedRfc3339, right: &ParsedRfc3339) -> Ordering {
     left.epoch_seconds
         .cmp(&right.epoch_seconds)
         .then_with(|| compare_fractional_seconds(&left.fraction, &right.fraction))
 }
 
+/// Compares fractional second strings as decimal subsecond values.
+///
+/// Missing digits are treated as trailing zeroes, so `"1"` and `"100"` are
+/// considered equal. The inputs are expected to contain ASCII digits only.
 fn compare_fractional_seconds(left: &str, right: &str) -> Ordering {
     let len = left.len().max(right.len());
 
@@ -52,6 +88,12 @@ fn compare_fractional_seconds(left: &str, right: &str) -> Ordering {
     Ordering::Equal
 }
 
+/// Parses a strict RFC 3339 calendar date.
+///
+/// Accepts only the `YYYY-MM-DD` shape.
+///
+/// Returns `None` when the layout is invalid, the month is outside `1..=12`,
+/// or the day does not exist in that month and year.
 fn parse_date(value: &str) -> Option<(i32, u32, u32)> {
     let bytes = value.as_bytes();
     if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
@@ -73,6 +115,12 @@ fn parse_date(value: &str) -> Option<(i32, u32, u32)> {
     Some((year, month, day))
 }
 
+/// Splits and parses the time-of-day and UTC offset portion of an RFC 3339 timestamp.
+///
+/// Accepts either a `Z` suffix for UTC or a signed numeric offset like
+/// `+06:00` or `-06:00`.
+///
+/// Returns the parsed local time and the offset in seconds.
 fn parse_time_and_offset(value: &str) -> Option<(ParsedTime, i64)> {
     let (time, offset_seconds) = if let Some(time) = value.strip_suffix('Z') {
         (time, 0)
@@ -89,6 +137,15 @@ fn parse_time_and_offset(value: &str) -> Option<(ParsedTime, i64)> {
     Some((parsed_time, offset_seconds))
 }
 
+/// Parses an RFC 3339 numeric UTC offset.
+///
+/// Accepts offsets shaped like `+HH:MM` or `-HH:MM`.
+///
+/// Returns the offset in seconds. Positive offsets are east of UTC and
+/// negative offsets are west of UTC.
+///
+/// Returns `None` when the layout is invalid or when the hour or minute
+/// component is outside its valid range.
 fn parse_offset(value: &str) -> Option<i64> {
     let bytes = value.as_bytes();
     if bytes.len() != 6 || bytes[3] != b':' {
@@ -108,3 +165,6 @@ fn parse_offset(value: &str) -> Option<i64> {
 
     Some(sign * (i64::from(hours) * 3_600 + i64::from(minutes) * 60))
 }
+
+#[cfg(test)]
+mod tests;

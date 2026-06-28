@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use crate::{
     adapters::http::error::ApiError,
-    application::resolve::{
+    application::assets::resolve::{
         query::{parse_query, QueryValidationError},
         service::{ResolveResponse, ResolveService},
     },
@@ -18,7 +18,7 @@ pub struct ResolveQuery {
     q: Option<String>,
 }
 
-pub async fn resolve(
+pub async fn assets_resolve(
     State(state): State<AppState>,
     Query(params): Query<ResolveQuery>,
 ) -> Result<Json<ResolveResponse>, ApiError> {

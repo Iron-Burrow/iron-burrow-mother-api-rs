@@ -1,11 +1,10 @@
 use serde::Serialize;
 
-use super::{
-    catalog::BalanceTarget,
-    service::{
-        BalanceAccountResult, BalanceEvidence, BalanceItemErrorCode, BalanceItemOutcome,
-        BalanceQuoteOutcome, BalanceSnapshotAccount, BalanceSnapshotResult,
-    },
+use crate::domain::balance_catalog::BalanceTarget;
+
+use super::service::{
+    BalanceAccountResult, BalanceEvidence, BalanceItemErrorCode, BalanceItemOutcome,
+    BalanceQuoteOutcome, BalanceSnapshotAccount, BalanceSnapshotResult,
 };
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -458,9 +457,9 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::application::balances::{
-        catalog::BalanceTargetKind,
-        service::{BalanceQuoteOutcome, BalanceSnapshotAccount},
+    use crate::{
+        application::balances::service::{BalanceQuoteOutcome, BalanceSnapshotAccount},
+        domain::balance_catalog::BalanceTargetKind,
     };
 
     #[test]

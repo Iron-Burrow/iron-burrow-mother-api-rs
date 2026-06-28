@@ -10,7 +10,7 @@ use tracing::warn;
 use crate::{
     adapters::http::error::ApiError,
     application::balances::{
-        catalog::{CatalogBalanceTargetResolver, CatalogResolverError},
+        catalog::CatalogBalanceTargetResolver,
         quote::PriceQuoteClient,
         response::{
             BalanceResponseAssembler, BalanceResponseAssemblerError, BulkBalanceResponse,
@@ -21,6 +21,7 @@ use crate::{
             BalanceSnapshotServiceError,
         },
     },
+    domain::balance_catalog::CatalogResolverError,
     state::AppState,
 };
 
@@ -283,12 +284,12 @@ mod tests {
     use serde_json::{json, Value};
     use tower::ServiceExt;
 
-    use crate::adapters::bigwig::client::BigwigClient;
     use crate::adapters::postgres::errors::RepositoryError;
-    use crate::test_utils::global_assets::asset_fixtures;
+    use crate::adapters::{bigwig::client::BigwigClient, http::router::build_router};
+    use crate::test_utils::fixtures::global_assets::sample_assets;
     use crate::{
         adapters::postgres::global_assets::GlobalAssetRepository,
-        adapters::price_indexer::PriceIndexerClient, app::create_app,
+        adapters::price_indexer::PriceIndexerClient,
         application::balances::service::BalancePlanIssue, config::Config,
     };
 
@@ -829,7 +830,7 @@ mod tests {
 
     #[tokio::test]
     async fn missing_catalog_configuration_returns_service_unavailable() {
-        let app = create_app(AppState::new(Config::default()));
+        let app = build_router(AppState::new(Config::default()));
         let (status, response) = post_json(
             app,
             "/v1/balances",
@@ -895,11 +896,11 @@ mod tests {
         let price_indexer_client =
             price_url.map(|url| PriceIndexerClient::new(url, "test-price-token", 2_000).unwrap());
 
-        create_app(AppState {
+        build_router(AppState {
             config: Config::default(),
             version: env!("CARGO_PKG_VERSION"),
             database_pool: None,
-            asset_repository: Some(GlobalAssetRepository::in_memory(asset_fixtures())),
+            asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
             price_indexer_client,
             dis_client: None,
             bigwig_client,

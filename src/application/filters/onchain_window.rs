@@ -3,22 +3,24 @@ use std::fmt;
 use crate::common::rfc3339::{compare_rfc3339, parse_rfc3339};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum OnchainWindow {
+pub(crate) enum OnchainWindow {
     Block(BlockWindow),
     Timestamp(TimestampWindow),
     Lookback(LookbackWindow),
 }
 
-/// Block Window
+/// ****************
+/// * Block Window *
+/// ****************
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BlockWindow {
-    pub from_block: u64,
-    pub to_block: u64,
+pub(crate) struct BlockWindow {
+    pub(crate) from_block: u64,
+    pub(crate) to_block: u64,
 }
 
 impl BlockWindow {
-    pub fn new(from_block: u64, to_block: u64) -> Result<Self, OnchainWindowError> {
+    pub(crate) fn new(from_block: u64, to_block: u64) -> Result<Self, OnchainWindowError> {
         if from_block > to_block {
             return Err(OnchainWindowError::InvalidBlockRange {
                 from_block,
@@ -33,22 +35,27 @@ impl BlockWindow {
     }
 }
 
-/// Timestamp Window
+/// ********************
+/// * Timestamp Window *
+/// ********************
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TimestampWindow {
-    pub from_timestamp: String,
-    pub to_timestamp: String,
+pub(crate) struct TimestampWindow {
+    pub(crate) from_timestamp: String,
+    pub(crate) to_timestamp: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TimestampField {
+pub(crate) enum TimestampField {
     FromTimestamp,
     ToTimestamp,
 }
 
 impl TimestampWindow {
-    pub fn new(from_timestamp: String, to_timestamp: String) -> Result<Self, OnchainWindowError> {
+    pub(crate) fn new(
+        from_timestamp: String,
+        to_timestamp: String,
+    ) -> Result<Self, OnchainWindowError> {
         let Some(from) = parse_rfc3339(&from_timestamp) else {
             return Err(OnchainWindowError::InvalidTimestamp {
                 field: TimestampField::FromTimestamp,
@@ -77,21 +84,23 @@ impl TimestampWindow {
     }
 }
 
-/// Lookback Window
+/// *******************
+/// * Lookback Window *
+/// *******************
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LookbackWindow {
-    pub lookback_seconds: u64,
-    pub to: LookbackTarget,
+pub(crate) struct LookbackWindow {
+    pub(crate) lookback_seconds: u64,
+    pub(crate) to: LookbackTarget,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum LookbackTarget {
+pub(crate) enum LookbackTarget {
     Latest,
 }
 
 impl LookbackWindow {
-    pub fn latest(lookback_seconds: u64) -> Result<Self, OnchainWindowError> {
+    pub(crate) fn latest(lookback_seconds: u64) -> Result<Self, OnchainWindowError> {
         if lookback_seconds == 0 {
             return Err(OnchainWindowError::InvalidLookbackSeconds { lookback_seconds });
         }
@@ -106,7 +115,7 @@ impl LookbackWindow {
 /// Errors
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum OnchainWindowError {
+pub(crate) enum OnchainWindowError {
     #[error("from_block must be less than or equal to to_block")]
     InvalidBlockRange { from_block: u64, to_block: u64 },
 

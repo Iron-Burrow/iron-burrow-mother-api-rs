@@ -159,14 +159,12 @@ impl From<GlobalAsset> for Recommendation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::global_assets::asset_fixtures;
-    use crate::{
-        adapters::postgres::global_assets::GlobalAssetRepository,
-        application::resolve::query::parse_query,
-    };
+    use crate::adapters::postgres::global_assets::GlobalAssetRepository;
+    use crate::application::assets::resolve::query::parse_query;
+    use crate::test_utils::fixtures::global_assets::sample_assets;
 
     fn service() -> ResolveService {
-        ResolveService::new(GlobalAssetRepository::in_memory(asset_fixtures()))
+        ResolveService::new(GlobalAssetRepository::in_memory(sample_assets()))
     }
 
     #[tokio::test]
