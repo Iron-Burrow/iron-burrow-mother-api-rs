@@ -71,20 +71,6 @@ pub struct Erc20TransferAmount {
     pub decimal: Option<String>,
 }
 
-// pub(crate) fn validate_request(
-//     request: &JsonObject,
-// ) -> Result<Erc20TransferSearchRequest, ApiError> {
-//     reject_unknown_fields(request, &TOP_LEVEL_FIELDS)?;
-
-//     Ok(Erc20TransferSearchRequest {
-//         network_slug: validate_network_slug(request.get("network_slug"), &SUPPORTED_NETWORKS_SLUG)?,
-//         address: validate_address(request.get("address"))?,
-//         direction: validate_direction(request.get("direction"))?,
-//         tokens: validate_tokens(request.get("tokens"))?,
-//         window: validate_window(request.get("window"))?,
-//     })
-// }
-
 impl TryFrom<&JsonObject> for Erc20TransferSearchRequest {
     type Error = ApiError;
 

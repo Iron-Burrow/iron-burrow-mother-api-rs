@@ -59,168 +59,20 @@ mod tests {
         },
         common::rfc3339::parse_rfc3339,
         test_utils::{
-            fixtures::erc20_transfers::valid_erc20_transfers_request_body,
-            fixtures::global_assets::sample_assets, json::json_object,
+            errors::assert_public_error,
+            fixtures::{
+                erc20_transfers::{
+                    erc20_transfers_command_from_body, erc20_transfers_request_with_tokens_body,
+                    erc20_transfers_without_tokens_body, valid_erc20_transfers_request_body,
+                },
+                global_assets::{global_assets_repository, sample_assets},
+            },
+            json::json_object,
         },
     };
     use crate::{adapters::postgres::global_assets::GlobalAssetRepository, config::Config};
 
     const TEST_MAX_TOKEN_FILTERS: u64 = 20;
-
-    #[test]
-    fn validation_accepts_omitted_null_and_empty_tokens() {
-        let omitted_tokens =
-            Erc20TransferSearchRequest::try_from(&json_object(body_without_tokens())).unwrap();
-        assert_eq!(
-            omitted_tokens.tokens.unwrap_or_default(),
-            TokenFilterDTO::default()
-        );
-
-        let mut null_tokens_body = valid_erc20_transfers_request_body();
-        null_tokens_body["tokens"] = Value::Null;
-        let null_tokens =
-            Erc20TransferSearchRequest::try_from(&json_object(null_tokens_body)).unwrap();
-        assert_eq!(
-            null_tokens.tokens.unwrap_or_default(),
-            TokenFilterDTO::default()
-        );
-
-        let mut empty_tokens_body = valid_erc20_transfers_request_body();
-        empty_tokens_body["tokens"] = json!({});
-        let empty_tokens =
-            Erc20TransferSearchRequest::try_from(&json_object(empty_tokens_body)).unwrap();
-        assert_eq!(
-            empty_tokens.tokens.unwrap_or_default(),
-            TokenFilterDTO::default()
-        );
-    }
-
-    #[test]
-    fn validation_normalizes_explicit_contract_addresses_to_lowercase() {
-        let mut body = valid_erc20_transfers_request_body();
-        body["tokens"]["contract_addresses"] =
-            json!(["0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"]);
-
-        let request = Erc20TransferSearchRequest::try_from(&json_object(body)).unwrap();
-
-        assert_eq!(
-            request.tokens.unwrap().contract_addresses,
-            ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]
-        );
-    }
-
-    #[tokio::test]
-    async fn command_resolves_usdc_and_dedupes_duplicate_explicit_address() {
-        let mut body = valid_erc20_transfers_request_body();
-        body["address"] = json!("0xABC0000000000000000000000000000000000000");
-        body["tokens"]["contract_addresses"] =
-            json!(["0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"]);
-
-        let command = command_from_body(body, TEST_MAX_TOKEN_FILTERS).await;
-
-        assert_eq!(
-            command,
-            Erc20TransferSearchCommand {
-                network_slug: "eth-mainnet".to_string(),
-                address: "0xabc0000000000000000000000000000000000000".to_string(),
-                direction: TransferDirection::Any,
-                tokens: Erc20TransferCommandTokenFilters {
-                    contract_addresses: vec![
-                        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string()
-                    ],
-                },
-                window: OnchainWindow::Block(BlockWindow::new(18_600_000, 18_600_500).unwrap()),
-            }
-        );
-    }
-
-    #[test]
-    fn validation_accepts_minimal_asset_contract_and_mixed_token_filter_shapes() {
-        let cases = [
-            (body_without_tokens(), TokenFilterDTO::default()),
-            (
-                request_with_tokens(json!({
-                    "asset_slugs": ["usdc", "wrapped-ether"]
-                })),
-                TokenFilterDTO {
-                    asset_slugs: vec!["usdc".to_string(), "wrapped-ether".to_string()],
-                    contract_addresses: Vec::new(),
-                },
-            ),
-            (
-                request_with_tokens(json!({
-                    "contract_addresses": [
-                        "0x1111111111111111111111111111111111111111",
-                        "0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
-                    ]
-                })),
-                TokenFilterDTO {
-                    asset_slugs: Vec::new(),
-                    contract_addresses: vec![
-                        "0x1111111111111111111111111111111111111111".to_string(),
-                        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
-                    ],
-                },
-            ),
-            (
-                valid_erc20_transfers_request_body(),
-                TokenFilterDTO {
-                    asset_slugs: vec!["usdc".to_string()],
-                    contract_addresses: vec![
-                        "0x1111111111111111111111111111111111111111".to_string()
-                    ],
-                },
-            ),
-        ];
-
-        for (body, expected_tokens) in cases {
-            let request = Erc20TransferSearchRequest::try_from(&json_object(body)).unwrap();
-
-            assert_eq!(request.network_slug, "eth-mainnet");
-            assert_eq!(
-                request.address,
-                "0xabc0000000000000000000000000000000000000"
-            );
-            assert_eq!(request.direction, TransferDirectionDTO::Any);
-            assert_eq!(request.tokens.unwrap_or_default(), expected_tokens);
-            assert!(matches!(
-                request.window,
-                OnchainWindowDTO::Block(BlockWindowDTO {
-                    from_block: 18_600_000,
-                    to_block: 18_600_500,
-                })
-            ));
-        }
-    }
-
-    #[tokio::test]
-    async fn command_enforces_final_token_filter_limit_after_dedupe() {
-        let body = request_with_tokens(json!({
-            "asset_slugs": ["usdc"],
-            "contract_addresses": ["0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"]
-        }));
-        let command = command_from_body(body, 1).await;
-        assert_eq!(
-            command.tokens.contract_addresses,
-            ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]
-        );
-
-        let body = request_with_tokens(json!({
-            "asset_slugs": ["usdc"],
-            "contract_addresses": ["0x1111111111111111111111111111111111111111"]
-        }));
-        let request = Erc20TransferSearchRequest::try_from(&json_object(body)).unwrap();
-        let error = build_command(request, Some(repository()), 1)
-            .await
-            .unwrap_err();
-
-        assert_api_error(
-            error,
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "too_many_token_filters",
-        )
-        .await;
-    }
 
     #[tokio::test]
     async fn route_is_absent_when_disabled() {
@@ -279,7 +131,7 @@ mod tests {
         let (status, response) = post_json(
             transfers_app_without_repository(enabled_config()),
             "/v1/erc20-transfers/search",
-            request_with_tokens(json!({
+            erc20_transfers_request_with_tokens_body(json!({
                 "contract_addresses": ["0x1111111111111111111111111111111111111111"]
             })),
         )
@@ -298,7 +150,7 @@ mod tests {
         let (status, response) = post_json(
             transfers_app_without_repository(enabled_config()),
             "/v1/erc20-transfers/search",
-            request_with_tokens(json!({"asset_slugs": ["usdc"]})),
+            erc20_transfers_request_with_tokens_body(json!({"asset_slugs": ["usdc"]})),
         )
         .await;
 
@@ -316,7 +168,7 @@ mod tests {
         let (status, response) = post_json(
             transfers_app(enabled_config()),
             "/v1/erc20-transfers/search",
-            request_with_tokens(json!({"asset_slugs": ["ethereum"]})),
+            erc20_transfers_request_with_tokens_body(json!({"asset_slugs": ["ethereum"]})),
         )
         .await;
 
@@ -334,7 +186,9 @@ mod tests {
         let (status, response) = post_json(
             transfers_app(enabled_config()),
             "/v1/erc20-transfers/search",
-            request_with_tokens(json!({"asset_slugs": ["missing-but-syntactically-valid"]})),
+            erc20_transfers_request_with_tokens_body(
+                json!({"asset_slugs": ["missing-but-syntactically-valid"]}),
+            ),
         )
         .await;
 
@@ -347,7 +201,7 @@ mod tests {
         let (status, response) = post_json(
             transfers_app(enabled_config()),
             "/v1/erc20-transfers/search",
-            request_with_tokens(json!({"asset_slugs": ["mantle"]})),
+            erc20_transfers_request_with_tokens_body(json!({"asset_slugs": ["mantle"]})),
         )
         .await;
 
@@ -365,7 +219,7 @@ mod tests {
         let (status, response) = post_json(
             transfers_app(enabled_config()),
             "/v1/erc20-transfers/search",
-            request_with_tokens(json!({
+            erc20_transfers_request_with_tokens_body(json!({
                 "asset_slugs": ["usdc", "ethereum"],
                 "contract_addresses": ["0x1111111111111111111111111111111111111111"]
             })),
@@ -391,7 +245,7 @@ mod tests {
                 ..Config::default()
             }),
             "/v1/erc20-transfers/search",
-            request_with_tokens(json!({
+            erc20_transfers_request_with_tokens_body(json!({
                 "asset_slugs": ["usdc"],
                 "contract_addresses": ["0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"]
             })),
@@ -416,7 +270,7 @@ mod tests {
                 ..Config::default()
             }),
             "/v1/erc20-transfers/search",
-            request_with_tokens(json!({
+            erc20_transfers_request_with_tokens_body(json!({
                 "contract_addresses": [
                     "0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48",
                     "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
@@ -812,7 +666,7 @@ mod tests {
                 ..Config::default()
             }),
             "/v1/erc20-transfers/search",
-            request_with_tokens(json!({
+            erc20_transfers_request_with_tokens_body(json!({
                 "asset_slugs": ["usdc"],
                 "contract_addresses": ["0x1111111111111111111111111111111111111111"]
             })),
@@ -829,8 +683,11 @@ mod tests {
 
     #[tokio::test]
     async fn command_token_filters_have_no_asset_slug_field() {
-        let command =
-            command_from_body(valid_erc20_transfers_request_body(), TEST_MAX_TOKEN_FILTERS).await;
+        let command = erc20_transfers_command_from_body(
+            valid_erc20_transfers_request_body(),
+            TEST_MAX_TOKEN_FILTERS,
+        )
+        .await;
         let debug = format!("{:?}", command.tokens);
 
         assert!(!debug.contains("asset_slugs"));
@@ -861,34 +718,14 @@ mod tests {
     }
 
     fn transfers_app(config: Config) -> Router {
-        build_router(AppState::with_asset_repository(config, repository()))
+        build_router(AppState::with_asset_repository(
+            config,
+            global_assets_repository(),
+        ))
     }
 
     fn transfers_app_without_repository(config: Config) -> Router {
         build_router(AppState::new(config))
-    }
-
-    fn body_without_tokens() -> Value {
-        let mut body = valid_erc20_transfers_request_body();
-        body.as_object_mut().unwrap().remove("tokens");
-        body
-    }
-
-    fn request_with_tokens(tokens: Value) -> Value {
-        let mut body = body_without_tokens();
-        body["tokens"] = tokens;
-        body
-    }
-
-    fn repository() -> GlobalAssetRepository {
-        GlobalAssetRepository::in_memory(sample_assets())
-    }
-
-    async fn command_from_body(body: Value, max_token_filters: u64) -> Erc20TransferSearchCommand {
-        let request = Erc20TransferSearchRequest::try_from(&json_object(body)).unwrap();
-        build_command(request, Some(repository()), max_token_filters)
-            .await
-            .unwrap()
     }
 
     async fn post_json(app: Router, uri: &str, body: Value) -> (StatusCode, Value) {
@@ -923,31 +760,6 @@ mod tests {
         let json = serde_json::from_slice(&body).unwrap();
 
         (status, json)
-    }
-
-    fn assert_public_error(
-        status: StatusCode,
-        response: &Value,
-        expected_status: StatusCode,
-        expected_code: &str,
-    ) {
-        assert_eq!(status, expected_status);
-        assert_eq!(response["ok"], false);
-        assert_eq!(response["error"]["code"], expected_code);
-        assert!(response["error"]["message"]
-            .as_str()
-            .is_some_and(|message| !message.is_empty()));
-    }
-
-    async fn assert_api_error(error: ApiError, expected_status: StatusCode, expected_code: &str) {
-        let response = error.into_response();
-        let status = response.status();
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let json: Value = serde_json::from_slice(&body).unwrap();
-
-        assert_public_error(status, &json, expected_status, expected_code);
     }
 
     #[tokio::test]

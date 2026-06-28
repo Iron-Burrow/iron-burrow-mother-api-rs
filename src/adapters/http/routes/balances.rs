@@ -284,9 +284,11 @@ mod tests {
     use serde_json::{json, Value};
     use tower::ServiceExt;
 
-    use crate::adapters::postgres::errors::RepositoryError;
     use crate::adapters::{bigwig::client::BigwigClient, http::router::build_router};
     use crate::test_utils::fixtures::global_assets::sample_assets;
+    use crate::{
+        adapters::postgres::errors::RepositoryError, test_utils::errors::assert_public_error,
+    };
     use crate::{
         adapters::postgres::global_assets::GlobalAssetRepository,
         adapters::price_indexer::PriceIndexerClient,
@@ -553,7 +555,12 @@ mod tests {
         for (content_type, body) in requests {
             let (status, response) =
                 post_raw(app.clone(), "/v1/balances", content_type, body.to_vec()).await;
-            assert_public_error(status, &response, "invalid_request");
+            assert_public_error(
+                status,
+                &response,
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+            );
         }
     }
 
@@ -571,7 +578,12 @@ mod tests {
             body["account"][field] = value;
 
             let (status, response) = post_json(app.clone(), "/v1/balances", body).await;
-            assert_public_error(status, &response, "invalid_request");
+            assert_public_error(
+                status,
+                &response,
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+            );
         }
 
         for field in ["chain", "chain_id", "chain_slug"] {
@@ -579,13 +591,23 @@ mod tests {
             body[field] = json!("eth-mainnet");
 
             let (status, response) = post_json(app.clone(), "/v1/balances", body).await;
-            assert_public_error(status, &response, "invalid_request");
+            assert_public_error(
+                status,
+                &response,
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+            );
         }
 
         let mut both_names = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
         both_names["account"]["chain"] = json!("eth-mainnet");
         let (status, response) = post_json(app.clone(), "/v1/balances", both_names).await;
-        assert_public_error(status, &response, "invalid_request");
+        assert_public_error(
+            status,
+            &response,
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+        );
 
         for field in ["chain", "chain_id", "chain_slug"] {
             let mut body = json!({
@@ -599,7 +621,12 @@ mod tests {
             body["accounts"][0][field] = json!("eth-mainnet");
 
             let (status, response) = post_json(app.clone(), "/v1/balances/bulk", body).await;
-            assert_public_error(status, &response, "invalid_request");
+            assert_public_error(
+                status,
+                &response,
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+            );
         }
     }
 
@@ -688,7 +715,7 @@ mod tests {
 
         for (body, expected_code) in cases {
             let (status, response) = post_json(app.clone(), "/v1/balances/bulk", body).await;
-            assert_public_error(status, &response, expected_code);
+            assert_public_error(status, &response, StatusCode::BAD_REQUEST, expected_code);
         }
     }
 
@@ -725,7 +752,12 @@ mod tests {
             }),
         ] {
             let (status, response) = post_json(app.clone(), "/v1/balances/bulk", body).await;
-            assert_public_error(status, &response, "request_too_large");
+            assert_public_error(
+                status,
+                &response,
+                StatusCode::BAD_REQUEST,
+                "request_too_large",
+            );
         }
     }
 
@@ -748,7 +780,12 @@ mod tests {
                 single_body(network_slug, ACCOUNT_A, "ethereum"),
             )
             .await;
-            assert_public_error(status, &response, "unsupported_network");
+            assert_public_error(
+                status,
+                &response,
+                StatusCode::BAD_REQUEST,
+                "unsupported_network",
+            );
         }
 
         for asset_slug in ["ETHEREUM", " ethereum ", "missing-asset"] {
@@ -758,7 +795,12 @@ mod tests {
                 single_body("eth-mainnet", ACCOUNT_A, asset_slug),
             )
             .await;
-            assert_public_error(status, &response, "unsupported_asset");
+            assert_public_error(
+                status,
+                &response,
+                StatusCode::BAD_REQUEST,
+                "unsupported_asset",
+            );
         }
     }
 
@@ -950,15 +992,6 @@ mod tests {
         let json = serde_json::from_slice(&body).unwrap();
 
         (status, json)
-    }
-
-    fn assert_public_error(status: StatusCode, response: &Value, expected_code: &str) {
-        assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert_eq!(response["ok"], false);
-        assert_eq!(response["error"]["code"], expected_code);
-        assert!(response["error"]["message"]
-            .as_str()
-            .is_some_and(|message| !message.is_empty()));
     }
 
     async fn response_error_code(response: axum::response::Response) -> String {

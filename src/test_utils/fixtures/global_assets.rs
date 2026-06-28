@@ -1,4 +1,8 @@
-use crate::domain::global_assets::GlobalAsset;
+use crate::{adapters::postgres::GlobalAssetRepository, domain::global_assets::GlobalAsset};
+
+pub(crate) fn global_assets_repository() -> GlobalAssetRepository {
+    GlobalAssetRepository::in_memory(sample_assets())
+}
 
 pub(crate) fn sample_asset(
     slug: &str,

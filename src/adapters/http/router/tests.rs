@@ -469,7 +469,7 @@ async fn prediction_routes_report_missing_dis_client() {
     let (status, json) = app_json(test_app(), "/v1/predictions/fifa-world-cup/winner").await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert_public_error(&json, "prediction_resolver_unavailable");
+    assert_public_router_error(&json, "prediction_resolver_unavailable");
 }
 
 #[tokio::test]
@@ -484,7 +484,7 @@ async fn prediction_routes_map_dis_connection_failure_to_resolver_unavailable() 
     let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert_public_error(&json, "prediction_resolver_unavailable");
+    assert_public_router_error(&json, "prediction_resolver_unavailable");
 }
 
 #[tokio::test]
@@ -502,7 +502,7 @@ async fn prediction_routes_map_dis_timeout_to_resolver_timeout() {
     let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
 
     assert_eq!(status, StatusCode::GATEWAY_TIMEOUT);
-    assert_public_error(&json, "prediction_resolver_timeout");
+    assert_public_router_error(&json, "prediction_resolver_timeout");
     handle.join().expect("test listener thread should finish");
 }
 
@@ -525,7 +525,7 @@ async fn prediction_routes_map_unsupported_subject_from_dis() {
     let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/atlantis").await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_public_error(&json, "unsupported_prediction_subject");
+    assert_public_router_error(&json, "unsupported_prediction_subject");
 }
 
 #[tokio::test]
@@ -564,7 +564,7 @@ async fn prediction_routes_map_provider_failures_from_dis() {
         let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
 
         assert_eq!(status, expected_status);
-        assert_public_error(&json, expected_code);
+        assert_public_router_error(&json, expected_code);
     }
 }
 
@@ -590,7 +590,7 @@ async fn prediction_routes_map_dis_internal_error_to_resolver_error() {
     let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
 
     assert_eq!(status, StatusCode::BAD_GATEWAY);
-    assert_public_error(&json, "prediction_resolver_error");
+    assert_public_router_error(&json, "prediction_resolver_error");
 }
 
 #[tokio::test]
@@ -614,7 +614,7 @@ async fn prediction_routes_map_wrong_shaped_success_to_schema_mismatch() {
     let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
 
     assert_eq!(status, StatusCode::BAD_GATEWAY);
-    assert_public_error(&json, "prediction_resolver_schema_mismatch");
+    assert_public_router_error(&json, "prediction_resolver_schema_mismatch");
     assert_ne!(
         json["error"]["code"],
         serde_json::json!("prediction_resolver_unavailable")
@@ -642,7 +642,7 @@ async fn prediction_routes_map_unknown_dis_error_code_to_resolver_error() {
     let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
 
     assert_eq!(status, StatusCode::BAD_GATEWAY);
-    assert_public_error(&json, "prediction_resolver_error");
+    assert_public_router_error(&json, "prediction_resolver_error");
     assert_ne!(
         json["error"]["code"],
         serde_json::json!("prediction_resolver_schema_mismatch")
@@ -666,7 +666,7 @@ async fn prediction_routes_map_invalid_dis_error_body_to_malformed_response() {
     let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
 
     assert_eq!(status, StatusCode::BAD_GATEWAY);
-    assert_public_error(&json, "prediction_resolver_malformed_response");
+    assert_public_router_error(&json, "prediction_resolver_malformed_response");
 }
 
 #[tokio::test]
@@ -1760,7 +1760,7 @@ async fn app_json(app: Router, uri: &str) -> (StatusCode, Value) {
     (status, json)
 }
 
-fn assert_public_error(json: &Value, expected_code: &str) {
+fn assert_public_router_error(json: &Value, expected_code: &str) {
     let top_level = json
         .as_object()
         .expect("public error response should be an object");
