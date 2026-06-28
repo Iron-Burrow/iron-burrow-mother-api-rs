@@ -218,7 +218,7 @@ async fn resolve_snapshot(
         .ok_or_else(ApiError::asset_network_map_unavailable)?;
     let service = BalanceSnapshotService::new(
         CatalogBalanceTargetResolver::new(repository),
-        state.bigwig_latest_balances_client.clone(),
+        state.bigwig_client.clone(),
         state
             .price_indexer_client
             .clone()
@@ -283,10 +283,10 @@ mod tests {
     use serde_json::{json, Value};
     use tower::ServiceExt;
 
+    use crate::adapters::bigwig::client::BigwigClient;
     use crate::adapters::postgres::errors::RepositoryError;
     use crate::test_utils::global_assets::asset_fixtures;
     use crate::{
-        adapters::bigwig::balances::BigwigLatestBalancesClient,
         adapters::postgres::global_assets::GlobalAssetRepository,
         adapters::price_indexer::PriceIndexerClient, app::create_app,
         application::balances::service::BalancePlanIssue, config::Config,
@@ -890,8 +890,8 @@ mod tests {
     }
 
     fn balance_app(bigwig_url: Option<&str>, price_url: Option<&str>) -> Router {
-        let bigwig_latest_balances_client = bigwig_url
-            .map(|url| BigwigLatestBalancesClient::new(url, "test-bigwig-token", 2_000).unwrap());
+        let bigwig_client =
+            bigwig_url.map(|url| BigwigClient::new(url, "test-bigwig-token", 2_000).unwrap());
         let price_indexer_client =
             price_url.map(|url| PriceIndexerClient::new(url, "test-price-token", 2_000).unwrap());
 
@@ -902,7 +902,7 @@ mod tests {
             asset_repository: Some(GlobalAssetRepository::in_memory(asset_fixtures())),
             price_indexer_client,
             dis_client: None,
-            bigwig_latest_balances_client,
+            bigwig_client,
         })
     }
 

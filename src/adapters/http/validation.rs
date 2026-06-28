@@ -7,7 +7,7 @@ use crate::adapters::http::dto::erc20_transfers::{
 use crate::adapters::http::error::ApiError;
 use crate::domain::validation::{is_asset_slug, is_evm_address};
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 const TOKEN_FIELDS: [&str; 2] = ["asset_slugs", "contract_addresses"];
 

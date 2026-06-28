@@ -7,10 +7,11 @@ use tokio::task::JoinSet;
 use tracing::warn;
 
 use crate::adapters::bigwig::balances::{
-    BigwigBalanceAccount, BigwigBalanceEvidenceItem, BigwigBalanceEvidenceStatus,
-    BigwigBalancePrimitive, BigwigBalanceTarget, BigwigLatestBalancesClient,
-    BigwigLatestBalancesError, BigwigLatestBalancesRequest, BigwigLatestBalancesResponse,
+    BigwigAccount, BigwigEvidenceItem, BigwigEvidenceStatus, BigwigPrimitive, BigwigRequest,
+    BigwigResponse, BigwigTarget,
 };
+use crate::adapters::bigwig::client::BigwigClient;
+use crate::adapters::bigwig::error::BigwigError;
 
 use super::{
     catalog::{
@@ -28,14 +29,14 @@ const BIGWIG_MAX_ITEMS: usize = 1_000;
 #[derive(Clone, Debug)]
 pub struct BalanceSnapshotService {
     catalog_resolver: CatalogBalanceTargetResolver,
-    bigwig_client: Option<BigwigLatestBalancesClient>,
+    bigwig_client: Option<BigwigClient>,
     price_quote_client: Option<PriceQuoteClient>,
 }
 
 impl BalanceSnapshotService {
     pub fn new(
         catalog_resolver: CatalogBalanceTargetResolver,
-        bigwig_client: Option<BigwigLatestBalancesClient>,
+        bigwig_client: Option<BigwigClient>,
         price_quote_client: Option<PriceQuoteClient>,
     ) -> Self {
         Self {
@@ -331,13 +332,13 @@ struct NetworkGroupPlan {
 }
 
 impl NetworkGroupPlan {
-    fn bigwig_request(&self) -> BigwigLatestBalancesRequest {
-        BigwigLatestBalancesRequest {
+    fn bigwig_request(&self) -> BigwigRequest {
+        BigwigRequest {
             network_slug: self.network_slug.clone(),
             accounts: self
                 .accounts
                 .iter()
-                .map(|account| BigwigBalanceAccount {
+                .map(|account| BigwigAccount {
                     address: account.account.address.clone(),
                 })
                 .collect(),
@@ -364,7 +365,7 @@ enum AssetPlan {
 
 #[derive(Clone, Debug)]
 struct PlannedTarget {
-    wire_target: BigwigBalanceTarget,
+    wire_target: BigwigTarget,
     catalog_target: BalanceTarget,
 }
 
@@ -384,10 +385,10 @@ impl TargetKey {
         }
     }
 
-    fn from_bigwig(target: &BigwigBalanceTarget) -> Self {
+    fn from_bigwig(target: &BigwigTarget) -> Self {
         match target {
-            BigwigBalanceTarget::Native => Self::Native,
-            BigwigBalanceTarget::Erc20 { contract_address } => {
+            BigwigTarget::Native => Self::Native,
+            BigwigTarget::Erc20 { contract_address } => {
                 Self::Erc20(contract_address.to_ascii_lowercase())
             }
         }
@@ -556,10 +557,10 @@ fn invalid_plan(network_slug: &str, issue: BalancePlanIssue) -> BalanceSnapshotS
     }
 }
 
-fn bigwig_target(kind: &BalanceTargetKind) -> BigwigBalanceTarget {
+fn bigwig_target(kind: &BalanceTargetKind) -> BigwigTarget {
     match kind {
-        BalanceTargetKind::Native => BigwigBalanceTarget::Native,
-        BalanceTargetKind::Erc20 { contract_address } => BigwigBalanceTarget::Erc20 {
+        BalanceTargetKind::Native => BigwigTarget::Native,
+        BalanceTargetKind::Erc20 { contract_address } => BigwigTarget::Erc20 {
             contract_address: contract_address.clone(),
         },
     }
@@ -568,7 +569,7 @@ fn bigwig_target(kind: &BalanceTargetKind) -> BigwigBalanceTarget {
 enum GroupExecution {
     SkippedOnly,
     Failed(BalanceItemErrorCode),
-    Called(Result<BigwigLatestBalancesResponse, BigwigLatestBalancesError>),
+    Called(Result<BigwigResponse, BigwigError>),
 }
 
 #[derive(Clone, Debug)]
@@ -715,9 +716,9 @@ fn failed_group_results(
 
 fn validate_response(
     plan: &NetworkGroupPlan,
-    response: BigwigLatestBalancesResponse,
+    response: BigwigResponse,
 ) -> Result<ValidatedGroup, ResponseValidationIssue> {
-    if response.primitive != BigwigBalancePrimitive::EvmLatestBalances {
+    if response.primitive != BigwigPrimitive::EvmLatestBalances {
         return Err(ResponseValidationIssue::WrongPrimitive);
     }
     if response.network.network_slug != plan.network_slug {
@@ -742,10 +743,10 @@ fn validate_response(
         let expected_account = &plan.accounts[item_index / plan.targets.len()];
         let expected_target = &plan.targets[item_index % plan.targets.len()];
         let (account, target) = match &item {
-            BigwigBalanceEvidenceItem::Resolved {
+            BigwigEvidenceItem::Resolved {
                 account, target, ..
             }
-            | BigwigBalanceEvidenceItem::Failed {
+            | BigwigEvidenceItem::Failed {
                 account, target, ..
             } => (account, target),
         };
@@ -763,14 +764,14 @@ fn validate_response(
         }
 
         match item {
-            BigwigBalanceEvidenceItem::Resolved { raw_amount, .. } => {
+            BigwigEvidenceItem::Resolved { raw_amount, .. } => {
                 if !is_unsigned_integer(&raw_amount) {
                     return Err(ResponseValidationIssue::InvalidRawAmount);
                 }
                 resolved_count += 1;
                 target_outcomes.push(TargetOutcome::Resolved(raw_amount));
             }
-            BigwigBalanceEvidenceItem::Failed { error, .. } => {
+            BigwigEvidenceItem::Failed { error, .. } => {
                 failed_count += 1;
                 warn!(
                     network_slug = plan.network_slug,
@@ -784,9 +785,9 @@ fn validate_response(
     }
 
     let expected_status = match (resolved_count, failed_count) {
-        (_, 0) => BigwigBalanceEvidenceStatus::Complete,
-        (0, _) => BigwigBalanceEvidenceStatus::Failed,
-        _ => BigwigBalanceEvidenceStatus::Partial,
+        (_, 0) => BigwigEvidenceStatus::Complete,
+        (0, _) => BigwigEvidenceStatus::Failed,
+        _ => BigwigEvidenceStatus::Partial,
     };
     if response.status != expected_status {
         return Err(ResponseValidationIssue::WrongStatus);
@@ -916,37 +917,33 @@ fn enrich_quote(
     }
 }
 
-fn map_bigwig_error(error: &BigwigLatestBalancesError) -> BalanceItemErrorCode {
+fn map_bigwig_error(error: &BigwigError) -> BalanceItemErrorCode {
     match error {
-        BigwigLatestBalancesError::UnsupportedNetwork
-        | BigwigLatestBalancesError::NetworkNotEnabledForOperation
-        | BigwigLatestBalancesError::NoRouteSatisfiesOperation
-        | BigwigLatestBalancesError::RpcError => BalanceItemErrorCode::BalanceResolutionFailed,
-        BigwigLatestBalancesError::Transport
-        | BigwigLatestBalancesError::Timeout
-        | BigwigLatestBalancesError::Unauthorized
-        | BigwigLatestBalancesError::RateLimited { .. }
-        | BigwigLatestBalancesError::ProviderUnavailable { .. }
-        | BigwigLatestBalancesError::ProviderTimeout
-        | BigwigLatestBalancesError::InternalError => {
-            BalanceItemErrorCode::BalanceProviderUnavailable
-        }
-        BigwigLatestBalancesError::RequestValidation(_)
-        | BigwigLatestBalancesError::MalformedSuccessResponse
-        | BigwigLatestBalancesError::MalformedErrorResponse
-        | BigwigLatestBalancesError::UnexpectedSuccessStatus(_)
-        | BigwigLatestBalancesError::UnexpectedErrorResponse { .. } => {
-            BalanceItemErrorCode::InternalError
-        }
+        BigwigError::UnsupportedNetwork
+        | BigwigError::NetworkNotEnabledForOperation
+        | BigwigError::NoRouteSatisfiesOperation
+        | BigwigError::RpcError => BalanceItemErrorCode::BalanceResolutionFailed,
+        BigwigError::Transport
+        | BigwigError::Timeout
+        | BigwigError::Unauthorized
+        | BigwigError::RateLimited { .. }
+        | BigwigError::ProviderUnavailable { .. }
+        | BigwigError::ProviderTimeout
+        | BigwigError::InternalError => BalanceItemErrorCode::BalanceProviderUnavailable,
+        BigwigError::RequestValidation(_)
+        | BigwigError::MalformedSuccessResponse
+        | BigwigError::MalformedErrorResponse
+        | BigwigError::UnexpectedSuccessStatus(_)
+        | BigwigError::UnexpectedErrorResponse { .. } => BalanceItemErrorCode::InternalError,
     }
 }
 
-fn log_bigwig_group_error(network_slug: &str, error: &BigwigLatestBalancesError) {
+fn log_bigwig_group_error(network_slug: &str, error: &BigwigError) {
     match error {
-        BigwigLatestBalancesError::RateLimited {
+        BigwigError::RateLimited {
             retry_after_seconds,
         }
-        | BigwigLatestBalancesError::ProviderUnavailable {
+        | BigwigError::ProviderUnavailable {
             retry_after_seconds,
         } => warn!(
             network_slug,
@@ -973,8 +970,8 @@ mod tests {
     use crate::test_utils::global_assets::asset_fixtures;
     use crate::{
         adapters::bigwig::balances::{
-            BigwigBalanceEvidenceBlock, BigwigBalanceEvidenceNetwork, BigwigBalanceItemError,
-            BigwigBalanceItemErrorCode, BigwigRequestValidationCode,
+            BigwigEvidenceBlock, BigwigEvidenceNetwork, BigwigItemError, BigwigItemErrorCode,
+            BigwigRequestValidationCode,
         },
         adapters::postgres::global_assets::GlobalAssetRepository,
         adapters::price_indexer::PriceIndexerClient,
@@ -1577,17 +1574,14 @@ mod tests {
         let plan = validation_plan();
 
         for (resolved, expected_status) in [
-            (
-                vec![true, true, true, true],
-                BigwigBalanceEvidenceStatus::Complete,
-            ),
+            (vec![true, true, true, true], BigwigEvidenceStatus::Complete),
             (
                 vec![true, false, true, false],
-                BigwigBalanceEvidenceStatus::Partial,
+                BigwigEvidenceStatus::Partial,
             ),
             (
                 vec![false, false, false, false],
-                BigwigBalanceEvidenceStatus::Failed,
+                BigwigEvidenceStatus::Failed,
             ),
         ] {
             let validated =
@@ -1602,7 +1596,7 @@ mod tests {
         let partial = response_for_plan(
             &plan,
             vec![true, false, true, false],
-            BigwigBalanceEvidenceStatus::Partial,
+            BigwigEvidenceStatus::Partial,
         );
         let results = assemble_group_results(&plan, GroupExecution::Called(Ok(partial)));
         assert!(results
@@ -1626,7 +1620,7 @@ mod tests {
         let failed = response_for_plan(
             &plan,
             vec![false, false, false, false],
-            BigwigBalanceEvidenceStatus::Failed,
+            BigwigEvidenceStatus::Failed,
         );
         let failed_results = assemble_group_results(&plan, GroupExecution::Called(Ok(failed)));
         assert!(failed_results
@@ -1640,10 +1634,8 @@ mod tests {
                     }
                 ))));
 
-        let request_failure = assemble_group_results(
-            &plan,
-            GroupExecution::Called(Err(BigwigLatestBalancesError::RpcError)),
-        );
+        let request_failure =
+            assemble_group_results(&plan, GroupExecution::Called(Err(BigwigError::RpcError)));
         assert!(request_failure
             .iter()
             .all(|(_, account)| account.evidence.is_none()
@@ -1663,7 +1655,7 @@ mod tests {
             response_for_plan(
                 &plan,
                 vec![true, true, true, true],
-                BigwigBalanceEvidenceStatus::Complete,
+                BigwigEvidenceStatus::Complete,
             )
         };
 
@@ -1710,7 +1702,7 @@ mod tests {
         );
 
         let mut wrong_status = valid();
-        wrong_status.status = BigwigBalanceEvidenceStatus::Partial;
+        wrong_status.status = BigwigEvidenceStatus::Partial;
         assert_eq!(
             validate_response(&plan, wrong_status).unwrap_err(),
             ResponseValidationIssue::WrongStatus
@@ -1720,10 +1712,10 @@ mod tests {
     #[test]
     fn maps_every_bigwig_request_wide_failure_class() {
         let resolution_failures = [
-            BigwigLatestBalancesError::UnsupportedNetwork,
-            BigwigLatestBalancesError::NetworkNotEnabledForOperation,
-            BigwigLatestBalancesError::NoRouteSatisfiesOperation,
-            BigwigLatestBalancesError::RpcError,
+            BigwigError::UnsupportedNetwork,
+            BigwigError::NetworkNotEnabledForOperation,
+            BigwigError::NoRouteSatisfiesOperation,
+            BigwigError::RpcError,
         ];
         for error in resolution_failures {
             assert_eq!(
@@ -1733,17 +1725,17 @@ mod tests {
         }
 
         let provider_failures = [
-            BigwigLatestBalancesError::Transport,
-            BigwigLatestBalancesError::Timeout,
-            BigwigLatestBalancesError::Unauthorized,
-            BigwigLatestBalancesError::RateLimited {
+            BigwigError::Transport,
+            BigwigError::Timeout,
+            BigwigError::Unauthorized,
+            BigwigError::RateLimited {
                 retry_after_seconds: Some(7),
             },
-            BigwigLatestBalancesError::ProviderUnavailable {
+            BigwigError::ProviderUnavailable {
                 retry_after_seconds: Some(9),
             },
-            BigwigLatestBalancesError::ProviderTimeout,
-            BigwigLatestBalancesError::InternalError,
+            BigwigError::ProviderTimeout,
+            BigwigError::InternalError,
         ];
         for error in provider_failures {
             assert_eq!(
@@ -1753,32 +1745,18 @@ mod tests {
         }
 
         let internal_failures = [
-            BigwigLatestBalancesError::RequestValidation(
-                BigwigRequestValidationCode::MalformedBody,
-            ),
-            BigwigLatestBalancesError::RequestValidation(
-                BigwigRequestValidationCode::EmptyAccounts,
-            ),
-            BigwigLatestBalancesError::RequestValidation(BigwigRequestValidationCode::EmptyTargets),
-            BigwigLatestBalancesError::RequestValidation(
-                BigwigRequestValidationCode::InvalidAccount,
-            ),
-            BigwigLatestBalancesError::RequestValidation(
-                BigwigRequestValidationCode::DuplicateAccount,
-            ),
-            BigwigLatestBalancesError::RequestValidation(
-                BigwigRequestValidationCode::InvalidTarget,
-            ),
-            BigwigLatestBalancesError::RequestValidation(
-                BigwigRequestValidationCode::DuplicateTarget,
-            ),
-            BigwigLatestBalancesError::RequestValidation(
-                BigwigRequestValidationCode::RequestTooLarge,
-            ),
-            BigwigLatestBalancesError::MalformedSuccessResponse,
-            BigwigLatestBalancesError::MalformedErrorResponse,
-            BigwigLatestBalancesError::UnexpectedSuccessStatus(201),
-            BigwigLatestBalancesError::UnexpectedErrorResponse { status: 418 },
+            BigwigError::RequestValidation(BigwigRequestValidationCode::MalformedBody),
+            BigwigError::RequestValidation(BigwigRequestValidationCode::EmptyAccounts),
+            BigwigError::RequestValidation(BigwigRequestValidationCode::EmptyTargets),
+            BigwigError::RequestValidation(BigwigRequestValidationCode::InvalidAccount),
+            BigwigError::RequestValidation(BigwigRequestValidationCode::DuplicateAccount),
+            BigwigError::RequestValidation(BigwigRequestValidationCode::InvalidTarget),
+            BigwigError::RequestValidation(BigwigRequestValidationCode::DuplicateTarget),
+            BigwigError::RequestValidation(BigwigRequestValidationCode::RequestTooLarge),
+            BigwigError::MalformedSuccessResponse,
+            BigwigError::MalformedErrorResponse,
+            BigwigError::UnexpectedSuccessStatus(201),
+            BigwigError::UnexpectedErrorResponse { status: 418 },
         ];
         for error in internal_failures {
             assert_eq!(
@@ -1788,12 +1766,12 @@ mod tests {
         }
     }
 
-    fn service(client: Option<BigwigLatestBalancesClient>) -> BalanceSnapshotService {
+    fn service(client: Option<BigwigClient>) -> BalanceSnapshotService {
         service_with_quote(client, None)
     }
 
     fn service_with_quote(
-        client: Option<BigwigLatestBalancesClient>,
+        client: Option<BigwigClient>,
         price_quote_client: Option<PriceQuoteClient>,
     ) -> BalanceSnapshotService {
         BalanceSnapshotService::new(
@@ -1803,8 +1781,8 @@ mod tests {
         )
     }
 
-    fn bigwig_client(base_url: &str) -> BigwigLatestBalancesClient {
-        BigwigLatestBalancesClient::new(base_url, "test-token", 2_000).unwrap()
+    fn bigwig_client(base_url: &str) -> BigwigClient {
+        BigwigClient::new(base_url, "test-token", 2_000).unwrap()
     }
 
     fn price_quote_client(base_url: &str) -> PriceQuoteClient {
@@ -1884,15 +1862,15 @@ mod tests {
     fn response_for_plan(
         plan: &NetworkGroupPlan,
         resolved: Vec<bool>,
-        status: BigwigBalanceEvidenceStatus,
-    ) -> BigwigLatestBalancesResponse {
+        status: BigwigEvidenceStatus,
+    ) -> BigwigResponse {
         let items = plan
             .accounts
             .iter()
             .flat_map(|account| {
                 plan.targets.iter().map(move |target| {
                     (
-                        BigwigBalanceAccount {
+                        BigwigAccount {
                             address: account.account.address.to_ascii_uppercase(),
                         },
                         target.wire_target.clone(),
@@ -1903,17 +1881,17 @@ mod tests {
             .enumerate()
             .map(|(index, ((account, target), resolved))| {
                 if resolved {
-                    BigwigBalanceEvidenceItem::Resolved {
+                    BigwigEvidenceItem::Resolved {
                         account,
                         target,
                         raw_amount: format!("{}000", index + 1),
                     }
                 } else {
-                    BigwigBalanceEvidenceItem::Failed {
+                    BigwigEvidenceItem::Failed {
                         account,
                         target,
-                        error: BigwigBalanceItemError {
-                            code: BigwigBalanceItemErrorCode::Erc20BalanceCallFailed,
+                        error: BigwigItemError {
+                            code: BigwigItemErrorCode::Erc20BalanceCallFailed,
                             message: "Bigwig-owned message".to_string(),
                         },
                     }
@@ -1921,15 +1899,15 @@ mod tests {
             })
             .collect();
 
-        BigwigLatestBalancesResponse {
-            primitive: BigwigBalancePrimitive::EvmLatestBalances,
+        BigwigResponse {
+            primitive: BigwigPrimitive::EvmLatestBalances,
             status,
-            network: BigwigBalanceEvidenceNetwork {
+            network: BigwigEvidenceNetwork {
                 network_slug: plan.network_slug.clone(),
                 chain_id: u64::try_from(plan.chain_id.unwrap()).unwrap(),
             },
             observed_at: "2026-06-17T12:00:00Z".to_string(),
-            block: BigwigBalanceEvidenceBlock {
+            block: BigwigEvidenceBlock {
                 number: "123".to_string(),
                 hash: format!("0x{}", "a".repeat(64)),
             },

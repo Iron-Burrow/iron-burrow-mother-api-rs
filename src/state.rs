@@ -1,9 +1,9 @@
 use sqlx::PgPool;
 use tracing::warn;
 
+use crate::adapters::bigwig::client::BigwigClient;
 use crate::{
-    adapters::bigwig::balances::BigwigLatestBalancesClient, adapters::dis::DisClient,
-    adapters::postgres::global_assets::GlobalAssetRepository,
+    adapters::dis::DisClient, adapters::postgres::global_assets::GlobalAssetRepository,
     adapters::price_indexer::PriceIndexerClient, config::Config, infra::db,
 };
 
@@ -16,7 +16,7 @@ pub struct AppState {
     pub price_indexer_client: Option<PriceIndexerClient>,
     pub dis_client: Option<DisClient>,
     #[allow(dead_code)]
-    pub bigwig_latest_balances_client: Option<BigwigLatestBalancesClient>,
+    pub bigwig_client: Option<BigwigClient>,
 }
 
 impl AppState {
@@ -30,7 +30,7 @@ impl AppState {
         let asset_repository = database_pool.clone().map(GlobalAssetRepository::database);
         let price_indexer_client = create_price_indexer_client(&config);
         let dis_client = create_dis_client(&config);
-        let bigwig_latest_balances_client = create_bigwig_latest_balances_client(&config);
+        let bigwig_client = create_bigwig_client(&config);
 
         Ok(Self {
             config,
@@ -39,7 +39,7 @@ impl AppState {
             asset_repository,
             price_indexer_client,
             dis_client,
-            bigwig_latest_balances_client,
+            bigwig_client,
         })
     }
 
@@ -52,7 +52,7 @@ impl AppState {
             asset_repository: Some(asset_repository),
             price_indexer_client: None,
             dis_client: None,
-            bigwig_latest_balances_client: None,
+            bigwig_client: None,
         }
     }
 }
@@ -103,13 +103,13 @@ fn create_dis_client(config: &Config) -> Option<DisClient> {
     }
 }
 
-fn create_bigwig_latest_balances_client(config: &Config) -> Option<BigwigLatestBalancesClient> {
+fn create_bigwig_client(config: &Config) -> Option<BigwigClient> {
     match (
         config.infra_gateway_url.as_deref(),
         config.infra_gateway_token.as_deref(),
     ) {
         (Some(url), Some(token)) => {
-            match BigwigLatestBalancesClient::new(url, token, config.bigwig_request_timeout_ms) {
+            match BigwigClient::new(url, token, config.bigwig_request_timeout_ms) {
                 Ok(client) => Some(client),
                 Err(error) => {
                     warn!(%error, "Bigwig config is invalid; latest-balance integration disabled");
@@ -164,7 +164,7 @@ mod tests {
     fn missing_bigwig_config_disables_client() {
         let state = AppState::new(Config::default());
 
-        assert!(state.bigwig_latest_balances_client.is_none());
+        assert!(state.bigwig_client.is_none());
     }
 
     #[test]
@@ -176,7 +176,7 @@ mod tests {
         });
 
         let client = state
-            .bigwig_latest_balances_client
+            .bigwig_client
             .expect("valid Bigwig config should create a client");
         assert_eq!(client.base_host(), Some("infra-gateway-hub"));
         assert_eq!(client.timeout_ms(), 30000);
@@ -195,7 +195,7 @@ mod tests {
             },
         ] {
             let state = AppState::new(config);
-            assert!(state.bigwig_latest_balances_client.is_none());
+            assert!(state.bigwig_client.is_none());
         }
     }
 
@@ -207,6 +207,6 @@ mod tests {
             ..Config::default()
         });
 
-        assert!(state.bigwig_latest_balances_client.is_none());
+        assert!(state.bigwig_client.is_none());
     }
 }

@@ -143,7 +143,7 @@ mod tests {
             asset_repository: Some(GlobalAssetRepository::in_memory(asset_fixtures())),
             price_indexer_client: Some(price_indexer_client),
             dis_client: None,
-            bigwig_latest_balances_client: None,
+            bigwig_client: None,
         })
     }
 
@@ -161,7 +161,7 @@ mod tests {
             asset_repository: Some(GlobalAssetRepository::in_memory(asset_fixtures())),
             price_indexer_client: None,
             dis_client: Some(dis_client),
-            bigwig_latest_balances_client: None,
+            bigwig_client: None,
         })
     }
 
@@ -833,7 +833,7 @@ mod tests {
             asset_repository: Some(repository),
             price_indexer_client: Some(price_indexer_client),
             dis_client: None,
-            bigwig_latest_balances_client: None,
+            bigwig_client: None,
         });
 
         let response = app
@@ -999,7 +999,7 @@ mod tests {
             asset_repository: Some(repository),
             price_indexer_client: Some(price_indexer_client),
             dis_client: None,
-            bigwig_latest_balances_client: None,
+            bigwig_client: None,
         });
 
         let response = app

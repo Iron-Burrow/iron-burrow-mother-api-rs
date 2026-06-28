@@ -3,161 +3,38 @@ use std::time::Duration;
 use reqwest::{header::RETRY_AFTER, StatusCode, Url};
 use serde::{de, Deserialize, Deserializer, Serialize};
 
-const LATEST_BALANCES_PATH: &str = "/internal/v1/primitives/evm/latest-balances";
-const CLIENT_SERVICE: &str = "mother-api";
-
-#[derive(Clone)]
-pub struct BigwigLatestBalancesClient {
-    client: reqwest::Client,
-    base_url: Url,
-    token: String,
-    timeout: Duration,
-}
-
-impl BigwigLatestBalancesClient {
-    pub fn new(
-        base_url: &str,
-        token: &str,
-        timeout_ms: u64,
-    ) -> Result<Self, BigwigLatestBalancesClientInitError> {
-        let base_url = Url::parse(base_url).map_err(|error| {
-            BigwigLatestBalancesClientInitError::InvalidBaseUrl(error.to_string())
-        })?;
-        if !matches!(base_url.scheme(), "http" | "https") || base_url.host_str().is_none() {
-            return Err(BigwigLatestBalancesClientInitError::InvalidBaseUrl(
-                "URL must use http or https and include a host".to_string(),
-            ));
-        }
-
-        if token.trim().is_empty() {
-            return Err(BigwigLatestBalancesClientInitError::EmptyToken);
-        }
-        if timeout_ms == 0 {
-            return Err(BigwigLatestBalancesClientInitError::InvalidTimeout);
-        }
-
-        Ok(Self {
-            client: reqwest::Client::new(),
-            base_url,
-            token: token.to_string(),
-            timeout: Duration::from_millis(timeout_ms),
-        })
-    }
-
-    #[cfg(test)]
-    pub fn base_host(&self) -> Option<&str> {
-        self.base_url.host_str()
-    }
-
-    #[cfg(test)]
-    pub fn timeout_ms(&self) -> u128 {
-        self.timeout.as_millis()
-    }
-
-    pub async fn latest_balances(
-        &self,
-        request: &BigwigLatestBalancesRequest,
-    ) -> Result<BigwigLatestBalancesResponse, BigwigLatestBalancesError> {
-        let response = self
-            .client
-            .post(self.latest_balances_url())
-            .bearer_auth(&self.token)
-            .header("X-Client-Service", CLIENT_SERVICE)
-            .timeout(self.timeout)
-            .json(request)
-            .send()
-            .await
-            .map_err(map_reqwest_error)?;
-
-        let status = response.status();
-        let retry_after_seconds = response
-            .headers()
-            .get(RETRY_AFTER)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.trim().parse::<u64>().ok());
-        let body = response.bytes().await.map_err(map_reqwest_error)?;
-
-        if status == StatusCode::OK {
-            return serde_json::from_slice(&body)
-                .map_err(|_| BigwigLatestBalancesError::MalformedSuccessResponse);
-        }
-
-        if status.is_success() {
-            return Err(BigwigLatestBalancesError::UnexpectedSuccessStatus(
-                status.as_u16(),
-            ));
-        }
-
-        Err(map_error_response(status, &body, retry_after_seconds))
-    }
-
-    fn latest_balances_url(&self) -> Url {
-        let mut url = self.base_url.clone();
-        let base_path = url.path().trim_end_matches('/');
-        url.set_path(&format!("{base_path}{LATEST_BALANCES_PATH}"));
-        url.set_query(None);
-        url.set_fragment(None);
-        url
-    }
-}
-
-impl std::fmt::Debug for BigwigLatestBalancesClient {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("BigwigLatestBalancesClient")
-            .field("base_url", &self.base_url)
-            .field("token", &"<redacted>")
-            .field("timeout", &self.timeout)
-            .finish()
-    }
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub enum BigwigLatestBalancesClientInitError {
+#[derive(Debug, thiserror::Error, Eq, PartialEq)]
+pub enum BigwigClientInitError {
+    #[error("invalid INFRA_GATEWAY_URL: {0}")]
     InvalidBaseUrl(String),
+
+    #[error("INFRA_GATEWAY_TOKEN must not be empty")]
     EmptyToken,
+
+    #[error("BIGWIG_REQUEST_TIMEOUT_MS must be greater than zero")]
     InvalidTimeout,
 }
 
-impl std::fmt::Display for BigwigLatestBalancesClientInitError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidBaseUrl(error) => {
-                write!(formatter, "invalid INFRA_GATEWAY_URL: {error}")
-            }
-            Self::EmptyToken => write!(formatter, "INFRA_GATEWAY_TOKEN must not be empty"),
-            Self::InvalidTimeout => {
-                write!(
-                    formatter,
-                    "BIGWIG_REQUEST_TIMEOUT_MS must be greater than zero"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for BigwigLatestBalancesClientInitError {}
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct BigwigLatestBalancesRequest {
+pub struct BigwigRequest {
     pub network_slug: String,
-    pub accounts: Vec<BigwigBalanceAccount>,
-    pub targets: Vec<BigwigBalanceTarget>,
+    pub accounts: Vec<BigwigAccount>,
+    pub targets: Vec<BigwigTarget>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct BigwigBalanceAccount {
+pub struct BigwigAccount {
     pub address: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
-pub enum BigwigBalanceTarget {
+pub enum BigwigTarget {
     Native,
     Erc20 { contract_address: String },
 }
 
-impl<'de> Deserialize<'de> for BigwigBalanceTarget {
+impl<'de> Deserialize<'de> for BigwigTarget {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -179,56 +56,56 @@ impl<'de> Deserialize<'de> for BigwigBalanceTarget {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct BigwigLatestBalancesResponse {
-    pub primitive: BigwigBalancePrimitive,
-    pub status: BigwigBalanceEvidenceStatus,
-    pub network: BigwigBalanceEvidenceNetwork,
+pub struct BigwigResponse {
+    pub primitive: BigwigPrimitive,
+    pub status: BigwigEvidenceStatus,
+    pub network: BigwigEvidenceNetwork,
     pub observed_at: String,
-    pub block: BigwigBalanceEvidenceBlock,
-    pub items: Vec<BigwigBalanceEvidenceItem>,
+    pub block: BigwigEvidenceBlock,
+    pub items: Vec<BigwigEvidenceItem>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-pub enum BigwigBalancePrimitive {
+pub enum BigwigPrimitive {
     #[serde(rename = "evm_latest_balances")]
     EvmLatestBalances,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
-pub enum BigwigBalanceEvidenceStatus {
+pub enum BigwigEvidenceStatus {
     Complete,
     Partial,
     Failed,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct BigwigBalanceEvidenceNetwork {
+pub struct BigwigEvidenceNetwork {
     pub network_slug: String,
     pub chain_id: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct BigwigBalanceEvidenceBlock {
+pub struct BigwigEvidenceBlock {
     pub number: String,
     pub hash: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum BigwigBalanceEvidenceItem {
+pub enum BigwigEvidenceItem {
     Resolved {
-        account: BigwigBalanceAccount,
-        target: BigwigBalanceTarget,
+        account: BigwigAccount,
+        target: BigwigTarget,
         raw_amount: String,
     },
     Failed {
-        account: BigwigBalanceAccount,
-        target: BigwigBalanceTarget,
-        error: BigwigBalanceItemError,
+        account: BigwigAccount,
+        target: BigwigTarget,
+        error: BigwigItemError,
     },
 }
 
-impl<'de> Deserialize<'de> for BigwigBalanceEvidenceItem {
+impl<'de> Deserialize<'de> for BigwigEvidenceItem {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -243,10 +120,10 @@ impl<'de> Deserialize<'de> for BigwigBalanceEvidenceItem {
         #[derive(Deserialize)]
         struct WireItem {
             status: WireStatus,
-            account: BigwigBalanceAccount,
-            target: BigwigBalanceTarget,
+            account: BigwigAccount,
+            target: BigwigTarget,
             raw_amount: Option<String>,
-            error: Option<BigwigBalanceItemError>,
+            error: Option<BigwigItemError>,
         }
 
         let item = WireItem::deserialize(deserializer)?;
@@ -267,14 +144,14 @@ impl<'de> Deserialize<'de> for BigwigBalanceEvidenceItem {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct BigwigBalanceItemError {
-    pub code: BigwigBalanceItemErrorCode,
+pub struct BigwigItemError {
+    pub code: BigwigItemErrorCode,
     pub message: String,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
-pub enum BigwigBalanceItemErrorCode {
+pub enum BigwigItemErrorCode {
     NativeBalanceCallFailed,
     Erc20BalanceCallFailed,
     Erc20BadResponse,
@@ -292,127 +169,6 @@ pub enum BigwigRequestValidationCode {
     RequestTooLarge,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum BigwigLatestBalancesError {
-    Transport,
-    Timeout,
-    Unauthorized,
-    UnsupportedNetwork,
-    NetworkNotEnabledForOperation,
-    NoRouteSatisfiesOperation,
-    RateLimited { retry_after_seconds: Option<u64> },
-    RpcError,
-    ProviderUnavailable { retry_after_seconds: Option<u64> },
-    ProviderTimeout,
-    InternalError,
-    RequestValidation(BigwigRequestValidationCode),
-    MalformedSuccessResponse,
-    MalformedErrorResponse,
-    UnexpectedSuccessStatus(u16),
-    UnexpectedErrorResponse { status: u16 },
-}
-
-fn map_reqwest_error(error: reqwest::Error) -> BigwigLatestBalancesError {
-    if error.is_timeout() {
-        BigwigLatestBalancesError::Timeout
-    } else {
-        BigwigLatestBalancesError::Transport
-    }
-}
-
-fn map_error_response(
-    status: StatusCode,
-    body: &[u8],
-    retry_after_seconds: Option<u64>,
-) -> BigwigLatestBalancesError {
-    #[derive(Deserialize)]
-    struct ErrorEnvelope {
-        error: ErrorBody,
-    }
-
-    #[derive(Deserialize)]
-    struct ErrorBody {
-        code: String,
-        // Bigwig's binding error contract requires both fields. Decode and
-        // discard them so contract drift is classified as malformed without
-        // retaining or exposing upstream messages or details.
-        #[serde(rename = "message")]
-        _message: String,
-        #[serde(rename = "details")]
-        _details: serde_json::Map<String, serde_json::Value>,
-    }
-
-    let envelope = match serde_json::from_slice::<ErrorEnvelope>(body) {
-        Ok(envelope) => envelope,
-        Err(_) => return BigwigLatestBalancesError::MalformedErrorResponse,
-    };
-
-    match (status, envelope.error.code.as_str()) {
-        (StatusCode::BAD_REQUEST, "malformed_body") => {
-            BigwigLatestBalancesError::RequestValidation(BigwigRequestValidationCode::MalformedBody)
-        }
-        (StatusCode::BAD_REQUEST, "empty_accounts") => {
-            BigwigLatestBalancesError::RequestValidation(BigwigRequestValidationCode::EmptyAccounts)
-        }
-        (StatusCode::BAD_REQUEST, "empty_targets") => {
-            BigwigLatestBalancesError::RequestValidation(BigwigRequestValidationCode::EmptyTargets)
-        }
-        (StatusCode::BAD_REQUEST, "invalid_account") => {
-            BigwigLatestBalancesError::RequestValidation(
-                BigwigRequestValidationCode::InvalidAccount,
-            )
-        }
-        (StatusCode::BAD_REQUEST, "duplicate_account") => {
-            BigwigLatestBalancesError::RequestValidation(
-                BigwigRequestValidationCode::DuplicateAccount,
-            )
-        }
-        (StatusCode::BAD_REQUEST, "invalid_target") => {
-            BigwigLatestBalancesError::RequestValidation(BigwigRequestValidationCode::InvalidTarget)
-        }
-        (StatusCode::BAD_REQUEST, "duplicate_target") => {
-            BigwigLatestBalancesError::RequestValidation(
-                BigwigRequestValidationCode::DuplicateTarget,
-            )
-        }
-        (StatusCode::BAD_REQUEST, "request_too_large") => {
-            BigwigLatestBalancesError::RequestValidation(
-                BigwigRequestValidationCode::RequestTooLarge,
-            )
-        }
-        (StatusCode::UNAUTHORIZED, "unauthorized") => BigwigLatestBalancesError::Unauthorized,
-        (StatusCode::NOT_FOUND, "unsupported_network") => {
-            BigwigLatestBalancesError::UnsupportedNetwork
-        }
-        (StatusCode::UNPROCESSABLE_ENTITY, "network_not_enabled_for_operation") => {
-            BigwigLatestBalancesError::NetworkNotEnabledForOperation
-        }
-        (StatusCode::UNPROCESSABLE_ENTITY, "no_route_satisfies_operation") => {
-            BigwigLatestBalancesError::NoRouteSatisfiesOperation
-        }
-        (StatusCode::TOO_MANY_REQUESTS, "gateway_rate_limited") => {
-            BigwigLatestBalancesError::RateLimited {
-                retry_after_seconds,
-            }
-        }
-        (StatusCode::BAD_GATEWAY, "rpc_error") => BigwigLatestBalancesError::RpcError,
-        (StatusCode::SERVICE_UNAVAILABLE, "provider_unavailable") => {
-            BigwigLatestBalancesError::ProviderUnavailable {
-                retry_after_seconds,
-            }
-        }
-        (StatusCode::GATEWAY_TIMEOUT, "provider_timeout") => {
-            BigwigLatestBalancesError::ProviderTimeout
-        }
-        (StatusCode::INTERNAL_SERVER_ERROR, "internal_error") => {
-            BigwigLatestBalancesError::InternalError
-        }
-        _ => BigwigLatestBalancesError::UnexpectedErrorResponse {
-            status: status.as_u16(),
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -427,6 +183,11 @@ mod tests {
     };
 
     use serde_json::{json, Value};
+
+    use crate::adapters::bigwig::{
+        client::BigwigClient,
+        error::{map_error_response, BigwigError},
+    };
 
     use super::*;
 
@@ -468,26 +229,23 @@ mod tests {
             (
                 "complete",
                 json!([resolved_item()]),
-                BigwigBalanceEvidenceStatus::Complete,
+                BigwigEvidenceStatus::Complete,
             ),
             (
                 "partial",
                 json!([resolved_item(), failed_item("erc20_balance_call_failed")]),
-                BigwigBalanceEvidenceStatus::Partial,
+                BigwigEvidenceStatus::Partial,
             ),
             (
                 "failed",
                 json!([failed_item("erc20_bad_response")]),
-                BigwigBalanceEvidenceStatus::Failed,
+                BigwigEvidenceStatus::Failed,
             ),
         ] {
-            let response: BigwigLatestBalancesResponse =
+            let response: BigwigResponse =
                 serde_json::from_value(response_body(status, items)).unwrap();
 
-            assert_eq!(
-                response.primitive,
-                BigwigBalancePrimitive::EvmLatestBalances
-            );
+            assert_eq!(response.primitive, BigwigPrimitive::EvmLatestBalances);
             assert_eq!(response.status, expected_status);
             assert_eq!(response.network.network_slug, "arbitrum-mainnet");
             assert_eq!(response.network.chain_id, 42161);
@@ -499,10 +257,10 @@ mod tests {
 
     #[test]
     fn response_preserves_decimal_strings_and_address_casing() {
-        let response: BigwigLatestBalancesResponse =
+        let response: BigwigResponse =
             serde_json::from_value(response_body("complete", json!([resolved_item()]))).unwrap();
 
-        let BigwigBalanceEvidenceItem::Resolved {
+        let BigwigEvidenceItem::Resolved {
             account,
             target,
             raw_amount,
@@ -515,7 +273,7 @@ mod tests {
         assert_eq!(raw_amount, "80001234560000000000000000000000000000");
         assert_eq!(
             target,
-            &BigwigBalanceTarget::Erc20 {
+            &BigwigTarget::Erc20 {
                 contract_address: CONTRACT.to_string()
             }
         );
@@ -528,7 +286,7 @@ mod tests {
         body["items"][0]["future_item_field"] = json!(true);
         body["items"][0]["target"]["future_target_field"] = json!("ignored");
 
-        let response: BigwigLatestBalancesResponse = serde_json::from_value(body).unwrap();
+        let response: BigwigResponse = serde_json::from_value(body).unwrap();
 
         assert_eq!(response.items.len(), 1);
     }
@@ -567,7 +325,7 @@ mod tests {
         ];
 
         for body in cases {
-            assert!(serde_json::from_value::<BigwigLatestBalancesResponse>(body).is_err());
+            assert!(serde_json::from_value::<BigwigResponse>(body).is_err());
         }
     }
 
@@ -577,107 +335,87 @@ mod tests {
             (
                 StatusCode::BAD_REQUEST,
                 "malformed_body",
-                BigwigLatestBalancesError::RequestValidation(
-                    BigwigRequestValidationCode::MalformedBody,
-                ),
+                BigwigError::RequestValidation(BigwigRequestValidationCode::MalformedBody),
             ),
             (
                 StatusCode::BAD_REQUEST,
                 "empty_accounts",
-                BigwigLatestBalancesError::RequestValidation(
-                    BigwigRequestValidationCode::EmptyAccounts,
-                ),
+                BigwigError::RequestValidation(BigwigRequestValidationCode::EmptyAccounts),
             ),
             (
                 StatusCode::BAD_REQUEST,
                 "empty_targets",
-                BigwigLatestBalancesError::RequestValidation(
-                    BigwigRequestValidationCode::EmptyTargets,
-                ),
+                BigwigError::RequestValidation(BigwigRequestValidationCode::EmptyTargets),
             ),
             (
                 StatusCode::BAD_REQUEST,
                 "invalid_account",
-                BigwigLatestBalancesError::RequestValidation(
-                    BigwigRequestValidationCode::InvalidAccount,
-                ),
+                BigwigError::RequestValidation(BigwigRequestValidationCode::InvalidAccount),
             ),
             (
                 StatusCode::BAD_REQUEST,
                 "duplicate_account",
-                BigwigLatestBalancesError::RequestValidation(
-                    BigwigRequestValidationCode::DuplicateAccount,
-                ),
+                BigwigError::RequestValidation(BigwigRequestValidationCode::DuplicateAccount),
             ),
             (
                 StatusCode::BAD_REQUEST,
                 "invalid_target",
-                BigwigLatestBalancesError::RequestValidation(
-                    BigwigRequestValidationCode::InvalidTarget,
-                ),
+                BigwigError::RequestValidation(BigwigRequestValidationCode::InvalidTarget),
             ),
             (
                 StatusCode::BAD_REQUEST,
                 "duplicate_target",
-                BigwigLatestBalancesError::RequestValidation(
-                    BigwigRequestValidationCode::DuplicateTarget,
-                ),
+                BigwigError::RequestValidation(BigwigRequestValidationCode::DuplicateTarget),
             ),
             (
                 StatusCode::BAD_REQUEST,
                 "request_too_large",
-                BigwigLatestBalancesError::RequestValidation(
-                    BigwigRequestValidationCode::RequestTooLarge,
-                ),
+                BigwigError::RequestValidation(BigwigRequestValidationCode::RequestTooLarge),
             ),
             (
                 StatusCode::UNAUTHORIZED,
                 "unauthorized",
-                BigwigLatestBalancesError::Unauthorized,
+                BigwigError::Unauthorized,
             ),
             (
                 StatusCode::NOT_FOUND,
                 "unsupported_network",
-                BigwigLatestBalancesError::UnsupportedNetwork,
+                BigwigError::UnsupportedNetwork,
             ),
             (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "network_not_enabled_for_operation",
-                BigwigLatestBalancesError::NetworkNotEnabledForOperation,
+                BigwigError::NetworkNotEnabledForOperation,
             ),
             (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "no_route_satisfies_operation",
-                BigwigLatestBalancesError::NoRouteSatisfiesOperation,
+                BigwigError::NoRouteSatisfiesOperation,
             ),
             (
                 StatusCode::TOO_MANY_REQUESTS,
                 "gateway_rate_limited",
-                BigwigLatestBalancesError::RateLimited {
+                BigwigError::RateLimited {
                     retry_after_seconds: Some(7),
                 },
             ),
-            (
-                StatusCode::BAD_GATEWAY,
-                "rpc_error",
-                BigwigLatestBalancesError::RpcError,
-            ),
+            (StatusCode::BAD_GATEWAY, "rpc_error", BigwigError::RpcError),
             (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "provider_unavailable",
-                BigwigLatestBalancesError::ProviderUnavailable {
+                BigwigError::ProviderUnavailable {
                     retry_after_seconds: Some(7),
                 },
             ),
             (
                 StatusCode::GATEWAY_TIMEOUT,
                 "provider_timeout",
-                BigwigLatestBalancesError::ProviderTimeout,
+                BigwigError::ProviderTimeout,
             ),
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal_error",
-                BigwigLatestBalancesError::InternalError,
+                BigwigError::InternalError,
             ),
         ];
 
@@ -691,7 +429,7 @@ mod tests {
     fn malformed_and_unexpected_error_responses_are_distinct() {
         assert_eq!(
             map_error_response(StatusCode::BAD_GATEWAY, b"not-json", None),
-            BigwigLatestBalancesError::MalformedErrorResponse
+            BigwigError::MalformedErrorResponse
         );
         for body in [
             json!({ "error": { "code": "rpc_error", "details": {} } }),
@@ -710,7 +448,7 @@ mod tests {
                     &serde_json::to_vec(&body).unwrap(),
                     None
                 ),
-                BigwigLatestBalancesError::MalformedErrorResponse
+                BigwigError::MalformedErrorResponse
             );
         }
         assert_eq!(
@@ -719,19 +457,18 @@ mod tests {
                 &error_body("provider_timeout"),
                 None
             ),
-            BigwigLatestBalancesError::UnexpectedErrorResponse { status: 502 }
+            BigwigError::UnexpectedErrorResponse { status: 502 }
         );
         assert_eq!(
             map_error_response(StatusCode::IM_A_TEAPOT, &error_body("future_error"), None),
-            BigwigLatestBalancesError::UnexpectedErrorResponse { status: 418 }
+            BigwigError::UnexpectedErrorResponse { status: 418 }
         );
     }
 
     #[test]
     fn client_debug_redacts_token() {
         let client =
-            BigwigLatestBalancesClient::new("http://infra-gateway-hub:8080", "super-secret", 30000)
-                .unwrap();
+            BigwigClient::new("http://infra-gateway-hub:8080", "super-secret", 30000).unwrap();
         let debug = format!("{client:?}");
 
         assert!(debug.contains("<redacted>"));
@@ -741,16 +478,16 @@ mod tests {
     #[test]
     fn client_rejects_invalid_initialization_values() {
         assert!(matches!(
-            BigwigLatestBalancesClient::new("ftp://infra-gateway-hub", "test-token", 30000),
-            Err(BigwigLatestBalancesClientInitError::InvalidBaseUrl(_))
+            BigwigClient::new("ftp://infra-gateway-hub", "test-token", 30000),
+            Err(BigwigClientInitError::InvalidBaseUrl(_))
         ));
         assert!(matches!(
-            BigwigLatestBalancesClient::new("http://infra-gateway-hub:8080", " ", 30000),
-            Err(BigwigLatestBalancesClientInitError::EmptyToken)
+            BigwigClient::new("http://infra-gateway-hub:8080", " ", 30000),
+            Err(BigwigClientInitError::EmptyToken)
         ));
         assert!(matches!(
-            BigwigLatestBalancesClient::new("http://infra-gateway-hub:8080", "test-token", 0),
-            Err(BigwigLatestBalancesClientInitError::InvalidTimeout)
+            BigwigClient::new("http://infra-gateway-hub:8080", "test-token", 0),
+            Err(BigwigClientInitError::InvalidTimeout)
         ));
     }
 
@@ -763,7 +500,7 @@ mod tests {
         ) else {
             return;
         };
-        let client = BigwigLatestBalancesClient::new(&base_url, "test-token", 2000).unwrap();
+        let client = BigwigClient::new(&base_url, "test-token", 2000).unwrap();
 
         let response = client.latest_balances(&sample_request()).await.unwrap();
         let request = handle.join().unwrap();
@@ -779,7 +516,7 @@ mod tests {
             serde_json::from_str::<Value>(body).unwrap(),
             serde_json::to_value(sample_request()).unwrap()
         );
-        assert_eq!(response.status, BigwigBalanceEvidenceStatus::Complete);
+        assert_eq!(response.status, BigwigEvidenceStatus::Complete);
     }
 
     #[tokio::test]
@@ -797,7 +534,7 @@ mod tests {
         ) else {
             return;
         };
-        let client = BigwigLatestBalancesClient::new(&base_url, "test-token", 2000).unwrap();
+        let client = BigwigClient::new(&base_url, "test-token", 2000).unwrap();
 
         let error = client
             .latest_balances(&sample_request())
@@ -807,7 +544,7 @@ mod tests {
 
         assert_eq!(
             error,
-            BigwigLatestBalancesError::RateLimited {
+            BigwigError::RateLimited {
                 retry_after_seconds: Some(11)
             }
         );
@@ -821,17 +558,14 @@ mod tests {
         else {
             return;
         };
-        let client = BigwigLatestBalancesClient::new(&base_url, "test-token", 2000).unwrap();
+        let client = BigwigClient::new(&base_url, "test-token", 2000).unwrap();
 
         let error = client
             .latest_balances(&sample_request())
             .await
             .expect_err("only 200 OK is evidence");
 
-        assert_eq!(
-            error,
-            BigwigLatestBalancesError::UnexpectedSuccessStatus(201)
-        );
+        assert_eq!(error, BigwigError::UnexpectedSuccessStatus(201));
         handle.join().unwrap();
     }
 
@@ -842,14 +576,14 @@ mod tests {
         else {
             return;
         };
-        let client = BigwigLatestBalancesClient::new(&base_url, "test-token", 2000).unwrap();
+        let client = BigwigClient::new(&base_url, "test-token", 2000).unwrap();
 
         let error = client
             .latest_balances(&sample_request())
             .await
             .expect_err("malformed evidence should fail");
 
-        assert_eq!(error, BigwigLatestBalancesError::MalformedSuccessResponse);
+        assert_eq!(error, BigwigError::MalformedSuccessResponse);
         handle.join().unwrap();
     }
 
@@ -860,11 +594,11 @@ mod tests {
         };
         let closed_url = format!("http://{}", listener.local_addr().unwrap());
         drop(listener);
-        let client = BigwigLatestBalancesClient::new(&closed_url, "test-token", 2000).unwrap();
+        let client = BigwigClient::new(&closed_url, "test-token", 2000).unwrap();
 
         assert_eq!(
             client.latest_balances(&sample_request()).await,
-            Err(BigwigLatestBalancesError::Transport)
+            Err(BigwigError::Transport)
         );
 
         let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
@@ -875,26 +609,26 @@ mod tests {
             let (_stream, _) = listener.accept().unwrap();
             thread::sleep(Duration::from_millis(100));
         });
-        let client = BigwigLatestBalancesClient::new(&timeout_url, "test-token", 10).unwrap();
+        let client = BigwigClient::new(&timeout_url, "test-token", 10).unwrap();
 
         assert_eq!(
             client.latest_balances(&sample_request()).await,
-            Err(BigwigLatestBalancesError::Timeout)
+            Err(BigwigError::Timeout)
         );
         handle.join().unwrap();
     }
 
-    fn sample_request() -> BigwigLatestBalancesRequest {
-        BigwigLatestBalancesRequest {
+    fn sample_request() -> BigwigRequest {
+        BigwigRequest {
             network_slug: "arbitrum-mainnet".to_string(),
-            accounts: vec![BigwigBalanceAccount {
+            accounts: vec![BigwigAccount {
                 address: ACCOUNT.to_string(),
             }],
             targets: vec![
-                BigwigBalanceTarget::Erc20 {
+                BigwigTarget::Erc20 {
                     contract_address: CONTRACT.to_string(),
                 },
-                BigwigBalanceTarget::Native,
+                BigwigTarget::Native,
             ],
         }
     }

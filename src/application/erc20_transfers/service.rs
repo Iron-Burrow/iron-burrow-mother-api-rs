@@ -1,21 +1,16 @@
-use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use tracing::warn;
-use utoipa::ToSchema;
 
 use crate::adapters::http::dto::erc20_transfers::{
-    Erc20TransferDirection, Erc20TransferSearchRequest, Erc20TransferSearchResponse,
-    Erc20TransferTokenFilterResolution, Erc20TransferTokenFilterSource, Erc20TransferTokenFilters,
-    ResolvedErc20TokenFilter,
+    Erc20TransferDirection, Erc20TransferSearchRequest, Erc20TransferTokenFilters,
 };
-use crate::adapters::http::dto::onchain_window::{BlockWindowDTO, OnchainWindowDTO};
 use crate::adapters::http::error::ApiError;
 use crate::adapters::postgres::global_assets::GlobalAssetRepository;
 use crate::application::balances::catalog::{
     BalanceTargetKind, BalanceTargetResolution, CatalogBalanceTargetResolver,
     CatalogIntegrityIssue, CatalogResolverError,
 };
-use crate::domain::onchain_window::{BlockWindow, OnchainWindow};
+use crate::domain::onchain_window::OnchainWindow;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Erc20TransferSearchCommand {
@@ -68,7 +63,7 @@ pub(crate) async fn build_command(
         address: request.address.to_ascii_lowercase(),
         direction: command_direction(request.direction),
         tokens: Erc20TransferCommandTokenFilters { contract_addresses },
-        window: command_window(request.window),
+        window: OnchainWindow::try_from(request.window)?,
     })
 }
 
@@ -83,21 +78,6 @@ fn command_direction(direction: Erc20TransferDirection) -> Erc20TransferCommandD
         Erc20TransferDirection::Any => Erc20TransferCommandDirection::Any,
         Erc20TransferDirection::From => Erc20TransferCommandDirection::From,
         Erc20TransferDirection::To => Erc20TransferCommandDirection::To,
-    }
-}
-
-fn command_window(window: OnchainWindowDTO) -> OnchainWindow {
-    match window {
-        OnchainWindowDTO::Block(window) => {
-            OnchainWindow::Block(BlockWindow::new(window.from_block, window.to_block))
-        }
-        OnchainWindowDTO::Timestamp(window) => OnchainWindow::Timestamp {
-            from_timestamp: window.from_timestamp,
-            to_timestamp: window.to_timestamp,
-        },
-        OnchainWindowDTO::Lookback(window) => OnchainWindow::Lookback {
-            lookback_seconds: window.lookback_seconds,
-        },
     }
 }
 
@@ -250,10 +230,16 @@ fn enforce_token_filter_limit(
 
 #[cfg(test)]
 mod tests {
+    use serde::Serialize;
     use serde_json::{json, Value};
 
-    use crate::adapters::http::dto::erc20_transfers::{
-        Erc20TransferAmount, Erc20TransferRow, Erc20TransferSearchLimits, Erc20TransferToken,
+    use crate::adapters::http::dto::{
+        erc20_transfers::{
+            Erc20TransferAmount, Erc20TransferRow, Erc20TransferSearchLimits,
+            Erc20TransferSearchResponse, Erc20TransferToken, Erc20TransferTokenFilterResolution,
+            Erc20TransferTokenFilterSource, ResolvedErc20TokenFilter,
+        },
+        onchain_window::{BlockWindowDTO, OnchainWindowDTO},
     };
 
     use super::*;

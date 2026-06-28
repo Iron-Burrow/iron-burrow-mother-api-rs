@@ -34,20 +34,24 @@ mod tests {
         response::IntoResponse,
         Router,
     };
-    use serde_json::json;
-    use serde_json::{Map, Value};
+    use serde_json::{json, Value};
     use tower::ServiceExt;
 
     use super::*;
     use crate::{
-        adapters::http::dto::{
-            erc20_transfers::Erc20TransferTokenFilters,
-            onchain_window::{BlockWindowDTO, OnchainWindowDTO},
+        adapters::http::{
+            dto::{
+                erc20_transfers::{Erc20TransferDirection, Erc20TransferTokenFilters},
+                onchain_window::{BlockWindowDTO, OnchainWindowDTO},
+            },
+            types::JsonObject,
         },
         application::erc20_transfers::service::{
             Erc20TransferCommandDirection, Erc20TransferCommandTokenFilters,
             Erc20TransferSearchCommand,
         },
+        common::rfc3339::parse_rfc3339,
+        domain::onchain_window::{BlockWindow, OnchainWindow},
         test_utils::global_assets::asset_fixtures,
     };
     use crate::{
@@ -143,10 +147,7 @@ mod tests {
                         "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string()
                     ],
                 },
-                window: OnchainWindowDTO::Block {
-                    from_block: 18_600_000,
-                    to_block: 18_600_500,
-                },
+                window: OnchainWindow::Block(BlockWindow::new(18_600_000, 18_600_500).unwrap()),
             }
         );
     }
@@ -202,7 +203,7 @@ mod tests {
             assert_eq!(request.tokens.unwrap_or_default(), expected_tokens);
             assert!(matches!(
                 request.window,
-                Erc20TransferSearchWindow::Block(Erc20TransferBlockWindow {
+                OnchainWindowDTO::Block(BlockWindowDTO {
                     from_block: 18_600_000,
                     to_block: 18_600_500,
                 })
