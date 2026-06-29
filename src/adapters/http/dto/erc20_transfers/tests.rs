@@ -185,6 +185,39 @@ fn response_serialization_snapshot_matches_public_shape() {
 }
 
 #[test]
+fn documented_request_examples_match_public_dto_shape() {
+    for example in [
+        examples::unfiltered_request(),
+        examples::asset_slug_request(),
+        examples::contract_address_request(),
+        examples::mixed_filter_request(),
+        examples::native_asset_rejection_request(),
+        examples::unknown_slug_rejection_request(),
+        examples::too_many_filters_request(),
+    ] {
+        let request = Erc20TransferSearchRequest::try_from(&json_object(example.clone())).unwrap();
+
+        assert_eq!(serde_json::to_value(request).unwrap(), example);
+    }
+}
+
+#[test]
+fn documented_success_examples_match_public_dto_shape() {
+    for example in [
+        examples::unfiltered_success_response(),
+        examples::asset_slug_success_response(),
+        examples::contract_address_success_response(),
+        examples::mixed_success_response(),
+        examples::truncated_success_response(),
+    ] {
+        let response: Erc20TransferSearchResponse =
+            serde_json::from_value(example.clone()).unwrap();
+
+        assert_eq!(serde_json::to_value(response).unwrap(), example);
+    }
+}
+
+#[test]
 fn request_rejects_unknown_top_level_fields() {
     let mut body = valid_erc20_transfers_request_body();
     body["chain"] = json!("eth-mainnet");

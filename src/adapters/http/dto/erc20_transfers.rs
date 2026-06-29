@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+pub(crate) mod examples;
+
 use super::filters::onchain_window::{validate_window, OnchainWindowDTO};
 use super::filters::transfer_direction::validate_direction;
 use crate::adapters::http::dto::filters::token_filters::{
