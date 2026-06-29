@@ -139,6 +139,10 @@ fn documented_success_examples_match_public_dto_shape() {
     let response: SingleBalanceResponse = serde_json::from_value(single.clone()).unwrap();
     assert_eq!(serde_json::to_value(response).unwrap(), single);
 
+    let single_failure = examples::single_item_level_failure_response();
+    let response: SingleBalanceResponse = serde_json::from_value(single_failure.clone()).unwrap();
+    assert_eq!(serde_json::to_value(response).unwrap(), single_failure);
+
     for example in [
         examples::bulk_success_response(),
         examples::skipped_item_response(),
@@ -168,6 +172,7 @@ fn documented_balance_examples_do_not_expose_reserved_or_internal_fields() {
         examples::single_request(),
         examples::bulk_request(),
         examples::single_success_response(),
+        examples::single_item_level_failure_response(),
         examples::bulk_success_response(),
         examples::skipped_item_response(),
         examples::item_level_failure_response(),
