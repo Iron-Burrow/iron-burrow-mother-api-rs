@@ -52,7 +52,22 @@ Mother API uses these lifecycle states:
 Unless an endpoint is explicitly labeled otherwise, documented public
 endpoints are Stable.
 
-## Stable endpoints
+## Runtime route surface
+
+Mother API supports an explicit runtime route-surface mode through
+`PUBLIC_API_SURFACE`.
+
+- `alpha` exposes the Production Alpha 1 surface listed below. This is the
+  default for compatibility.
+- `beta` exposes only `GET /health`, `POST /v1/balances`,
+  `POST /v1/balances/bulk`, and `POST /v1/erc20-transfers/search` when
+  `ERC20_TRANSFERS_ENABLED=true`.
+
+In `beta` mode, known Alpha-only endpoints return `403 Forbidden` with
+`error.code="endpoint_disabled"`. Truly unknown routes remain normal
+unmatched-route `404 Not Found` responses.
+
+## Stable Alpha endpoints
 
 | Method | Path                                    | Auth | Notes                                                       |
 | ------ | --------------------------------------- | ---- | ----------------------------------------------------------- |
@@ -2082,6 +2097,7 @@ Fields:
 
 | HTTP | `error.code`            | Trigger                                                                |
 | ---- | ----------------------- | ---------------------------------------------------------------------- |
+| 403  | `endpoint_disabled`     | A known Alpha-only endpoint is intentionally disabled by the Beta route surface. |
 | 400  | `invalid_request`       | A JSON body is malformed/missing required fields, includes a reserved balance network alias field, or non-balance public parameters are invalid or incompatible. |
 | 400  | `invalid_account`       | A balance account address is not `0x` plus 40 ASCII hexadecimal characters. |
 | 400  | `unsupported_network`   | A balance request uses an unknown, non-EVM, legacy, or non-canonical network slug. |
