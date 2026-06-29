@@ -23,16 +23,8 @@ use serde_json::{json, Value};
 
 const ACCOUNT_A: &str = "0x1111111111111111111111111111111111111111";
 
-use super::*;
+use crate::adapters::postgres::global_assets::GlobalAssetRepository;
 use crate::test_utils::fixtures::global_assets::sample_assets;
-use crate::{
-    adapters::bigwig::balances::{
-        BigwigEvidenceBlock, BigwigEvidenceNetwork, BigwigItemError, BigwigItemErrorCode,
-        BigwigRequestValidationCode,
-    },
-    adapters::postgres::global_assets::GlobalAssetRepository,
-    adapters::price_indexer::PriceIndexerClient,
-};
 
 #[tokio::test]
 async fn malformed_success_body_becomes_internal_item_failure() {

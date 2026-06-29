@@ -124,6 +124,7 @@ pub(crate) enum Erc20TransferExtractionError {
     UpstreamProviderTimeout,
 }
 
+#[allow(dead_code)]
 pub(crate) async fn search_erc20_transfers<E>(
     input: Erc20TransferSearchInput,
     repository: Option<GlobalAssetRepository>,

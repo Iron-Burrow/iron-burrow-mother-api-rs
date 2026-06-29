@@ -8,11 +8,13 @@ use reqwest::StatusCode;
 use serde_json::{json, Value};
 
 use super::*;
-use crate::test_utils::fixtures::global_assets::sample_assets;
+use crate::{
+    adapters::bigwig::balances::BigwigRequestValidationCode,
+    test_utils::fixtures::global_assets::sample_assets,
+};
 use crate::{
     adapters::bigwig::balances::{
         BigwigEvidenceBlock, BigwigEvidenceNetwork, BigwigItemError, BigwigItemErrorCode,
-        BigwigRequestValidationCode,
     },
     adapters::postgres::global_assets::GlobalAssetRepository,
     adapters::price_indexer::PriceIndexerClient,
@@ -556,5 +558,572 @@ fn response_for_plan(
             hash: format!("0x{}", "a".repeat(64)),
         },
         items,
+    }
+}
+
+#[tokio::test]
+async fn deduplicates_targets_and_fans_out_duplicate_assets() {
+    let Some((base_url, server)) = spawn_dynamic_server(1) else {
+        return;
+    };
+    let result = service(Some(bigwig_client(&base_url)))
+        .resolve_latest(BalanceSnapshotRequest {
+            accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
+            asset_slugs: vec!["usdc".to_string(), "usdc".to_string()],
+            quote_currency: "USD".to_string(),
+        })
+        .await
+        .unwrap();
+    let requests = server.join().unwrap();
+
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0]["targets"].as_array().unwrap().len(), 1);
+    assert_eq!(result.accounts[0].items.len(), 2);
+    let raw_amounts = result.accounts[0]
+        .items
+        .iter()
+        .map(|item| match item {
+            BalanceItemOutcome::Resolved {
+                target,
+                raw_amount,
+                quote,
+                ..
+            } => {
+                assert_eq!(target.asset_slug, "usdc");
+                assert_eq!(
+                    quote,
+                    &BalanceQuoteOutcome::Unavailable {
+                        code: BalanceItemErrorCode::PriceProviderUnavailable,
+                    }
+                );
+                raw_amount.as_str()
+            }
+            _ => panic!("duplicate supported assets should both resolve"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(raw_amounts, vec!["1000", "1000"]);
+}
+
+#[tokio::test]
+async fn skips_unsupported_pairs_without_calling_bigwig() {
+    let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
+        return;
+    };
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let result = service(Some(bigwig_client(&base_url)))
+        .resolve_latest(BalanceSnapshotRequest {
+            accounts: vec![account("mantle-mainnet", ACCOUNT_A, None)],
+            asset_slugs: vec!["wrapped-bitcoin".to_string()],
+            quote_currency: "USD".to_string(),
+        })
+        .await
+        .unwrap();
+
+    listener.set_nonblocking(true).unwrap();
+    assert_eq!(
+        listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    assert_eq!(result.accounts[0].evidence, None);
+    assert_eq!(
+        result.accounts[0].items,
+        vec![BalanceItemOutcome::Skipped {
+            network_slug: "mantle-mainnet".to_string(),
+            asset_slug: "wrapped-bitcoin".to_string(),
+        }]
+    );
+}
+
+#[tokio::test]
+async fn skipped_only_results_do_not_call_price_indexer() {
+    let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
+        return;
+    };
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let result = service_with_quote(None, Some(price_quote_client(&base_url)))
+        .resolve_latest(BalanceSnapshotRequest {
+            accounts: vec![account("mantle-mainnet", ACCOUNT_A, None)],
+            asset_slugs: vec!["wrapped-bitcoin".to_string()],
+            quote_currency: "USD".to_string(),
+        })
+        .await
+        .unwrap();
+
+    listener.set_nonblocking(true).unwrap();
+    assert_eq!(
+        listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    assert!(matches!(
+        &result.accounts[0].items[0],
+        BalanceItemOutcome::Skipped { .. }
+    ));
+}
+
+#[tokio::test]
+async fn missing_bigwig_client_marks_supported_items_provider_unavailable() {
+    let result = service(None)
+        .resolve_latest(BalanceSnapshotRequest {
+            accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
+            asset_slugs: vec!["usdc".to_string(), "wrapped-bitcoin".to_string()],
+            quote_currency: "USD".to_string(),
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(result.accounts[0].evidence, None);
+    assert!(matches!(
+        &result.accounts[0].items[0],
+        BalanceItemOutcome::Failed {
+            code: BalanceItemErrorCode::BalanceProviderUnavailable,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &result.accounts[0].items[1],
+        BalanceItemOutcome::Skipped { .. }
+    ));
+}
+
+#[tokio::test]
+async fn planning_failure_prevents_all_bigwig_calls() {
+    let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
+        return;
+    };
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let error = service(Some(bigwig_client(&base_url)))
+        .resolve_latest(BalanceSnapshotRequest {
+            accounts: vec![
+                account("base-mainnet", ACCOUNT_A, None),
+                account("unknown-mainnet", ACCOUNT_B, None),
+            ],
+            asset_slugs: vec!["usdc".to_string()],
+            quote_currency: "USD".to_string(),
+        })
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        BalanceSnapshotServiceError::UnsupportedNetwork { ref network_slug }
+            if network_slug == "unknown-mainnet"
+    ));
+    listener.set_nonblocking(true).unwrap();
+    assert_eq!(
+        listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+}
+
+#[tokio::test]
+async fn unsupported_global_asset_is_a_whole_request_error() {
+    let error = service(None)
+        .resolve_latest(BalanceSnapshotRequest {
+            accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
+            asset_slugs: vec!["missing-asset".to_string()],
+            quote_currency: "USD".to_string(),
+        })
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        BalanceSnapshotServiceError::UnsupportedAsset {
+            ref network_slug,
+            ref asset_slug,
+        } if network_slug == "base-mainnet" && asset_slug == "missing-asset"
+    ));
+}
+
+fn spawn_static_server(
+    status: StatusCode,
+    body: Value,
+) -> Option<(String, thread::JoinHandle<()>)> {
+    let listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => listener,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
+        Err(error) => panic!("failed to bind orchestration test server: {error}"),
+    };
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let _request = read_http_request(&mut stream);
+        write_json_response(&mut stream, status, body);
+    });
+
+    Some((base_url, handle))
+}
+
+#[tokio::test]
+async fn malformed_raw_amount_invalidates_group_evidence_before_quote_lookup() {
+    let body = json!({
+        "primitive": "evm_latest_balances",
+        "status": "complete",
+        "network": {
+            "network_slug": "base-mainnet",
+            "chain_id": 8453
+        },
+        "observed_at": "2026-06-17T12:00:00Z",
+        "block": {
+            "number": "123",
+            "hash": format!("0x{}", "a".repeat(64))
+        },
+        "items": [{
+            "status": "resolved",
+            "account": {"address": ACCOUNT_A},
+            "target": {
+                "kind": "erc20",
+                "contract_address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+            },
+            "raw_amount": "1.0"
+        }]
+    });
+    let Some((base_url, server)) = spawn_static_server(StatusCode::OK, body) else {
+        return;
+    };
+
+    let result = service(Some(bigwig_client(&base_url)))
+        .resolve_latest(BalanceSnapshotRequest {
+            accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
+            asset_slugs: vec!["usdc".to_string()],
+            quote_currency: "USD".to_string(),
+        })
+        .await
+        .unwrap();
+    server.join().unwrap();
+
+    assert_eq!(result.accounts[0].evidence, None);
+    assert!(matches!(
+        &result.accounts[0].items[0],
+        BalanceItemOutcome::Failed {
+            code: BalanceItemErrorCode::InternalError,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn rejects_cross_asset_target_collisions_and_conflicting_metadata() {
+    let group = grouped_accounts("base-mainnet", 1);
+    let assets = vec!["asset-a".to_string(), "asset-b".to_string()];
+    let collision = plan_network_group(
+        group.clone(),
+        &assets,
+        vec![
+            BalanceTargetResolution::Resolved(target(
+                "base-mainnet",
+                8453,
+                "asset-a",
+                BalanceTargetKind::Native,
+            )),
+            BalanceTargetResolution::Resolved(target(
+                "base-mainnet",
+                8453,
+                "asset-b",
+                BalanceTargetKind::Native,
+            )),
+        ],
+    )
+    .unwrap_err();
+    assert!(matches!(
+        collision,
+        BalanceSnapshotServiceError::InvalidPlan {
+            issue: BalancePlanIssue::TargetCollision,
+            ..
+        }
+    ));
+
+    let duplicate_assets = vec!["asset-a".to_string(), "asset-a".to_string()];
+    let first = target("base-mainnet", 8453, "asset-a", BalanceTargetKind::Native);
+    let mut conflicting = first.clone();
+    conflicting.symbol = "DIFFERENT".to_string();
+    let error = plan_network_group(
+        group,
+        &duplicate_assets,
+        vec![
+            BalanceTargetResolution::Resolved(first),
+            BalanceTargetResolution::Resolved(conflicting),
+        ],
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        BalanceSnapshotServiceError::InvalidPlan {
+            issue: BalancePlanIssue::ConflictingTargetMetadata,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn rejects_inconsistent_chain_ids_and_bigwig_group_limits() {
+    let assets = vec!["asset-a".to_string(), "asset-b".to_string()];
+    let inconsistent = plan_network_group(
+        grouped_accounts("base-mainnet", 1),
+        &assets,
+        vec![
+            BalanceTargetResolution::Resolved(target(
+                "base-mainnet",
+                8453,
+                "asset-a",
+                BalanceTargetKind::Native,
+            )),
+            BalanceTargetResolution::Resolved(target(
+                "base-mainnet",
+                1,
+                "asset-b",
+                BalanceTargetKind::Erc20 {
+                    contract_address: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+                },
+            )),
+        ],
+    )
+    .unwrap_err();
+    assert!(matches!(
+        inconsistent,
+        BalanceSnapshotServiceError::InvalidPlan {
+            issue: BalancePlanIssue::InconsistentChainId,
+            ..
+        }
+    ));
+
+    let too_many_accounts = plan_network_group(
+        grouped_accounts("base-mainnet", BIGWIG_MAX_ACCOUNTS + 1),
+        &["asset-a".to_string()],
+        vec![BalanceTargetResolution::Resolved(target(
+            "base-mainnet",
+            8453,
+            "asset-a",
+            BalanceTargetKind::Native,
+        ))],
+    )
+    .unwrap_err();
+    assert!(matches!(
+        too_many_accounts,
+        BalanceSnapshotServiceError::RequestTooLarge { .. }
+    ));
+
+    let many_assets = (0..=BIGWIG_MAX_TARGETS)
+        .map(|index| format!("asset-{index}"))
+        .collect::<Vec<_>>();
+    let many_resolutions = many_assets
+        .iter()
+        .enumerate()
+        .map(|(index, asset_slug)| {
+            BalanceTargetResolution::Resolved(target(
+                "base-mainnet",
+                8453,
+                asset_slug,
+                BalanceTargetKind::Erc20 {
+                    contract_address: format!("0x{index:040x}"),
+                },
+            ))
+        })
+        .collect();
+    let too_many_targets = plan_network_group(
+        grouped_accounts("base-mainnet", 1),
+        &many_assets,
+        many_resolutions,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        too_many_targets,
+        BalanceSnapshotServiceError::RequestTooLarge { .. }
+    ));
+}
+
+#[test]
+fn validates_complete_partial_and_failed_envelopes_with_evidence() {
+    let plan = validation_plan();
+
+    for (resolved, expected_status) in [
+        (vec![true, true, true, true], BigwigEvidenceStatus::Complete),
+        (
+            vec![true, false, true, false],
+            BigwigEvidenceStatus::Partial,
+        ),
+        (
+            vec![false, false, false, false],
+            BigwigEvidenceStatus::Failed,
+        ),
+    ] {
+        let validated =
+            validate_response(&plan, response_for_plan(&plan, resolved, expected_status)).unwrap();
+        assert_eq!(validated.evidence.network_slug, "base-mainnet");
+        assert_eq!(validated.evidence.observed_at, "2026-06-17T12:00:00Z");
+        assert_eq!(validated.evidence.block_number, "123");
+        assert_eq!(validated.target_outcomes.len(), 4);
+    }
+
+    let partial = response_for_plan(
+        &plan,
+        vec![true, false, true, false],
+        BigwigEvidenceStatus::Partial,
+    );
+    let results = assemble_group_results(&plan, GroupExecution::Called(Ok(partial)));
+    assert!(results
+        .iter()
+        .all(|(_, account)| account.evidence.is_some()));
+    assert!(matches!(
+        &results[0].1.items[0],
+        RawBalanceItemOutcome::Resolved {
+            raw_amount,
+            ..
+        } if raw_amount == "1000"
+    ));
+    assert!(matches!(
+        &results[0].1.items[1],
+        RawBalanceItemOutcome::Failed {
+            code: BalanceItemErrorCode::BalanceResolutionFailed,
+            ..
+        }
+    ));
+
+    let failed = response_for_plan(
+        &plan,
+        vec![false, false, false, false],
+        BigwigEvidenceStatus::Failed,
+    );
+    let failed_results = assemble_group_results(&plan, GroupExecution::Called(Ok(failed)));
+    assert!(failed_results
+        .iter()
+        .all(|(_, account)| account.evidence.is_some()
+            && account.items.iter().all(|item| matches!(
+                item,
+                RawBalanceItemOutcome::Failed {
+                    code: BalanceItemErrorCode::BalanceResolutionFailed,
+                    ..
+                }
+            ))));
+
+    let request_failure =
+        assemble_group_results(&plan, GroupExecution::Called(Err(BigwigError::RpcError)));
+    assert!(request_failure
+        .iter()
+        .all(|(_, account)| account.evidence.is_none()
+            && account.items.iter().all(|item| matches!(
+                item,
+                RawBalanceItemOutcome::Failed {
+                    code: BalanceItemErrorCode::BalanceResolutionFailed,
+                    ..
+                }
+            ))));
+}
+
+#[test]
+fn rejects_malformed_bigwig_success_correlations_and_status() {
+    let plan = validation_plan();
+    let valid = || {
+        response_for_plan(
+            &plan,
+            vec![true, true, true, true],
+            BigwigEvidenceStatus::Complete,
+        )
+    };
+
+    let mut wrong_network = valid();
+    wrong_network.network.network_slug = "eth-mainnet".to_string();
+    assert_eq!(
+        validate_response(&plan, wrong_network).unwrap_err(),
+        ResponseValidationIssue::WrongNetwork
+    );
+
+    let mut wrong_chain = valid();
+    wrong_chain.network.chain_id = 1;
+    assert_eq!(
+        validate_response(&plan, wrong_chain).unwrap_err(),
+        ResponseValidationIssue::WrongChainId
+    );
+
+    let mut missing = valid();
+    missing.items.pop();
+    assert_eq!(
+        validate_response(&plan, missing).unwrap_err(),
+        ResponseValidationIssue::WrongCardinality
+    );
+
+    let mut extra = valid();
+    extra.items.push(extra.items[0].clone());
+    assert_eq!(
+        validate_response(&plan, extra).unwrap_err(),
+        ResponseValidationIssue::WrongCardinality
+    );
+
+    let mut wrong_order = valid();
+    wrong_order.items.swap(0, 1);
+    assert_eq!(
+        validate_response(&plan, wrong_order).unwrap_err(),
+        ResponseValidationIssue::UnexpectedCorrelation
+    );
+
+    let mut duplicate = valid();
+    duplicate.items[1] = duplicate.items[0].clone();
+    assert_eq!(
+        validate_response(&plan, duplicate).unwrap_err(),
+        ResponseValidationIssue::DuplicateCorrelation
+    );
+
+    let mut wrong_status = valid();
+    wrong_status.status = BigwigEvidenceStatus::Partial;
+    assert_eq!(
+        validate_response(&plan, wrong_status).unwrap_err(),
+        ResponseValidationIssue::WrongStatus
+    );
+}
+
+#[test]
+fn maps_every_bigwig_request_wide_failure_class() {
+    let resolution_failures = [
+        BigwigError::UnsupportedNetwork,
+        BigwigError::NetworkNotEnabledForOperation,
+        BigwigError::NoRouteSatisfiesOperation,
+        BigwigError::RpcError,
+    ];
+    for error in resolution_failures {
+        assert_eq!(
+            map_bigwig_error(&error),
+            BalanceItemErrorCode::BalanceResolutionFailed
+        );
+    }
+
+    let provider_failures = [
+        BigwigError::Transport,
+        BigwigError::Timeout,
+        BigwigError::Unauthorized,
+        BigwigError::RateLimited {
+            retry_after_seconds: Some(7),
+        },
+        BigwigError::ProviderUnavailable {
+            retry_after_seconds: Some(9),
+        },
+        BigwigError::ProviderTimeout,
+        BigwigError::InternalError,
+    ];
+    for error in provider_failures {
+        assert_eq!(
+            map_bigwig_error(&error),
+            BalanceItemErrorCode::BalanceProviderUnavailable
+        );
+    }
+
+    let internal_failures = [
+        BigwigError::RequestValidation(BigwigRequestValidationCode::MalformedBody),
+        BigwigError::RequestValidation(BigwigRequestValidationCode::EmptyAccounts),
+        BigwigError::RequestValidation(BigwigRequestValidationCode::EmptyTargets),
+        BigwigError::RequestValidation(BigwigRequestValidationCode::InvalidAccount),
+        BigwigError::RequestValidation(BigwigRequestValidationCode::DuplicateAccount),
+        BigwigError::RequestValidation(BigwigRequestValidationCode::InvalidTarget),
+        BigwigError::RequestValidation(BigwigRequestValidationCode::DuplicateTarget),
+        BigwigError::RequestValidation(BigwigRequestValidationCode::RequestTooLarge),
+        BigwigError::MalformedSuccessResponse,
+        BigwigError::MalformedErrorResponse,
+        BigwigError::UnexpectedSuccessStatus(201),
+        BigwigError::UnexpectedErrorResponse { status: 418 },
+    ];
+    for error in internal_failures {
+        assert_eq!(
+            map_bigwig_error(&error),
+            BalanceItemErrorCode::InternalError
+        );
     }
 }
