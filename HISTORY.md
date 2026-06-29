@@ -193,3 +193,13 @@ implementation, and documentation changes.
 - Propagated Bigwig's optional `truncated` success flag into
   `limits.truncated`, added the `200` OpenAPI response, and documented the
   implemented transfer-search contract in `CONTRACTS.md`.
+- Completed PR 6 gated route wiring for `/v1/erc20-transfers/search`, keeping
+  `ERC20_TRANSFERS_ENABLED` disabled by default and registering the route only
+  when explicitly enabled.
+- Preserved the safe disabled behavior as the normal unmatched-route `404`,
+  while enabled routes without usable Bigwig extraction return
+  `503 extraction_unavailable`.
+- Added route-level coverage for enabled success through fake Bigwig,
+  validation failures before dependency calls, asset-resolution failures,
+  upstream failure mapping, route absence when disabled, and OpenAPI path
+  gating.
