@@ -64,7 +64,7 @@ endpoints are Stable.
 | `GET`  | `/v1/assets/{slug}/signal/price-trend`  | None | Returns a strict price trend signal for one asset.           |
 | `POST` | `/v1/balances`                          | None | Resolves one latest network-scoped EVM balance snapshot.     |
 | `POST` | `/v1/balances/bulk`                     | None | Resolves latest snapshots for explicit network accounts.     |
-| `POST` | `/v1/erc20-transfers/search`            | None | Searches bounded ERC-20 Transfer logs for one EVM address.   |
+| `POST` | `/v1/erc20-transfers/search`            | None | Feature-gated by `ERC20_TRANSFERS_ENABLED`; searches bounded ERC-20 Transfer logs for one EVM address. |
 | `GET`  | `/v1/search-engine`                     | None | Resolves a search query against global assets.     |
 
 Mother API does not currently authenticate callers. API keys, rate
@@ -920,6 +920,11 @@ Request-wide errors:
 
 ### `POST /v1/erc20-transfers/search`
 
+This endpoint is feature-gated by `ERC20_TRANSFERS_ENABLED`. When the gate is
+false, which is the default, Mother API does not register the route; callers
+receive the normal unmatched-route `404`. The contract below applies when the
+gate is explicitly enabled.
+
 Searches a bounded Ethereum mainnet ERC-20 `Transfer` log window for one
 watched EVM address. The route accepts catalog `asset_slug` filters, explicit
 ERC-20 `contract_addresses`, a mix of both, or no token filter.
@@ -1674,7 +1679,7 @@ Fields:
 | 503  | `database_unavailable`  | `DATABASE_URL` is unset or Postgres is unreachable.                    |
 | 503  | `asset_network_map_unavailable` | The balance catalog is unconfigured or temporarily unavailable. |
 | 503  | `asset_contract_mapping_unavailable` | Transfer asset contract mapping is unconfigured or temporarily unavailable. |
-| 503  | `extraction_unavailable` | ERC-20 transfer extraction is disabled, unconfigured, unreachable, or malformed. |
+| 503  | `extraction_unavailable` | Bigwig ERC-20 transfer extraction is disabled, unconfigured, unreachable, or malformed after the Mother route gate is enabled. |
 | 503  | `price_indexer_unavailable` | Price-indexer is unconfigured, unreachable, or timed out.          |
 | 504  | `upstream_provider_timeout` | Bigwig's upstream RPC provider timed out during transfer extraction. |
 | 400  | `unsupported_prediction_subject` | Requested prediction country is unsupported for the event.    |
