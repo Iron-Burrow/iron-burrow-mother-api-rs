@@ -2094,7 +2094,7 @@ Fields:
 | 400  | `duplicate_asset`       | A balance request repeats an exact asset slug. |
 | 400  | `request_too_large`     | A balance request exceeds a public or grouped provider limit. |
 | 400  | `invalid_limit`         | `limit` query parameter is not a positive integer.                     |
-| 400  | `invalid_json`          | A JSON body is malformed, not an object, or sent without JSON content type. |
+| 400  | `invalid_json`          | A strict JSON endpoint receives malformed JSON, a non-object body, or missing/non-JSON content type and exposes that specific code; balance endpoints map these failures to `invalid_request`. |
 | 400  | `unknown_field`         | A strict JSON request object, including balance request objects, contains an unsupported field. |
 | 400  | `missing_network_slug`  | A transfer search request omits `network_slug` or sends it empty.       |
 | 400  | `invalid_address`       | A transfer search address is not an EVM address.                       |

@@ -59,33 +59,31 @@ pub struct BalanceAssetRequest {
     pub(crate) asset_slug: String,
 }
 
-impl TryFrom<&JsonObject> for SingleBalanceRequest {
+impl TryFrom<JsonObject> for SingleBalanceRequest {
     type Error = ApiError;
 
-    fn try_from(request: &JsonObject) -> Result<Self, Self::Error> {
-        reject_reserved_alias_fields_in_object(request)?;
-        reject_unknown_fields(request, &SINGLE_BALANCE_FIELDS)?;
+    fn try_from(request: JsonObject) -> Result<Self, Self::Error> {
+        reject_reserved_alias_fields_in_object(&request)?;
+        reject_unknown_fields(&request, &SINGLE_BALANCE_FIELDS)?;
         validate_as_of_object(request.get("as_of"))?;
         validate_account_object(request.get("account"))?;
         validate_asset_array(request.get("assets"))?;
 
-        serde_json::from_value(Value::Object(request.clone()))
-            .map_err(|_| ApiError::invalid_request())
+        serde_json::from_value(Value::Object(request)).map_err(|_| ApiError::invalid_request())
     }
 }
 
-impl TryFrom<&JsonObject> for BulkBalanceRequest {
+impl TryFrom<JsonObject> for BulkBalanceRequest {
     type Error = ApiError;
 
-    fn try_from(request: &JsonObject) -> Result<Self, Self::Error> {
-        reject_reserved_alias_fields_in_object(request)?;
-        reject_unknown_fields(request, &BULK_BALANCE_FIELDS)?;
+    fn try_from(request: JsonObject) -> Result<Self, Self::Error> {
+        reject_reserved_alias_fields_in_object(&request)?;
+        reject_unknown_fields(&request, &BULK_BALANCE_FIELDS)?;
         validate_as_of_object(request.get("as_of"))?;
         validate_account_array(request.get("accounts"))?;
         validate_asset_array(request.get("assets"))?;
 
-        serde_json::from_value(Value::Object(request.clone()))
-            .map_err(|_| ApiError::invalid_request())
+        serde_json::from_value(Value::Object(request)).map_err(|_| ApiError::invalid_request())
     }
 }
 

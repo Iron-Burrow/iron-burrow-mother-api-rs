@@ -74,7 +74,7 @@ fn parse_single_balance_request(
     ensure_json_content_type(headers).map_err(|_| ApiError::invalid_request())?;
     let request = parse_json_object_body(body).map_err(|_| ApiError::invalid_request())?;
 
-    SingleBalanceRequest::try_from(&request)
+    SingleBalanceRequest::try_from(request)
 }
 
 fn parse_bulk_balance_request(
@@ -84,7 +84,7 @@ fn parse_bulk_balance_request(
     ensure_json_content_type(headers).map_err(|_| ApiError::invalid_request())?;
     let request = parse_json_object_body(body).map_err(|_| ApiError::invalid_request())?;
 
-    BulkBalanceRequest::try_from(&request)
+    BulkBalanceRequest::try_from(request)
 }
 
 fn validate_request(

@@ -46,7 +46,7 @@ async fn request_validation_rejects_unknown_fields_with_unknown_field() {
         },
     ] {
         assert_api_error_code(
-            SingleBalanceRequest::try_from(&json_object(body)),
+            SingleBalanceRequest::try_from(json_object(body)),
             "unknown_field",
         )
         .await;
@@ -70,7 +70,7 @@ async fn request_validation_rejects_unknown_fields_with_unknown_field() {
         },
     ] {
         assert_api_error_code(
-            BulkBalanceRequest::try_from(&json_object(body)),
+            BulkBalanceRequest::try_from(json_object(body)),
             "unknown_field",
         )
         .await;
@@ -107,7 +107,7 @@ async fn request_validation_rejects_reserved_aliases_with_invalid_request() {
         },
     ] {
         assert_api_error_code(
-            SingleBalanceRequest::try_from(&json_object(body)),
+            SingleBalanceRequest::try_from(json_object(body)),
             "invalid_request",
         )
         .await;
@@ -126,7 +126,7 @@ async fn request_validation_rejects_reserved_aliases_with_invalid_request() {
         },
     ] {
         assert_api_error_code(
-            BulkBalanceRequest::try_from(&json_object(body)),
+            BulkBalanceRequest::try_from(json_object(body)),
             "invalid_request",
         )
         .await;
