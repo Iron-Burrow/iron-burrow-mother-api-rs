@@ -67,6 +67,18 @@ In `beta` mode, known Alpha-only endpoints return `403 Forbidden` with
 `error.code="endpoint_disabled"`. Truly unknown routes remain normal
 unmatched-route `404 Not Found` responses.
 
+**Disabled endpoint response — `403 Forbidden`:**
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "endpoint_disabled",
+    "message": "This endpoint is currently disabled for the Beta release."
+  }
+}
+```
+
 ## Stable Alpha endpoints
 
 | Method | Path                                    | Auth | Notes                                                       |
@@ -909,6 +921,106 @@ Per-account item errors use these stable codes:
 Bigwig and Price Indexer runtime failures are represented inside a
 `200 OK` balance response. They do not become request-wide HTTP errors.
 
+**Skipped unsupported asset-network item — `200 OK`:**
+
+```json
+{
+  "ok": true,
+  "type": "balances_bulk",
+  "status": "complete",
+  "as_of": {
+    "kind": "latest"
+  },
+  "quote_currency": "USD",
+  "summary": {
+    "requested_accounts": 1,
+    "requested_assets": 2,
+    "requested_resolution_items": 2,
+    "positions_returned": 1,
+    "skipped_items": 1,
+    "failed_items": 0
+  },
+  "accounts": [
+    {
+      "status": "complete",
+      "account": {
+        "network_slug": "base-mainnet",
+        "address": "0x1234567890abcdef1234567890abcdef1234beef",
+        "client_ref": "treasury-base"
+      },
+      "evidence": {
+        "source": "bigwig",
+        "network_slug": "base-mainnet",
+        "block": {
+          "number": "32000000",
+          "hash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "observed_at": "2026-06-18T12:00:00Z"
+      },
+      "positions": [
+        {
+          "network_slug": "base-mainnet",
+          "asset_slug": "usdc",
+          "symbol": "USDC",
+          "balance": {
+            "raw_amount": "1250000",
+            "amount": "1.250000",
+            "decimals": 6
+          },
+          "quote": {
+            "status": "available",
+            "currency": "USD",
+            "unit_price": "1.00",
+            "value": "1.250000",
+            "price_as_of": "2026-06-18T11:59:59Z"
+          }
+        }
+      ],
+      "skipped": [
+        {
+          "network_slug": "base-mainnet",
+          "asset_slug": "bitso-mxn",
+          "reason": "asset_not_supported_on_network"
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "errors": []
+}
+```
+
+**Item-level provider failure — `200 OK`:**
+
+```json
+{
+  "ok": true,
+  "type": "balances",
+  "status": "failed",
+  "as_of": {
+    "kind": "latest",
+    "observed_at": null
+  },
+  "quote_currency": "MXN",
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0x1234567890abcdef1234567890abcdef1234beef",
+    "client_ref": "main-safe"
+  },
+  "evidence": null,
+  "positions": [],
+  "skipped": [],
+  "errors": [
+    {
+      "network_slug": "eth-mainnet",
+      "asset_slug": "ethereum",
+      "code": "balance_provider_unavailable",
+      "message": "Balance is temporarily unavailable for this asset on this network."
+    }
+  ]
+}
+```
+
 Request-wide errors:
 
 - `400 invalid_request` — malformed/non-JSON body, missing required field,
@@ -933,6 +1045,30 @@ Request-wide errors:
   temporarily unavailable.
 - `500 internal_error` — Mother API detects inconsistent catalog,
   orchestration, or response-assembly state.
+
+**Validation error response — `400 Bad Request`:**
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "invalid_request",
+    "message": "Request parameters are invalid."
+  }
+}
+```
+
+**Unknown field response — `400 Bad Request`:**
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "unknown_field",
+    "message": "Request contains an unknown field."
+  }
+}
+```
 
 ---
 

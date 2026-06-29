@@ -209,3 +209,13 @@ implementation, and documentation changes.
 - Hardened balance request parsing for SPEC-008 PR 2 so unsupported JSON
   fields now return `400 unknown_field`, while reserved network aliases remain
   `400 invalid_request` and existing balance validation codes are preserved.
+- Completed SPEC-008 PR 5 for the Beta balance surface, aligning
+  `CONTRACTS.md`, OpenAPI-generated examples, and production smoke checks with
+  the implemented single and bulk balance behavior.
+- Documented Beta route-surface smoke coverage for active balance routes,
+  known disabled endpoints returning `403 endpoint_disabled`, unknown routes
+  remaining `404`, validation failures, skipped unsupported asset-network
+  items, and sanitized item-level provider failures.
+- Accepted `SPEC-008-balance-endpoint-beta-contract-hardening.md` after the
+  consumer-facing docs and smoke checks were brought in line with the
+  implementation, with `cargo test` passing for the release slice.
