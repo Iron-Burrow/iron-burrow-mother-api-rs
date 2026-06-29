@@ -219,3 +219,13 @@ implementation, and documentation changes.
 - Accepted `SPEC-008-balance-endpoint-beta-contract-hardening.md` after the
   consumer-facing docs and smoke checks were brought in line with the
   implementation, with `cargo test` passing for the release slice.
+- Released the `v0.2.0` cleanup that removes the deprecated DIS-backed FIFA
+  World Cup prediction endpoints:
+  - `GET /v1/predictions/fifa-world-cup/winner`
+  - `GET /v1/predictions/fifa-world-cup/{country}`
+- Removed the active public route handlers, route registrations, contract
+  docs, OpenAPI/public-route assertions, and prediction-only public error
+  codes; these paths now follow normal unknown-route behavior.
+- Archived SPEC-004 as historical demo memory. No replacement endpoint is
+  currently promised; future prediction or intelligence endpoints require a
+  new accepted spec.

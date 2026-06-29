@@ -1,3 +1,7 @@
+// Retained as dormant internal-integration boilerplate after the public
+// prediction/FIFA routes were removed in Mother API v0.2.0.
+#![allow(dead_code)]
+
 use std::time::Duration;
 
 use reqwest::{StatusCode, Url};

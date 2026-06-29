@@ -59,6 +59,7 @@ pub(crate) fn too_many_filters_request() -> Value {
     }))
 }
 
+#[cfg(test)]
 pub(crate) fn unfiltered_success_response() -> Value {
     success_response(
         json!({
@@ -73,6 +74,7 @@ pub(crate) fn unfiltered_success_response() -> Value {
     )
 }
 
+#[cfg(test)]
 pub(crate) fn asset_slug_success_response() -> Value {
     success_response(
         json!({
@@ -87,6 +89,7 @@ pub(crate) fn asset_slug_success_response() -> Value {
     )
 }
 
+#[cfg(test)]
 pub(crate) fn contract_address_success_response() -> Value {
     success_response(
         json!({

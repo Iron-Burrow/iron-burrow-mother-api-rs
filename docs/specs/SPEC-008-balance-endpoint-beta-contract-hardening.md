@@ -91,7 +91,6 @@ Known non-Beta routes must not remain active in a Beta deployment, including:
 - `GET /v1/assets/{slug}/signal/price-stats`
 - `GET /v1/assets/{slug}/signal/price-trend`
 - `GET /v1/search-engine`
-- deprecated prediction/demo routes
 - any incomplete or internal route not listed in the Beta table above
 
 Known-but-disabled Beta routes return a Mother API JSON error envelope:

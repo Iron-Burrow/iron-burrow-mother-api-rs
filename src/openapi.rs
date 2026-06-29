@@ -899,14 +899,19 @@ mod tests {
             "/v1/assets/{slug}",
             "/v1/assets/{slug}/signal/price-stats",
             "/v1/assets/{slug}/signal/price-trend",
-            "/v1/predictions/fifa-world-cup/winner",
-            "/v1/predictions/fifa-world-cup/{country}",
             "/v1/search-engine",
             "/v1/erc20-transfers/search",
         ] {
             assert!(
                 !paths.contains_key(hidden_path),
                 "OpenAPI must not expose hidden or disabled path {hidden_path}"
+            );
+        }
+
+        for path in paths.keys() {
+            assert!(
+                !path.starts_with("/v1/predictions"),
+                "OpenAPI must not expose removed prediction path {path}"
             );
         }
     }

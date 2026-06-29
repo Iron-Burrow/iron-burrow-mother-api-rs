@@ -1,8 +1,6 @@
 use std::{
-    io::ErrorKind,
     io::{Read, Write},
-    net::{TcpListener, TcpStream},
-    time::{Duration, Instant},
+    net::TcpListener,
 };
 
 use axum::{
@@ -16,14 +14,11 @@ use tower::ServiceExt;
 use super::*;
 use crate::test_utils::fixtures::global_assets::sample_assets;
 use crate::{
-    adapters::dis::DisClient,
     adapters::postgres::global_assets::GlobalAssetRepository,
     adapters::price_indexer::PriceIndexerClient,
     config::{Config, PublicApiSurface},
 };
 use crate::{domain::global_assets::GlobalAsset, state::AppState};
-
-const TEST_DIS_ACCEPT_TIMEOUT: Duration = Duration::from_secs(2);
 
 fn test_app() -> Router {
     build_router(AppState::with_asset_repository(
@@ -50,24 +45,6 @@ fn test_app_with_price_indexer(price_indexer_url: &str, timeout_ms: u64) -> Rout
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
         price_indexer_client: Some(price_indexer_client),
         dis_client: None,
-        bigwig_client: None,
-    })
-}
-
-fn test_app_with_dis(dis_url: &str) -> Router {
-    test_app_with_dis_timeout(dis_url, 2000)
-}
-
-fn test_app_with_dis_timeout(dis_url: &str, timeout_ms: u64) -> Router {
-    let dis_client = DisClient::new(dis_url, timeout_ms, 1).unwrap();
-
-    build_router(AppState {
-        config: Config::default(),
-        version: env!("CARGO_PKG_VERSION"),
-        database_pool: None,
-        asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
-        price_indexer_client: None,
-        dis_client: Some(dis_client),
         bigwig_client: None,
     })
 }
@@ -216,8 +193,6 @@ async fn beta_surface_returns_endpoint_disabled_for_known_non_beta_routes() {
         "/v1/assets/bitcoin/signal/price-stats",
         "/v1/assets/bitcoin/signal/price-trend",
         "/v1/search-engine",
-        "/v1/predictions/fifa-world-cup/winner",
-        "/v1/predictions/fifa-world-cup/mexico",
     ] {
         let response = app
             .clone()
@@ -237,6 +212,28 @@ async fn beta_surface_returns_endpoint_disabled_for_known_non_beta_routes() {
             json["error"]["message"], "This endpoint is currently disabled for the Beta release.",
             "{uri}"
         );
+    }
+}
+
+#[tokio::test]
+async fn removed_prediction_routes_are_unmatched_in_alpha_and_beta() {
+    for app in [test_app(), build_router(AppState::new(beta_config()))] {
+        for uri in [
+            "/v1/predictions/fifa-world-cup/winner",
+            "/v1/predictions/fifa-world-cup/mexico",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{uri}");
+            assert!(
+                response.headers().get("deprecation").is_none(),
+                "{uri} must not retain prediction deprecation metadata"
+            );
+        }
     }
 }
 
@@ -348,490 +345,6 @@ async fn status_returns_default_informational_state() {
     assert_eq!(json["checks"]["price_indexer"], "not_configured");
     assert_eq!(json["checks"]["dis"], "not_configured");
     assert_eq!(json["checks"]["evm_indexer"], "not_connected");
-}
-
-#[tokio::test]
-async fn prediction_winner_route_calls_dis_and_sanitizes_response() {
-    let Some((dis_url, request_handle)) =
-        spawn_prediction_dis(vec![(StatusCode::OK, winner_prediction_body())])
-    else {
-        return;
-    };
-    let app = test_app_with_dis(&dis_url);
-
-    let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
-
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        json,
-        serde_json::json!({
-            "ok": true,
-            "event": "World Cup Winner ",
-            "event_slug": "fifa-world-cup-2026-winner",
-            "odds": [
-                {
-                    "team": "France",
-                    "probability": "0.1595",
-                    "price": "0.1595",
-                    "currency": "USDC"
-                },
-                {
-                    "team": "Spain",
-                    "probability": "0.1595",
-                    "price": "0.1595",
-                    "currency": "USDC"
-                }
-            ],
-            "source": "polymarket",
-            "deterministic": true,
-            "captured_at": "2026-06-06T03:21:42.512048Z"
-        })
-    );
-    assert!(json["odds"][0]["probability"].is_string());
-    assert!(json["odds"][0]["price"].is_string());
-
-    let requests = request_handle.await.unwrap();
-    assert_eq!(requests.len(), 1);
-    assert!(requests[0].starts_with("POST /internal/v1/prediction-markets/polymarket/snapshot "));
-    assert_eq!(
-        request_body_json(&requests[0]),
-        serde_json::json!({ "event_slug": "fifa-world-cup-2026-winner" })
-    );
-}
-
-#[tokio::test]
-async fn prediction_success_responses_include_deprecation_header() {
-    let Some((dis_url, request_handle)) = spawn_prediction_dis(vec![
-        (StatusCode::OK, winner_prediction_body()),
-        (StatusCode::OK, country_prediction_body("mexico")),
-    ]) else {
-        return;
-    };
-    let app = test_app_with_dis(&dis_url);
-
-    for uri in [
-        "/v1/predictions/fifa-world-cup/winner",
-        "/v1/predictions/fifa-world-cup/mexico",
-    ] {
-        let response = app
-            .clone()
-            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            response
-                .headers()
-                .get("deprecation")
-                .and_then(|value| value.to_str().ok()),
-            Some(crate::adapters::http::routes::predictions::DEPRECATION_HEADER_VALUE)
-        );
-    }
-
-    assert_eq!(request_handle.await.unwrap().len(), 2);
-}
-
-#[tokio::test]
-async fn prediction_error_responses_are_deprecated_without_marking_other_routes() {
-    let prediction_response = test_app()
-        .oneshot(
-            Request::builder()
-                .uri("/v1/predictions/fifa-world-cup/winner")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(
-        prediction_response.status(),
-        StatusCode::SERVICE_UNAVAILABLE
-    );
-    assert_eq!(
-        prediction_response
-            .headers()
-            .get("deprecation")
-            .and_then(|value| value.to_str().ok()),
-        Some(crate::adapters::http::routes::predictions::DEPRECATION_HEADER_VALUE)
-    );
-
-    let health_response = test_app()
-        .oneshot(
-            Request::builder()
-                .uri("/health")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(health_response.status(), StatusCode::OK);
-    assert!(health_response.headers().get("deprecation").is_none());
-}
-
-#[tokio::test]
-async fn prediction_country_route_calls_dis_with_normalized_country() {
-    let Some((dis_url, request_handle)) = spawn_prediction_dis(vec![
-        (StatusCode::OK, country_prediction_body("mexico")),
-        (StatusCode::OK, country_prediction_body("mexico")),
-        (StatusCode::OK, country_prediction_body("mexico")),
-    ]) else {
-        return;
-    };
-    let app = test_app_with_dis(&dis_url);
-
-    for country in ["Mexico", "mexico", "MEXICO"] {
-        let (status, json) = app_json(
-            app.clone(),
-            &format!("/v1/predictions/fifa-world-cup/{country}"),
-        )
-        .await;
-
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(
-            json,
-            serde_json::json!({
-                "ok": true,
-                "market": "Will Mexico reach the Round of 16 at the 2026 FIFA World Cup?",
-                "country": {
-                    "slug": "mexico",
-                    "name": "Mexico"
-                },
-                "probability": "0.535",
-                "price": "0.535",
-                "currency": "USDC",
-                "source": "polymarket",
-                "deterministic": true,
-                "captured_at": "2026-06-06T03:22:11.593940Z"
-            })
-        );
-        assert!(json["probability"].is_string());
-        assert!(json["price"].is_string());
-    }
-
-    let requests = request_handle.await.unwrap();
-    assert_eq!(requests.len(), 3);
-    for request in requests {
-        assert_eq!(
-            request_body_json(&request),
-            serde_json::json!({
-                "event_slug": "fifa-world-cup-2026-country-probability",
-                "country": "mexico"
-            })
-        );
-    }
-}
-
-#[tokio::test]
-async fn prediction_demo_smoke_routes_return_contract_success_shapes() {
-    let Some((dis_url, request_handle)) = spawn_prediction_dis(vec![
-        (StatusCode::OK, winner_prediction_body()),
-        (StatusCode::OK, country_prediction_body("mexico")),
-    ]) else {
-        return;
-    };
-    let app = test_app_with_dis(&dis_url);
-
-    let (winner_status, winner_json) =
-        app_json(app.clone(), "/v1/predictions/fifa-world-cup/winner").await;
-    let (country_status, country_json) =
-        app_json(app, "/v1/predictions/fifa-world-cup/mexico").await;
-
-    assert_eq!(winner_status, StatusCode::OK);
-    assert_eq!(winner_json["ok"], true);
-    assert_eq!(winner_json["event"], "World Cup Winner ");
-    assert_eq!(winner_json["event_slug"], "fifa-world-cup-2026-winner");
-    assert_eq!(winner_json["odds"][0]["team"], "France");
-    assert_eq!(winner_json["odds"][1]["team"], "Spain");
-    assert!(winner_json["odds"][0]["probability"].is_string());
-    assert!(winner_json["odds"][0]["price"].is_string());
-    assert_eq!(winner_json["odds"][0]["currency"], "USDC");
-    assert_eq!(winner_json["source"], "polymarket");
-    assert_eq!(winner_json["deterministic"], true);
-    assert_eq!(winner_json["captured_at"], "2026-06-06T03:21:42.512048Z");
-    assert!(winner_json.get("provider_market").is_none());
-    assert!(winner_json["odds"][0].get("provider_market").is_none());
-
-    assert_eq!(country_status, StatusCode::OK);
-    assert_eq!(country_json["ok"], true);
-    assert_eq!(
-        country_json["market"],
-        "Will Mexico reach the Round of 16 at the 2026 FIFA World Cup?"
-    );
-    assert_eq!(country_json["country"]["slug"], "mexico");
-    assert_eq!(country_json["country"]["name"], "Mexico");
-    assert_eq!(country_json["probability"], "0.535");
-    assert_eq!(country_json["price"], "0.535");
-    assert!(country_json["probability"].is_string());
-    assert!(country_json["price"].is_string());
-    assert_eq!(country_json["currency"], "USDC");
-    assert_eq!(country_json["source"], "polymarket");
-    assert_eq!(country_json["deterministic"], true);
-    assert_eq!(country_json["captured_at"], "2026-06-06T03:22:11.593940Z");
-    assert!(country_json.get("provider_market").is_none());
-    assert!(country_json["country"].get("provider_market").is_none());
-
-    let requests = request_handle.await.unwrap();
-    assert_eq!(requests.len(), 2);
-    assert_eq!(
-        request_body_json(&requests[0]),
-        serde_json::json!({ "event_slug": "fifa-world-cup-2026-winner" })
-    );
-    assert_eq!(
-        request_body_json(&requests[1]),
-        serde_json::json!({
-            "event_slug": "fifa-world-cup-2026-country-probability",
-            "country": "mexico"
-        })
-    );
-}
-
-#[tokio::test]
-async fn prediction_winner_ignores_unknown_query_params() {
-    let Some((dis_url, request_handle)) =
-        spawn_prediction_dis(vec![(StatusCode::OK, winner_prediction_body())])
-    else {
-        return;
-    };
-    let app = test_app_with_dis(&dis_url);
-
-    let (status, json) = app_json(
-        app,
-        "/v1/predictions/fifa-world-cup/winner?ignored=true&anything=else",
-    )
-    .await;
-
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(json["event_slug"], "fifa-world-cup-2026-winner");
-
-    let requests = request_handle.await.unwrap();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(
-        request_body_json(&requests[0]),
-        serde_json::json!({ "event_slug": "fifa-world-cup-2026-winner" })
-    );
-}
-
-#[tokio::test]
-async fn prediction_winner_response_uses_contract_event_slug_not_dis_echo() {
-    let mut body = winner_prediction_body();
-    body["event_slug"] = serde_json::json!("wrong-upstream-echo");
-    let Some((dis_url, _request_handle)) = spawn_prediction_dis(vec![(StatusCode::OK, body)])
-    else {
-        return;
-    };
-    let app = test_app_with_dis(&dis_url);
-
-    let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
-
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(json["event_slug"], "fifa-world-cup-2026-winner");
-}
-
-#[tokio::test]
-async fn prediction_routes_report_missing_dis_client() {
-    let (status, json) = app_json(test_app(), "/v1/predictions/fifa-world-cup/winner").await;
-
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert_public_router_error(&json, "prediction_resolver_unavailable");
-}
-
-#[tokio::test]
-async fn prediction_routes_map_dis_connection_failure_to_resolver_unavailable() {
-    let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
-        return;
-    };
-    let dis_url = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
-    let app = test_app_with_dis(&dis_url);
-
-    let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
-
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert_public_router_error(&json, "prediction_resolver_unavailable");
-}
-
-#[tokio::test]
-async fn prediction_routes_map_dis_timeout_to_resolver_timeout() {
-    let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
-        return;
-    };
-    let dis_url = format!("http://{}", listener.local_addr().unwrap());
-    let handle = std::thread::spawn(move || {
-        let (_stream, _) = listener.accept().expect("test request should connect");
-        std::thread::sleep(Duration::from_millis(100));
-    });
-    let app = test_app_with_dis_timeout(&dis_url, 10);
-
-    let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
-
-    assert_eq!(status, StatusCode::GATEWAY_TIMEOUT);
-    assert_public_router_error(&json, "prediction_resolver_timeout");
-    handle.join().expect("test listener thread should finish");
-}
-
-#[tokio::test]
-async fn prediction_routes_map_unsupported_subject_from_dis() {
-    let Some((dis_url, _request_handle)) = spawn_prediction_dis(vec![(
-        StatusCode::BAD_REQUEST,
-        serde_json::json!({
-            "error": {
-                "code": "unsupported_prediction_subject",
-                "message": "DIS-owned message.",
-                "details": { "provider_market": { "hidden": true } }
-            }
-        }),
-    )]) else {
-        return;
-    };
-    let app = test_app_with_dis(&dis_url);
-
-    let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/atlantis").await;
-
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_public_router_error(&json, "unsupported_prediction_subject");
-}
-
-#[tokio::test]
-async fn prediction_routes_map_provider_failures_from_dis() {
-    for (dis_status, dis_code, expected_status, expected_code) in [
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "prediction_provider_unavailable",
-            StatusCode::SERVICE_UNAVAILABLE,
-            "prediction_provider_unavailable",
-        ),
-        (
-            StatusCode::GATEWAY_TIMEOUT,
-            "prediction_provider_timeout",
-            StatusCode::GATEWAY_TIMEOUT,
-            "prediction_provider_timeout",
-        ),
-    ] {
-        let Some((dis_url, _request_handle)) = spawn_prediction_dis(vec![(
-            dis_status,
-            serde_json::json!({
-                "error": {
-                    "code": dis_code,
-                    "message": "DIS-owned message.",
-                    "details": {
-                        "provider_market": { "hidden": true },
-                        "provider_body": "must not leak"
-                    }
-                }
-            }),
-        )]) else {
-            return;
-        };
-        let app = test_app_with_dis(&dis_url);
-
-        let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
-
-        assert_eq!(status, expected_status);
-        assert_public_router_error(&json, expected_code);
-    }
-}
-
-#[tokio::test]
-async fn prediction_routes_map_dis_internal_error_to_resolver_error() {
-    let Some((dis_url, _request_handle)) = spawn_prediction_dis(vec![(
-        StatusCode::INTERNAL_SERVER_ERROR,
-        serde_json::json!({
-            "error": {
-                "code": "internal_error",
-                "message": "DIS-owned message.",
-                "details": {
-                    "provider_market": { "hidden": true },
-                    "transport": "internal stack trace"
-                }
-            }
-        }),
-    )]) else {
-        return;
-    };
-    let app = test_app_with_dis(&dis_url);
-
-    let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
-
-    assert_eq!(status, StatusCode::BAD_GATEWAY);
-    assert_public_router_error(&json, "prediction_resolver_error");
-}
-
-#[tokio::test]
-async fn prediction_routes_map_wrong_shaped_success_to_schema_mismatch() {
-    let Some((dis_url, _request_handle)) = spawn_prediction_dis(vec![(
-        StatusCode::OK,
-        serde_json::json!({
-            "ok": true,
-            "event": "Legacy response shape",
-            "odds": [],
-            "provider_market": {
-                "id": "must-not-leak",
-                "url": "https://provider.invalid/must-not-leak"
-            }
-        }),
-    )]) else {
-        return;
-    };
-    let app = test_app_with_dis(&dis_url);
-
-    let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
-
-    assert_eq!(status, StatusCode::BAD_GATEWAY);
-    assert_public_router_error(&json, "prediction_resolver_schema_mismatch");
-    assert_ne!(
-        json["error"]["code"],
-        serde_json::json!("prediction_resolver_unavailable")
-    );
-}
-
-#[tokio::test]
-async fn prediction_routes_map_unknown_dis_error_code_to_resolver_error() {
-    let Some((dis_url, _request_handle)) = spawn_prediction_dis(vec![(
-        StatusCode::SERVICE_UNAVAILABLE,
-        serde_json::json!({
-            "error": {
-                "code": "future_dis_error",
-                "message": "Future DIS error.",
-                "details": {
-                    "provider_market": { "id": "must-not-leak" }
-                }
-            }
-        }),
-    )]) else {
-        return;
-    };
-    let app = test_app_with_dis(&dis_url);
-
-    let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
-
-    assert_eq!(status, StatusCode::BAD_GATEWAY);
-    assert_public_router_error(&json, "prediction_resolver_error");
-    assert_ne!(
-        json["error"]["code"],
-        serde_json::json!("prediction_resolver_schema_mismatch")
-    );
-    assert_ne!(
-        json["error"]["code"],
-        serde_json::json!("prediction_resolver_unavailable")
-    );
-}
-
-#[tokio::test]
-async fn prediction_routes_map_invalid_dis_error_body_to_malformed_response() {
-    let Some((dis_url, _request_handle)) = spawn_prediction_dis_raw(vec![(
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "not-json".to_string(),
-    )]) else {
-        return;
-    };
-    let app = test_app_with_dis(&dis_url);
-
-    let (status, json) = app_json(app, "/v1/predictions/fifa-world-cup/winner").await;
-
-    assert_eq!(status, StatusCode::BAD_GATEWAY);
-    assert_public_router_error(&json, "prediction_resolver_malformed_response");
 }
 
 #[tokio::test]
@@ -1931,42 +1444,6 @@ async fn app_json(app: Router, uri: &str) -> (StatusCode, Value) {
     (status, json)
 }
 
-fn assert_public_router_error(json: &Value, expected_code: &str) {
-    let top_level = json
-        .as_object()
-        .expect("public error response should be an object");
-    assert_eq!(top_level.len(), 2);
-    assert!(top_level.contains_key("ok"));
-    assert!(top_level.contains_key("error"));
-
-    let error = json["error"]
-        .as_object()
-        .expect("public error body should be an object");
-    assert_eq!(error.len(), 2);
-    assert_eq!(json["ok"], false);
-    assert_eq!(json["error"]["code"], expected_code);
-    assert!(json["error"]["message"]
-        .as_str()
-        .is_some_and(|message| !message.is_empty()));
-
-    let serialized = json.to_string();
-    for forbidden in [
-        "DIS-owned message",
-        "details",
-        "provider_market",
-        "provider_body",
-        "hidden",
-        "internal stack trace",
-        "reqwest",
-        "transport error",
-    ] {
-        assert!(
-            !serialized.contains(forbidden),
-            "public error leaked forbidden content: {forbidden}"
-        );
-    }
-}
-
 fn spawn_price_indexer() -> Option<(String, tokio::task::JoinHandle<String>)> {
     let listener = match TcpListener::bind("127.0.0.1:0") {
         Ok(listener) => listener,
@@ -2183,159 +1660,6 @@ fn spawn_signal_price_indexer(
     });
 
     Some((url, handle))
-}
-
-fn spawn_prediction_dis(
-    responses: Vec<(StatusCode, Value)>,
-) -> Option<(String, tokio::task::JoinHandle<Vec<String>>)> {
-    spawn_prediction_dis_raw(
-        responses
-            .into_iter()
-            .map(|(status, body)| (status, body.to_string()))
-            .collect(),
-    )
-}
-
-fn spawn_prediction_dis_raw(
-    responses: Vec<(StatusCode, String)>,
-) -> Option<(String, tokio::task::JoinHandle<Vec<String>>)> {
-    let listener = match TcpListener::bind("127.0.0.1:0") {
-        Ok(listener) => listener,
-        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
-        Err(error) => panic!("failed to bind test DIS: {error}"),
-    };
-    listener
-        .set_nonblocking(true)
-        .expect("test DIS listener should allow nonblocking mode");
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    let handle = tokio::task::spawn_blocking(move || {
-        let mut requests = Vec::new();
-
-        for (status, body) in responses {
-            let mut stream = accept_prediction_connection(&listener);
-            requests.push(read_http_request(&mut stream));
-
-            let reason = status.canonical_reason().unwrap_or("Unknown");
-            let response = format!(
-                "HTTP/1.1 {} {}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-                status.as_u16(),
-                reason,
-                body.len(),
-                body
-            );
-
-            stream.write_all(response.as_bytes()).unwrap();
-        }
-
-        requests
-    });
-
-    Some((url, handle))
-}
-
-fn accept_prediction_connection(listener: &TcpListener) -> TcpStream {
-    let deadline = Instant::now() + TEST_DIS_ACCEPT_TIMEOUT;
-
-    loop {
-        match listener.accept() {
-            Ok((stream, _)) => {
-                stream
-                    .set_nonblocking(false)
-                    .expect("test DIS stream should allow blocking mode");
-                stream
-                    .set_read_timeout(Some(TEST_DIS_ACCEPT_TIMEOUT))
-                    .expect("test DIS stream should allow read timeout");
-
-                return stream;
-            }
-            Err(error) if error.kind() == ErrorKind::WouldBlock && Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            Err(error) if error.kind() == ErrorKind::WouldBlock => {
-                panic!("timed out waiting for expected DIS test request");
-            }
-            Err(error) => panic!("failed to accept test DIS request: {error}"),
-        }
-    }
-}
-
-fn winner_prediction_body() -> Value {
-    serde_json::json!({
-        "event_slug": "fifa-world-cup-2026-winner",
-        "event_title": "World Cup Winner ",
-        "source": "polymarket",
-        "source_kind": "public_market_data_api",
-        "mode": "live_passthrough",
-        "deterministic": true,
-        "captured_at": "2026-06-06T03:21:42.512048Z",
-        "provider_market": {
-            "id": "558936",
-            "slug": "will-france-win-the-2026-fifa-world-cup-924",
-            "condition_id": "0x9b6fef249040fd17e9c107955b37ac2c3e923509b6b0ff01cc463a331ddeb894",
-            "url": "https://polymarket.com/event/will-france-win-the-2026-fifa-world-cup-924"
-        },
-        "warnings": [
-            {
-                "code": "probability_interpreted_from_price",
-                "message": "Outcome probabilities are interpreted from public market prices."
-            }
-        ],
-        "outcomes": [
-            {
-                "name": "France",
-                "probability": "0.1595",
-                "price": "0.1595",
-                "currency": "USDC"
-            },
-            {
-                "name": "Spain",
-                "probability": "0.1595",
-                "price": "0.1595",
-                "currency": "USDC"
-            }
-        ]
-    })
-}
-
-fn country_prediction_body(country_slug: &str) -> Value {
-    serde_json::json!({
-        "event_slug": "fifa-world-cup-2026-country-probability",
-        "event_title": "FIFA World Cup 2026 Country Probability",
-        "source": "polymarket",
-        "source_kind": "public_market_data_api",
-        "mode": "live_passthrough",
-        "deterministic": true,
-        "captured_at": "2026-06-06T03:22:11.593940Z",
-        "provider_market": {
-            "id": "2415420",
-            "slug": "will-mexico-reach-the-round-of-16-at-the-2026-fifa-world-cup-20260602025120735",
-            "condition_id": "0x2b3237da39d6c7b1f7adef29c5f675e4214cec25f585ca151c7b8cc9271871e1",
-            "url": "https://polymarket.com/event/will-mexico-reach-the-round-of-16-at-the-2026-fifa-world-cup-20260602025120735"
-        },
-        "warnings": [
-            {
-                "code": "probability_interpreted_from_price",
-                "message": "Outcome probability is interpreted from public market price."
-            }
-        ],
-        "subject": {
-            "kind": "country",
-            "slug": country_slug,
-            "name": "Mexico"
-        },
-        "market": "Will Mexico reach the Round of 16 at the 2026 FIFA World Cup?",
-        "probability": "0.535",
-        "price": "0.535",
-        "currency": "USDC"
-    })
-}
-
-fn request_body_json(request: &str) -> Value {
-    let (_, body) = request
-        .split_once("\r\n\r\n")
-        .expect("test request should include a body separator");
-
-    serde_json::from_str(body).unwrap()
 }
 
 fn assert_no_legacy_signal_params(request: &str) {
