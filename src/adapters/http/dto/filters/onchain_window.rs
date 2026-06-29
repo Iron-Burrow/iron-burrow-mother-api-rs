@@ -6,9 +6,6 @@ use utoipa::ToSchema;
 
 use crate::{
     adapters::http::{error::ApiError, types::JsonObject},
-    application::filters::onchain_window::{
-        BlockWindow, LookbackWindow, OnchainWindow, TimestampWindow,
-    },
     common::rfc3339::{compare_rfc3339, parse_rfc3339},
 };
 
@@ -27,36 +24,6 @@ pub(crate) enum OnchainWindowDTO {
     Block(BlockWindowDTO),
     Timestamp(TimestampWindowDTO),
     Lookback(LookbackWindowDTO),
-}
-
-impl TryFrom<OnchainWindowDTO> for OnchainWindow {
-    type Error = ApiError;
-
-    fn try_from(window: OnchainWindowDTO) -> Result<Self, Self::Error> {
-        match window {
-            OnchainWindowDTO::Block(window) => {
-                let block_window =
-                    BlockWindow::new(window.from_block, window.to_block).map_err(ApiError::from)?;
-
-                Ok(Self::Block(block_window))
-            }
-
-            OnchainWindowDTO::Timestamp(window) => {
-                let timestamp_window =
-                    TimestampWindow::new(window.from_timestamp, window.to_timestamp)
-                        .map_err(ApiError::from)?;
-
-                Ok(Self::Timestamp(timestamp_window))
-            }
-
-            OnchainWindowDTO::Lookback(window) => {
-                let lookback_window =
-                    LookbackWindow::latest(window.lookback_seconds).map_err(ApiError::from)?;
-
-                Ok(Self::Lookback(lookback_window))
-            }
-        }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]

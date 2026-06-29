@@ -1,36 +1,235 @@
-use axum::{http::StatusCode, response::IntoResponse};
+use serde::Serialize;
 use serde_json::{json, Value};
 
 use super::*;
-use crate::test_utils::json::json_object;
 use crate::{
     adapters::http::dto::filters::{
         onchain_window::{BlockWindowDTO, OnchainWindowDTO},
-        token_filters::TokenFilterDTO,
+        token_filters::{
+            ResolvedTokenFilterDTO, TokenFilterDTO, TokenFilterResolutionDTO, TokenFilterSourceDTO,
+        },
         transfer_direction::TransferDirectionDTO,
     },
-    application::{
-        erc20_transfers::service::{
-            build_command, Erc20TransferCommandTokenFilters, Erc20TransferSearchCommand,
-        },
-        filters::{
-            onchain_window::{BlockWindow, OnchainWindow},
-            transfer_direction::TransferDirection,
-        },
-    },
     test_utils::{
-        errors::assert_public_error,
-        fixtures::{
-            erc20_transfers::{
-                erc20_transfers_command_from_body, erc20_transfers_request_with_tokens_body,
-                erc20_transfers_without_tokens_body, valid_erc20_transfers_request_body,
-            },
-            global_assets::global_assets_repository,
+        fixtures::erc20_transfers::{
+            erc20_transfers_request_with_tokens_body, erc20_transfers_without_tokens_body,
+            valid_erc20_transfers_request_body,
         },
+        json::json_object,
     },
 };
 
-const TEST_MAX_TOKEN_FILTERS: u64 = 20;
+#[test]
+fn request_serialization_snapshot_matches_public_shape() {
+    let request = Erc20TransferSearchRequest {
+        network_slug: "eth-mainnet".to_string(),
+        address: "0xabc0000000000000000000000000000000000000".to_string(),
+        direction: TransferDirectionDTO::Any,
+        tokens: Some(TokenFilterDTO {
+            asset_slugs: vec!["usdc".to_string(), "usdt".to_string()],
+            contract_addresses: vec!["0x1111111111111111111111111111111111111111".to_string()],
+        }),
+        window: OnchainWindowDTO::Block(BlockWindowDTO {
+            from_block: 18_600_000,
+            to_block: 18_600_500,
+        }),
+    };
+
+    assert_json_snapshot(
+        &request,
+        r#"{
+  "network_slug": "eth-mainnet",
+  "address": "0xabc0000000000000000000000000000000000000",
+  "direction": "any",
+  "tokens": {
+    "asset_slugs": [
+      "usdc",
+      "usdt"
+    ],
+    "contract_addresses": [
+      "0x1111111111111111111111111111111111111111"
+    ]
+  },
+  "window": {
+    "from_block": 18600000,
+    "to_block": 18600500
+  }
+}"#,
+    );
+}
+
+#[test]
+fn response_serialization_snapshot_matches_public_shape() {
+    let response = Erc20TransferSearchResponse {
+        ok: true,
+        response_type: "erc20_transfer_search".to_string(),
+        network_slug: "eth-mainnet".to_string(),
+        address: "0xabc0000000000000000000000000000000000000".to_string(),
+        direction: TransferDirectionDTO::Any,
+        window: OnchainWindowDTO::Block(BlockWindowDTO {
+            from_block: 18_600_000,
+            to_block: 18_600_500,
+        }),
+        token_filters: TokenFilterResolutionDTO {
+            requested: TokenFilterDTO {
+                asset_slugs: vec!["usdc".to_string(), "usdt".to_string()],
+                contract_addresses: vec!["0x1111111111111111111111111111111111111111".to_string()],
+            },
+            resolved_contract_addresses: vec![
+                ResolvedTokenFilterDTO {
+                    contract_address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
+                    asset_slug: Some("usdc".to_string()),
+                    symbol: Some("USDC".to_string()),
+                    decimals: Some(6),
+                    source: TokenFilterSourceDTO::AssetSlug,
+                },
+                ResolvedTokenFilterDTO {
+                    contract_address: "0x1111111111111111111111111111111111111111".to_string(),
+                    asset_slug: None,
+                    symbol: None,
+                    decimals: None,
+                    source: TokenFilterSourceDTO::ContractAddress,
+                },
+            ],
+        },
+        transfers: vec![Erc20TransferRow {
+            block_number: 18_600_001,
+            tx_hash: "0x0000000000000000000000000000000000000000000000000000000000000000"
+                .to_string(),
+            log_index: 12,
+            token: Erc20TransferToken {
+                contract_address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
+                asset_slug: Some("usdc".to_string()),
+                symbol: Some("USDC".to_string()),
+                decimals: Some(6),
+            },
+            from: "0xabc0000000000000000000000000000000000000".to_string(),
+            to: "0xdef0000000000000000000000000000000000000".to_string(),
+            amount: Erc20TransferAmount {
+                raw: "12500000".to_string(),
+                decimal: Some("12.5".to_string()),
+            },
+            direction: TransferDirectionDTO::From,
+        }],
+        limits: Erc20TransferSearchLimits { max_rows: 5_000 },
+    };
+
+    assert_json_snapshot(
+        &response,
+        r#"{
+  "ok": true,
+  "type": "erc20_transfer_search",
+  "network_slug": "eth-mainnet",
+  "address": "0xabc0000000000000000000000000000000000000",
+  "direction": "any",
+  "window": {
+    "from_block": 18600000,
+    "to_block": 18600500
+  },
+  "token_filters": {
+    "requested": {
+      "asset_slugs": [
+        "usdc",
+        "usdt"
+      ],
+      "contract_addresses": [
+        "0x1111111111111111111111111111111111111111"
+      ]
+    },
+    "resolved_contract_addresses": [
+      {
+        "contract_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "asset_slug": "usdc",
+        "symbol": "USDC",
+        "decimals": 6,
+        "source": "asset_slug"
+      },
+      {
+        "contract_address": "0x1111111111111111111111111111111111111111",
+        "asset_slug": null,
+        "symbol": null,
+        "decimals": null,
+        "source": "contract_address"
+      }
+    ]
+  },
+  "transfers": [
+    {
+      "block_number": 18600001,
+      "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "log_index": 12,
+      "token": {
+        "contract_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "asset_slug": "usdc",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "from": "0xabc0000000000000000000000000000000000000",
+      "to": "0xdef0000000000000000000000000000000000000",
+      "amount": {
+        "raw": "12500000",
+        "decimal": "12.5"
+      },
+      "direction": "from"
+    }
+  ],
+  "limits": {
+    "max_rows": 5000
+  }
+}"#,
+    );
+}
+
+#[test]
+fn request_rejects_unknown_top_level_fields() {
+    let mut body = valid_erc20_transfers_request_body();
+    body["chain"] = json!("eth-mainnet");
+
+    assert!(serde_json::from_value::<Erc20TransferSearchRequest>(body).is_err());
+}
+
+#[test]
+fn token_filters_reject_unknown_fields() {
+    let mut body = valid_erc20_transfers_request_body();
+    body["tokens"]["symbol"] = json!("USDC");
+
+    assert!(serde_json::from_value::<Erc20TransferSearchRequest>(body).is_err());
+}
+
+#[test]
+fn windows_reject_unknown_fields() {
+    let mut body = valid_erc20_transfers_request_body();
+    body["window"]["extra"] = json!(true);
+
+    assert!(serde_json::from_value::<Erc20TransferSearchRequest>(body).is_err());
+}
+
+#[test]
+fn request_allows_timestamp_and_lookback_window_shapes() {
+    let mut timestamp = valid_erc20_transfers_request_body();
+    timestamp["window"] = json!({
+        "from_timestamp": "2026-06-25T00:00:00Z",
+        "to_timestamp": "2026-06-25T01:00:00Z"
+    });
+    let timestamp_request =
+        serde_json::from_value::<Erc20TransferSearchRequest>(timestamp).unwrap();
+    assert!(matches!(
+        timestamp_request.window,
+        OnchainWindowDTO::Timestamp(_)
+    ));
+
+    let mut lookback = valid_erc20_transfers_request_body();
+    lookback["window"] = json!({
+        "lookback_seconds": 600,
+        "to": "latest"
+    });
+    let lookback_request = serde_json::from_value::<Erc20TransferSearchRequest>(lookback)
+        .expect("lookback window should deserialize");
+    assert!(matches!(
+        lookback_request.window,
+        OnchainWindowDTO::Lookback(_)
+    ));
+}
 
 #[test]
 fn validation_accepts_supported_window_shapes() {
@@ -102,28 +301,6 @@ fn validation_normalizes_explicit_contract_addresses_to_lowercase() {
     );
 }
 
-#[tokio::test]
-async fn command_resolves_usdc_and_dedupes_duplicate_explicit_address() {
-    let mut body = valid_erc20_transfers_request_body();
-    body["address"] = json!("0xABC0000000000000000000000000000000000000");
-    body["tokens"]["contract_addresses"] = json!(["0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"]);
-
-    let command = erc20_transfers_command_from_body(body, TEST_MAX_TOKEN_FILTERS).await;
-
-    assert_eq!(
-        command,
-        Erc20TransferSearchCommand {
-            network_slug: "eth-mainnet".to_string(),
-            address: "0xabc0000000000000000000000000000000000000".to_string(),
-            direction: TransferDirection::Any,
-            tokens: Erc20TransferCommandTokenFilters {
-                contract_addresses: vec!["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string()],
-            },
-            window: OnchainWindow::Block(BlockWindow::new(18_600_000, 18_600_500).unwrap()),
-        }
-    );
-}
-
 #[test]
 fn validation_accepts_minimal_asset_contract_and_mixed_token_filter_shapes() {
     let cases = [
@@ -184,61 +361,10 @@ fn validation_accepts_minimal_asset_contract_and_mixed_token_filter_shapes() {
     }
 }
 
-#[tokio::test]
-async fn command_enforces_final_token_filter_limit_after_dedupe() {
-    let body = erc20_transfers_request_with_tokens_body(json!({
-        "asset_slugs": ["usdc"],
-        "contract_addresses": ["0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"]
-    }));
-    let command = erc20_transfers_command_from_body(body, 1).await;
-    assert_eq!(
-        command.tokens.contract_addresses,
-        ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]
-    );
-
-    let body = erc20_transfers_request_with_tokens_body(json!({
-        "asset_slugs": ["usdc"],
-        "contract_addresses": ["0x1111111111111111111111111111111111111111"]
-    }));
-    let request = Erc20TransferSearchRequest::try_from(&json_object(body)).unwrap();
-    let error = build_command(request, Some(global_assets_repository()), 1)
-        .await
-        .unwrap_err();
-
-    assert_api_error(
-        error,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "too_many_token_filters",
-    )
-    .await;
-
-    async fn assert_api_error(error: ApiError, expected_status: StatusCode, expected_code: &str) {
-        let response = error.into_response();
-        let status = response.status();
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let json: Value = serde_json::from_slice(&body).unwrap();
-
-        assert_public_error(status, &json, expected_status, expected_code);
-    }
-}
-
-#[tokio::test]
-async fn command_token_filters_have_no_asset_slug_field() {
-    let command = erc20_transfers_command_from_body(
-        valid_erc20_transfers_request_body(),
-        TEST_MAX_TOKEN_FILTERS,
-    )
-    .await;
-    let debug = format!("{:?}", command.tokens);
-
-    assert!(!debug.contains("asset_slugs"));
-    assert_eq!(
-        command.tokens.contract_addresses,
-        [
-            "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-            "0x1111111111111111111111111111111111111111",
-        ]
-    );
+fn assert_json_snapshot<T>(value: &T, expected: &str)
+where
+    T: Serialize,
+{
+    let actual = serde_json::to_string_pretty(value).unwrap();
+    assert_eq!(actual, expected);
 }

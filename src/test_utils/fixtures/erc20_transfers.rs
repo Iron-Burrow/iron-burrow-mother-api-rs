@@ -1,11 +1,5 @@
 use serde_json::{json, Value};
 
-use crate::{
-    adapters::http::dto::erc20_transfers::Erc20TransferSearchRequest,
-    application::erc20_transfers::service::{build_command, Erc20TransferSearchCommand},
-    test_utils::{fixtures::global_assets::global_assets_repository, json::json_object},
-};
-
 use crate::config::Config;
 
 pub(crate) fn erc20_transfers_enabled_config() -> Config {
@@ -41,14 +35,4 @@ pub(crate) fn erc20_transfers_request_with_tokens_body(tokens: Value) -> Value {
     let mut body = erc20_transfers_without_tokens_body();
     body["tokens"] = tokens;
     body
-}
-
-pub(crate) async fn erc20_transfers_command_from_body(
-    body: Value,
-    max_token_filters: u64,
-) -> Erc20TransferSearchCommand {
-    let request = Erc20TransferSearchRequest::try_from(&json_object(body)).unwrap();
-    build_command(request, Some(global_assets_repository()), max_token_filters)
-        .await
-        .unwrap()
 }
