@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::{body::Bytes, extract::State, http::HeaderMap, Json};
 use tracing::warn;
 
@@ -19,11 +21,12 @@ use crate::adapters::http::dto::{
 };
 use crate::adapters::http::json_body::parse_json_object_body;
 use crate::adapters::http::validation::ensure_json_content_type;
+use crate::application::balances::decimal::format_amount;
 use crate::application::erc20_transfers::service::{
     build_search_plan, execute_search_plan, Erc20TransferCatalogResolutionIssue,
     Erc20TransferExtractionRow, Erc20TransferSearchError, Erc20TransferSearchInput,
-    Erc20TransferSearchResult, Erc20TransferSearchTokenFilters, Erc20TransferTokenFilterSource,
-    ResolvedErc20TransferTokenFilter,
+    Erc20TransferSearchResult, Erc20TransferSearchTokenFilters, Erc20TransferTokenCatalogMetadata,
+    Erc20TransferTokenFilterSource, ResolvedErc20TransferTokenFilter,
 };
 use crate::application::filters::{
     onchain_window::{BlockWindow, LookbackTarget, LookbackWindow, OnchainWindow, TimestampWindow},
@@ -55,7 +58,7 @@ pub async fn search_erc20_transfers(
         return Err(ApiError::extraction_unavailable());
     };
 
-    let result = execute_search_plan(plan, bigwig_client)
+    let result = execute_search_plan(plan, state.asset_repository.clone(), bigwig_client)
         .await
         .map_err(erc20_transfer_search_error_to_api_error)?;
 
@@ -113,8 +116,16 @@ fn onchain_window_from_dto(window: OnchainWindowDTO) -> Result<OnchainWindow, Ap
 fn erc20_transfer_search_response_from_result(
     result: Erc20TransferSearchResult,
 ) -> Erc20TransferSearchResponse {
-    let Erc20TransferSearchResult { plan, extraction } = result;
+    let Erc20TransferSearchResult {
+        plan,
+        extraction,
+        token_metadata,
+    } = result;
     let request = plan.extraction_request;
+    let token_metadata = token_metadata
+        .into_iter()
+        .map(|metadata| (metadata.contract_address.clone(), metadata))
+        .collect::<HashMap<_, _>>();
 
     Erc20TransferSearchResponse {
         ok: true,
@@ -137,10 +148,11 @@ fn erc20_transfer_search_response_from_result(
         transfers: extraction
             .rows
             .into_iter()
-            .map(|row| erc20_transfer_row_to_dto(row, &request.address))
+            .map(|row| erc20_transfer_row_to_dto(row, &request.address, &token_metadata))
             .collect(),
         limits: Erc20TransferSearchLimits {
             max_rows: ERC20_TRANSFER_SEARCH_MAX_ROWS,
+            truncated: extraction.truncated,
         },
     }
 }
@@ -165,26 +177,48 @@ fn resolved_token_filter_to_dto(
 fn erc20_transfer_row_to_dto(
     row: Erc20TransferExtractionRow,
     watched_address: &str,
+    token_metadata: &HashMap<String, Erc20TransferTokenCatalogMetadata>,
 ) -> Erc20TransferRow {
     let direction = transfer_row_direction(&row, watched_address);
+    let contract_address = row.token.to_ascii_lowercase();
+    let metadata = token_metadata.get(&contract_address);
 
     Erc20TransferRow {
         block_number: row.block_number,
         tx_hash: row.tx_hash,
         log_index: row.log_index,
         token: Erc20TransferToken {
-            contract_address: row.token,
-            asset_slug: None,
-            symbol: None,
-            decimals: None,
+            contract_address,
+            asset_slug: metadata.map(|metadata| metadata.asset_slug.clone()),
+            symbol: metadata.map(|metadata| metadata.symbol.clone()),
+            decimals: metadata.map(|metadata| metadata.decimals),
         },
         from: row.from.clone(),
         to: row.to.clone(),
         amount: Erc20TransferAmount {
+            decimal: metadata.and_then(|metadata| decimal_amount(&row.value, metadata.decimals)),
             raw: row.value,
-            decimal: None,
         },
         direction,
+    }
+}
+
+fn decimal_amount(raw_amount: &str, decimals: u8) -> Option<String> {
+    format_amount(raw_amount, decimals)
+        .ok()
+        .map(trim_trailing_fractional_zeros)
+}
+
+fn trim_trailing_fractional_zeros(amount: String) -> String {
+    let Some((integer, fraction)) = amount.split_once('.') else {
+        return amount;
+    };
+    let fraction = fraction.trim_end_matches('0');
+
+    if fraction.is_empty() {
+        integer.to_string()
+    } else {
+        format!("{integer}.{fraction}")
     }
 }
 

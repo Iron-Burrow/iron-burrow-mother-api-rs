@@ -177,3 +177,19 @@ implementation, and documentation changes.
   disabled-by-default config, startup limit validation against Bigwig's
   contract-address limit, and feature-gated OpenAPI generation without
   registering the public runtime route.
+
+## 2026-06-29
+
+- Completed PR 5 response shaping for `/v1/erc20-transfers/search`, converting
+  Bigwig ERC-20 transfer evidence into the public customer-readable success
+  response.
+- Added catalog enrichment for known ERC-20 token contracts by
+  `(network_slug, contract_address)`, including explicit contract filters and
+  returned row tokens, while preserving unknown explicit contracts with
+  nullable metadata.
+- Preserved raw transfer amounts as strings, emitted decimal amounts only
+  when catalog decimals are known, and trimmed trailing fractional zeros from
+  transfer decimal strings.
+- Propagated Bigwig's optional `truncated` success flag into
+  `limits.truncated`, added the `200` OpenAPI response, and documented the
+  implemented transfer-search contract in `CONTRACTS.md`.

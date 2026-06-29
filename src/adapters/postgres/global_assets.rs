@@ -10,7 +10,7 @@ use super::asset_chain_map::{
     demo_chain_maps_for_assets, map_chain_map_row, AssetChainMapRow, InMemoryAssetChainMap,
 };
 use super::asset_match::{map_match_row, AssetMatchRow};
-use super::balance_catalog::BalanceCatalogRow;
+use super::balance_catalog::{BalanceCatalogRow, Erc20TokenCatalogRow};
 use super::errors::RepositoryError;
 
 #[derive(FromRow)]
@@ -126,6 +126,28 @@ impl GlobalAssetRepository {
                 catalog,
                 network_slug,
                 ordered_asset_slugs,
+            )),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) async fn load_erc20_token_catalog_rows(
+        &self,
+        network_slug: &str,
+        contract_addresses: &[String],
+    ) -> Result<Vec<Erc20TokenCatalogRow>, RepositoryError> {
+        if contract_addresses.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        match self {
+            Self::Database(pool) => {
+                load_erc20_token_catalog_rows_db(pool, network_slug, contract_addresses).await
+            }
+            Self::InMemory(catalog) => Ok(load_erc20_token_catalog_rows_in_memory(
+                catalog,
+                network_slug,
+                contract_addresses,
             )),
         }
     }
@@ -413,6 +435,51 @@ async fn load_balance_catalog_rows_db(
     .map_err(RepositoryError::new)
 }
 
+#[allow(dead_code)]
+async fn load_erc20_token_catalog_rows_db(
+    pool: &PgPool,
+    network_slug: &str,
+    contract_addresses: &[String],
+) -> Result<Vec<Erc20TokenCatalogRow>, RepositoryError> {
+    sqlx::query_as::<_, Erc20TokenCatalogRow>(
+        r#"
+        with requested_contracts as (
+          select lower(contract_address) as contract_address
+          from unnest($2::text[]) as requested(contract_address)
+          group by lower(contract_address)
+        )
+        select
+          requested_contracts.contract_address,
+          global_asset.slug as asset_slug,
+          global_asset.symbol as asset_symbol,
+          asset_chain_map.decimals
+        from requested_contracts
+        join mother_api.network network
+          on network.status = 'active'
+         and network.slug = $1
+         and network.family = 'evm'
+        join mother_api.asset_chain_map asset_chain_map
+          on asset_chain_map.status = 'active'
+         and asset_chain_map.network_id = network.id
+         and asset_chain_map.is_native = false
+         and asset_chain_map.token_standard = 'erc20'
+         and lower(asset_chain_map.deployment_address) = requested_contracts.contract_address
+        join mother_api.global_asset global_asset
+          on global_asset.status = 'active'
+         and global_asset.id = asset_chain_map.asset_id
+        order by
+          requested_contracts.contract_address asc,
+          asset_chain_map.sort_order asc,
+          global_asset.slug asc
+        "#,
+    )
+    .bind(network_slug)
+    .bind(contract_addresses)
+    .fetch_all(pool)
+    .await
+    .map_err(RepositoryError::new)
+}
+
 fn find_confident_match_in_memory(
     assets: &[GlobalAsset],
     normalized_query: &str,
@@ -573,6 +640,62 @@ fn in_memory_balance_catalog_row(
     }
 }
 
+#[allow(dead_code)]
+fn load_erc20_token_catalog_rows_in_memory(
+    catalog: &InMemoryGlobalAssets,
+    network_slug: &str,
+    contract_addresses: &[String],
+) -> Vec<Erc20TokenCatalogRow> {
+    let requested = contract_addresses
+        .iter()
+        .map(|contract_address| contract_address.to_ascii_lowercase())
+        .collect::<std::collections::HashSet<_>>();
+    let mut rows = Vec::new();
+
+    for mapping in &catalog.chain_maps {
+        let chain_map = &mapping.chain_map;
+        let Some(address) = chain_map.address.as_deref() else {
+            continue;
+        };
+        let contract_address = address.to_ascii_lowercase();
+        if chain_map.network.slug != network_slug
+            || chain_map.is_native
+            || chain_map.token_standard.as_deref() != Some("erc20")
+            || !requested.contains(&contract_address)
+        {
+            continue;
+        }
+
+        let Some(asset) = catalog
+            .assets
+            .iter()
+            .find(|asset| asset.slug == mapping.asset_slug)
+        else {
+            continue;
+        };
+
+        rows.push((
+            contract_address.clone(),
+            mapping.sort_order,
+            Erc20TokenCatalogRow {
+                contract_address,
+                asset_slug: asset.slug.clone(),
+                asset_symbol: asset.symbol.clone(),
+                decimals: chain_map.decimals,
+            },
+        ));
+    }
+
+    rows.sort_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1))
+            .then_with(|| left.2.asset_slug.cmp(&right.2.asset_slug))
+    });
+    rows.dedup_by(|left, right| left.0 == right.0);
+    rows.into_iter().map(|(_, _, row)| row).collect()
+}
+
 fn list_recommendations_in_memory(
     assets: &[GlobalAsset],
     normalized_query: &str,
@@ -727,5 +850,63 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["beta", "alpha", "zeta"]
         );
+    }
+
+    #[tokio::test]
+    async fn erc20_token_catalog_lookup_keeps_lowest_sort_order_mapping() {
+        let contract = "0x1111111111111111111111111111111111111111";
+        let repository = GlobalAssetRepository::in_memory_with_chain_maps(
+            vec![
+                sample_asset(
+                    "usdc",
+                    "USDC",
+                    "USD Coin",
+                    "crypto",
+                    "/assets/usdc",
+                    &[],
+                    20,
+                ),
+                sample_asset(
+                    "wrapped-ether",
+                    "WETH",
+                    "Wrapped Ether",
+                    "crypto",
+                    "/assets/wrapped-ether",
+                    &[],
+                    10,
+                ),
+            ],
+            vec![
+                in_memory_chain_map(
+                    "usdc",
+                    "eth-mainnet",
+                    "Ethereum Mainnet",
+                    Some("eip155:1"),
+                    false,
+                    Some(contract),
+                    20,
+                ),
+                in_memory_chain_map(
+                    "wrapped-ether",
+                    "eth-mainnet",
+                    "Ethereum Mainnet",
+                    Some("eip155:1"),
+                    false,
+                    Some(contract),
+                    10,
+                ),
+            ],
+        );
+
+        let rows = repository
+            .load_erc20_token_catalog_rows("eth-mainnet", &[contract.to_string()])
+            .await
+            .unwrap();
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].contract_address, contract);
+        assert_eq!(rows[0].asset_slug, "wrapped-ether");
+        assert_eq!(rows[0].asset_symbol, "WETH");
+        assert_eq!(rows[0].decimals, Some(18));
     }
 }

@@ -80,7 +80,7 @@ async fn valid_request_without_configured_bigwig_returns_extraction_unavailable(
 }
 
 #[tokio::test]
-async fn successful_bigwig_response_returns_minimal_public_response() {
+async fn successful_bigwig_response_returns_final_public_response() {
     let Some((base_url, handle)) = spawn_bigwig_server(StatusCode::OK, bigwig_success_body())
     else {
         return;
@@ -122,9 +122,116 @@ async fn successful_bigwig_response_returns_minimal_public_response() {
 
     assert_eq!(response["ok"], true);
     assert_eq!(response["type"], "erc20_transfer_search");
-    assert_eq!(response["transfers"][0]["amount"]["raw"], "1000000");
-    assert_eq!(response["transfers"][0]["amount"]["decimal"], Value::Null);
-    assert_eq!(response["transfers"][0]["token"]["asset_slug"], Value::Null);
+    assert_eq!(response["transfers"][0]["amount"]["raw"], "12500000");
+    assert_eq!(response["transfers"][0]["amount"]["decimal"], "12.5");
+    assert_eq!(response["transfers"][0]["token"]["asset_slug"], "usdc");
+    assert_eq!(response["transfers"][0]["token"]["symbol"], "USDC");
+    assert_eq!(response["transfers"][0]["token"]["decimals"], 6);
+    assert_eq!(response["transfers"][1]["amount"]["raw"], "1000000");
+    assert_eq!(response["transfers"][1]["amount"]["decimal"], Value::Null);
+    assert_eq!(response["transfers"][1]["token"]["asset_slug"], Value::Null);
+    assert_eq!(response["limits"]["truncated"], true);
+    assert_eq!(
+        response["token_filters"]["resolved_contract_addresses"],
+        json!([
+            {
+                "contract_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                "asset_slug": "usdc",
+                "symbol": "USDC",
+                "decimals": 6,
+                "source": "asset_slug"
+            },
+            {
+                "contract_address": "0x1111111111111111111111111111111111111111",
+                "asset_slug": null,
+                "symbol": null,
+                "decimals": null,
+                "source": "contract_address"
+            }
+        ])
+    );
+    assert_json_snapshot(
+        &response,
+        r#"{
+  "address": "0xabc0000000000000000000000000000000000000",
+  "direction": "any",
+  "limits": {
+    "max_rows": 5000,
+    "truncated": true
+  },
+  "network_slug": "eth-mainnet",
+  "ok": true,
+  "token_filters": {
+    "requested": {
+      "asset_slugs": [
+        "usdc"
+      ],
+      "contract_addresses": [
+        "0x1111111111111111111111111111111111111111"
+      ]
+    },
+    "resolved_contract_addresses": [
+      {
+        "asset_slug": "usdc",
+        "contract_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "decimals": 6,
+        "source": "asset_slug",
+        "symbol": "USDC"
+      },
+      {
+        "asset_slug": null,
+        "contract_address": "0x1111111111111111111111111111111111111111",
+        "decimals": null,
+        "source": "contract_address",
+        "symbol": null
+      }
+    ]
+  },
+  "transfers": [
+    {
+      "amount": {
+        "decimal": "12.5",
+        "raw": "12500000"
+      },
+      "block_number": 18600001,
+      "direction": "from",
+      "from": "0xabc0000000000000000000000000000000000000",
+      "log_index": 12,
+      "to": "0x2222222222222222222222222222222222222222",
+      "token": {
+        "asset_slug": "usdc",
+        "contract_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "decimals": 6,
+        "symbol": "USDC"
+      },
+      "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "amount": {
+        "decimal": null,
+        "raw": "1000000"
+      },
+      "block_number": 18600002,
+      "direction": "to",
+      "from": "0x3333333333333333333333333333333333333333",
+      "log_index": 13,
+      "to": "0xabc0000000000000000000000000000000000000",
+      "token": {
+        "asset_slug": null,
+        "contract_address": "0x1111111111111111111111111111111111111111",
+        "decimals": null,
+        "symbol": null
+      },
+      "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000002"
+    }
+  ],
+  "type": "erc20_transfer_search",
+  "window": {
+    "from_block": 18600000,
+    "to_block": 18600500
+  }
+}"#,
+    );
 }
 
 #[tokio::test]
@@ -776,16 +883,28 @@ fn bigwig_success_body() -> Value {
             "policy": "confirmation_lag",
             "confirmation_lag": 12
         },
-        "rows_extracted": 1,
-        "results": [{
-            "block_number": 18_600_001,
-            "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
-            "log_index": 12,
-            "token": "0x1111111111111111111111111111111111111111",
-            "from": "0xabc0000000000000000000000000000000000000",
-            "to": "0x2222222222222222222222222222222222222222",
-            "value": "1000000"
-        }]
+        "truncated": true,
+        "rows_extracted": 2,
+        "results": [
+            {
+                "block_number": 18_600_001,
+                "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
+                "log_index": 12,
+                "token": "0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48",
+                "from": "0xABC0000000000000000000000000000000000000",
+                "to": "0x2222222222222222222222222222222222222222",
+                "value": "12500000"
+            },
+            {
+                "block_number": 18_600_002,
+                "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000002",
+                "log_index": 13,
+                "token": "0x1111111111111111111111111111111111111111",
+                "from": "0x3333333333333333333333333333333333333333",
+                "to": "0xABC0000000000000000000000000000000000000",
+                "value": "1000000"
+            }
+        ]
     })
 }
 
@@ -876,4 +995,9 @@ fn assert_header(headers: &str, name: &str, expected_value: &str) {
             .any(|line| line.eq_ignore_ascii_case(&expected)),
         "missing header {expected}; headers were:\n{headers}"
     );
+}
+
+fn assert_json_snapshot(value: &Value, expected: &str) {
+    let actual = serde_json::to_string_pretty(value).unwrap();
+    assert_eq!(actual, expected);
 }

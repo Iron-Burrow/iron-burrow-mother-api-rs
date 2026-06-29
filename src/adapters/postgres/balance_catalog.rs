@@ -17,3 +17,12 @@ pub(crate) struct BalanceCatalogRow {
     pub decimals: Option<i32>,
     pub token_standard: Option<String>,
 }
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, Eq, FromRow, PartialEq)]
+pub(crate) struct Erc20TokenCatalogRow {
+    pub contract_address: String,
+    pub asset_slug: String,
+    pub asset_symbol: String,
+    pub decimals: Option<i32>,
+}

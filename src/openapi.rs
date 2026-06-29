@@ -91,6 +91,11 @@ struct Erc20TransfersApiDoc;
     ),
     responses(
         (
+            status = 200,
+            description = "ERC-20 transfer search response",
+            body = Erc20TransferSearchResponse
+        ),
+        (
             status = 400,
             description = "Malformed or semantically invalid transfer search request",
             body = ErrorResponse
@@ -173,7 +178,7 @@ mod tests {
         assert!(responses.contains_key("404"));
         assert!(responses.contains_key("422"));
         assert!(responses.contains_key("503"));
-        assert!(!responses.contains_key("200"));
+        assert!(responses.contains_key("200"));
     }
 
     #[test]

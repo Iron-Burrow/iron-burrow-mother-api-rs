@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-06-25
+last_reviewed: 2026-06-29
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -64,6 +64,7 @@ endpoints are Stable.
 | `GET`  | `/v1/assets/{slug}/signal/price-trend`  | None | Returns a strict price trend signal for one asset.           |
 | `POST` | `/v1/balances`                          | None | Resolves one latest network-scoped EVM balance snapshot.     |
 | `POST` | `/v1/balances/bulk`                     | None | Resolves latest snapshots for explicit network accounts.     |
+| `POST` | `/v1/erc20-transfers/search`            | None | Searches bounded ERC-20 Transfer logs for one EVM address.   |
 | `GET`  | `/v1/search-engine`                     | None | Resolves a search query against global assets.     |
 
 Mother API does not currently authenticate callers. API keys, rate
@@ -917,6 +918,171 @@ Request-wide errors:
 
 ---
 
+### `POST /v1/erc20-transfers/search`
+
+Searches a bounded Ethereum mainnet ERC-20 `Transfer` log window for one
+watched EVM address. The route accepts catalog `asset_slug` filters, explicit
+ERC-20 `contract_addresses`, a mix of both, or no token filter.
+
+Mother API owns public validation, catalog resolution, response shaping, and
+error envelopes. Bigwig owns the internal bounded transfer extraction. Mother
+API does not index transfers, call EVM RPC directly, infer native transfers,
+or enrich prices for this endpoint.
+
+**Request:**
+
+```json
+{
+  "network_slug": "eth-mainnet",
+  "address": "0xabc0000000000000000000000000000000000000",
+  "direction": "any",
+  "tokens": {
+    "asset_slugs": ["usdc"],
+    "contract_addresses": [
+      "0x1111111111111111111111111111111111111111"
+    ]
+  },
+  "window": {
+    "from_block": 18600000,
+    "to_block": 18600500
+  }
+}
+```
+
+Fields:
+
+| Field | Type | Notes |
+| ----- | ---- | ----- |
+| `network_slug` | string | Required. Currently only `eth-mainnet`. |
+| `address` | string | Required EVM address, normalized to lowercase in execution and response. |
+| `direction` | string | Required. One of `any`, `from`, or `to`. |
+| `tokens.asset_slugs` | array of strings | Optional exact catalog slugs. Each must resolve to an ERC-20 contract on `network_slug`. |
+| `tokens.contract_addresses` | array of strings | Optional ERC-20 contract addresses. Unknown contracts are valid filters. |
+| `window.from_block` / `window.to_block` | integers | Block window. |
+| `window.from_timestamp` / `window.to_timestamp` | strings | Timestamp window alternative. |
+| `window.lookback_seconds` / `window.to` | integer/string | Lookback alternative. `to` is currently `latest`. |
+
+`tokens` may be omitted, `null`, or `{}` for an unfiltered ERC-20 transfer
+search. Mother API normalizes and deduplicates resolved and explicit contract
+addresses before calling Bigwig.
+
+Public limits:
+
+| Limit | Maximum |
+| ----- | ------- |
+| Unique token filters after resolution | 20 |
+| Returned rows | 5,000 |
+
+**Response — `200 OK`:**
+
+```json
+{
+  "ok": true,
+  "type": "erc20_transfer_search",
+  "network_slug": "eth-mainnet",
+  "address": "0xabc0000000000000000000000000000000000000",
+  "direction": "any",
+  "window": {
+    "from_block": 18600000,
+    "to_block": 18600500
+  },
+  "token_filters": {
+    "requested": {
+      "asset_slugs": ["usdc"],
+      "contract_addresses": [
+        "0x1111111111111111111111111111111111111111"
+      ]
+    },
+    "resolved_contract_addresses": [
+      {
+        "contract_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "asset_slug": "usdc",
+        "symbol": "USDC",
+        "decimals": 6,
+        "source": "asset_slug"
+      },
+      {
+        "contract_address": "0x1111111111111111111111111111111111111111",
+        "asset_slug": null,
+        "symbol": null,
+        "decimals": null,
+        "source": "contract_address"
+      }
+    ]
+  },
+  "transfers": [
+    {
+      "block_number": 18600001,
+      "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
+      "log_index": 12,
+      "token": {
+        "contract_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "asset_slug": "usdc",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "from": "0xabc0000000000000000000000000000000000000",
+      "to": "0x2222222222222222222222222222222222222222",
+      "amount": {
+        "raw": "12500000",
+        "decimal": "12.5"
+      },
+      "direction": "from"
+    }
+  ],
+  "limits": {
+    "max_rows": 5000,
+    "truncated": false
+  }
+}
+```
+
+`token_filters.resolved_contract_addresses` is the exact concrete contract
+set searched internally, in search order after normalization and
+deduplication. Known contracts are enriched from the Mother catalog with
+`asset_slug`, `symbol`, and `decimals`; unknown explicit contracts remain
+valid and expose `null` catalog metadata.
+
+`transfers[].amount.raw` is always present as the base-unit integer string
+from Bigwig evidence. `transfers[].amount.decimal` is present only when
+Mother API knows token decimals from the catalog; the value is a decimal
+string with trailing fractional zeros trimmed.
+
+`limits.truncated` mirrors Bigwig's success response. When `true`, the
+response is valid but capped by the upstream extraction limit.
+
+Request-wide errors:
+
+- `400 invalid_json` — malformed JSON, non-object body, or missing/non-JSON
+  `Content-Type`.
+- `400 unknown_field` — request, token, or window object contains an unknown
+  field.
+- `400 missing_network_slug` — `network_slug` is missing or empty.
+- `404 unsupported_network` — `network_slug` is unsupported for transfer
+  search.
+- `400 invalid_address` — `address` is not an EVM address.
+- `400 invalid_direction` — `direction` is not `any`, `from`, or `to`.
+- `400 invalid_window` — window shape or bounds are invalid.
+- `400 invalid_asset_slug` — an asset slug has invalid syntax.
+- `404 asset_not_found` — an asset slug is syntactically valid but unknown.
+- `422 asset_not_available_on_network` — an asset exists but is unavailable
+  on `network_slug`.
+- `422 asset_not_erc20_on_network` — an asset maps to native or non-ERC-20
+  support on `network_slug`.
+- `503 asset_contract_mapping_unavailable` — catalog resolution or metadata
+  enrichment is temporarily unavailable.
+- `400 invalid_contract_address` — a contract address is malformed.
+- `422 too_many_token_filters` — more than 20 unique token contracts were
+  requested after resolution and deduplication.
+- `503 extraction_unavailable` — Bigwig extraction is unavailable or returned
+  an unavailable dependency class.
+- `502 upstream_provider_error` — the upstream RPC provider failed.
+- `504 upstream_provider_timeout` — the upstream RPC provider timed out.
+- `500 internal_error` — Mother API detects inconsistent catalog or response
+  shaping state.
+
+---
+
 ## Deprecated endpoints
 
 These endpoints are retained temporarily for compatibility and historical
@@ -1486,15 +1652,31 @@ Fields:
 | 400  | `duplicate_asset`       | A balance request repeats an exact asset slug. |
 | 400  | `request_too_large`     | A balance request exceeds a public or grouped provider limit. |
 | 400  | `invalid_limit`         | `limit` query parameter is not a positive integer.                     |
+| 400  | `invalid_json`          | A JSON body is malformed, not an object, or sent without JSON content type. |
+| 400  | `unknown_field`         | A strict JSON request object contains an unsupported field.             |
+| 400  | `missing_network_slug`  | A transfer search request omits `network_slug` or sends it empty.       |
+| 400  | `invalid_address`       | A transfer search address is not an EVM address.                       |
+| 400  | `invalid_direction`     | A transfer search direction is not `any`, `from`, or `to`.             |
+| 400  | `invalid_window`        | A transfer search window is missing, malformed, or reversed.           |
+| 400  | `invalid_asset_slug`    | A transfer token `asset_slug` filter has invalid syntax.               |
+| 400  | `invalid_contract_address` | A transfer token `contract_addresses` filter is malformed.          |
 | 400  | `missing_query`         | `q` query parameter is missing or empty after trimming.                |
 | 400  | `query_too_long`        | Trimmed `q` exceeds 128 characters.                                    |
 | 404  | `asset_not_found`       | Asset detail lookup failed, or price-indexer has no requested signal.  |
+| 404  | `unsupported_network`   | A transfer search request uses a network unsupported by that endpoint. |
+| 422  | `asset_not_available_on_network` | A transfer asset filter exists but is unavailable on the requested network. |
+| 422  | `asset_not_erc20_on_network` | A transfer asset filter is native or not ERC-20 on the requested network. |
+| 422  | `too_many_token_filters` | A transfer search exceeds its unique token-filter limit.              |
 | 502  | `upstream_auth_failed`  | Mother API could not authenticate to price-indexer.                    |
 | 502  | `price_indexer_error`   | Price-indexer failed while handling a valid signal request.            |
 | 502  | `upstream_invalid_response` | Price-indexer returned malformed or unexpected JSON.               |
+| 502  | `upstream_provider_error` | Bigwig's upstream RPC provider failed during transfer extraction.    |
 | 503  | `database_unavailable`  | `DATABASE_URL` is unset or Postgres is unreachable.                    |
 | 503  | `asset_network_map_unavailable` | The balance catalog is unconfigured or temporarily unavailable. |
+| 503  | `asset_contract_mapping_unavailable` | Transfer asset contract mapping is unconfigured or temporarily unavailable. |
+| 503  | `extraction_unavailable` | ERC-20 transfer extraction is disabled, unconfigured, unreachable, or malformed. |
 | 503  | `price_indexer_unavailable` | Price-indexer is unconfigured, unreachable, or timed out.          |
+| 504  | `upstream_provider_timeout` | Bigwig's upstream RPC provider timed out during transfer extraction. |
 | 400  | `unsupported_prediction_subject` | Requested prediction country is unsupported for the event.    |
 | 503  | `prediction_provider_unavailable` | DIS reports the prediction provider is unavailable or failed. |
 | 504  | `prediction_provider_timeout` | DIS reports the prediction provider timed out.                    |
