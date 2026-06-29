@@ -147,7 +147,7 @@ impl TryFrom<BigwigErc20TransferResponse> for Erc20TransferExtractionResult {
 
     fn try_from(response: BigwigErc20TransferResponse) -> Result<Self, Self::Error> {
         if response.rows_extracted != u64::try_from(response.results.len()).unwrap_or(u64::MAX) {
-            return Err(Erc20TransferExtractionError::ExtractionUnavailable);
+            return Err(Erc20TransferExtractionError::InternalError);
         }
 
         Ok(Self {
@@ -190,9 +190,17 @@ impl Erc20TransferExtractor for BigwigClient {
 
 pub(crate) fn map_bigwig_transfer_error(error: BigwigError) -> Erc20TransferExtractionError {
     match error {
+        BigwigError::ReversedBlockRange
+        | BigwigError::BlockOutOfRange
+        | BigwigError::ReversedTimestampRange
+        | BigwigError::TimestampOutOfRange => Erc20TransferExtractionError::InvalidWindow,
+        BigwigError::LookbackTooLarge | BigwigError::RangeTooLarge => {
+            Erc20TransferExtractionError::WindowTooLarge
+        }
         BigwigError::RpcError => Erc20TransferExtractionError::UpstreamProviderError,
-        BigwigError::Timeout | BigwigError::ProviderTimeout => {
-            Erc20TransferExtractionError::UpstreamProviderTimeout
+        BigwigError::ProviderTimeout => Erc20TransferExtractionError::UpstreamProviderTimeout,
+        BigwigError::Timeout | BigwigError::ExtractionTimeout => {
+            Erc20TransferExtractionError::ExtractionTimeout
         }
         BigwigError::Transport
         | BigwigError::Unauthorized
@@ -201,13 +209,19 @@ pub(crate) fn map_bigwig_transfer_error(error: BigwigError) -> Erc20TransferExtr
         | BigwigError::NoRouteSatisfiesOperation
         | BigwigError::RateLimited { .. }
         | BigwigError::ProviderUnavailable { .. }
-        | BigwigError::InternalError
+        | BigwigError::InternalError => Erc20TransferExtractionError::ExtractionUnavailable,
+        BigwigError::InvalidExtractionRequest
+        | BigwigError::InvalidAddress
+        | BigwigError::InvalidContractAddress
+        | BigwigError::InvalidDirection
+        | BigwigError::InvalidWindowShape
+        | BigwigError::TooManyContractAddresses
         | BigwigError::RequestValidation(_)
         | BigwigError::MalformedSuccessResponse
         | BigwigError::MalformedErrorResponse
         | BigwigError::UnexpectedSuccessStatus(_)
         | BigwigError::UnexpectedErrorResponse { .. } => {
-            Erc20TransferExtractionError::ExtractionUnavailable
+            Erc20TransferExtractionError::InternalError
         }
     }
 }
@@ -385,6 +399,22 @@ mod tests {
     #[tokio::test]
     async fn port_maps_bigwig_runtime_errors_to_pr4_extraction_errors() {
         assert_eq!(
+            map_bigwig_transfer_error(BigwigError::RangeTooLarge),
+            Erc20TransferExtractionError::WindowTooLarge
+        );
+        assert_eq!(
+            map_bigwig_transfer_error(BigwigError::LookbackTooLarge),
+            Erc20TransferExtractionError::WindowTooLarge
+        );
+        assert_eq!(
+            map_bigwig_transfer_error(BigwigError::ReversedBlockRange),
+            Erc20TransferExtractionError::InvalidWindow
+        );
+        assert_eq!(
+            map_bigwig_transfer_error(BigwigError::ExtractionTimeout),
+            Erc20TransferExtractionError::ExtractionTimeout
+        );
+        assert_eq!(
             map_bigwig_transfer_error(BigwigError::RpcError),
             Erc20TransferExtractionError::UpstreamProviderError
         );
@@ -394,11 +424,15 @@ mod tests {
         );
         assert_eq!(
             map_bigwig_transfer_error(BigwigError::Timeout),
-            Erc20TransferExtractionError::UpstreamProviderTimeout
+            Erc20TransferExtractionError::ExtractionTimeout
         );
         assert_eq!(
             map_bigwig_transfer_error(BigwigError::Transport),
             Erc20TransferExtractionError::ExtractionUnavailable
+        );
+        assert_eq!(
+            map_bigwig_transfer_error(BigwigError::InvalidExtractionRequest),
+            Erc20TransferExtractionError::InternalError
         );
     }
 
@@ -456,7 +490,7 @@ mod tests {
                 extraction_request(block_window(), Vec::new()),
             )
             .await,
-            Err(Erc20TransferExtractionError::UpstreamProviderTimeout)
+            Err(Erc20TransferExtractionError::ExtractionTimeout)
         );
         handle.join().unwrap();
     }

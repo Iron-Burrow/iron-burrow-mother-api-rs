@@ -142,6 +142,13 @@ pub(crate) fn too_many_filters_response() -> Value {
     )
 }
 
+pub(crate) fn window_too_large_response() -> Value {
+    error_response(
+        "window_too_large",
+        "Transfer search window exceeds the public limit.",
+    )
+}
+
 pub(crate) fn invalid_asset_slug_response() -> Value {
     error_response("invalid_asset_slug", "Asset slug is invalid.")
 }
@@ -150,6 +157,13 @@ pub(crate) fn extraction_unavailable_response() -> Value {
     error_response(
         "extraction_unavailable",
         "ERC-20 transfer extraction is temporarily unavailable.",
+    )
+}
+
+pub(crate) fn extraction_timeout_response() -> Value {
+    error_response(
+        "extraction_timeout",
+        "ERC-20 transfer extraction timed out.",
     )
 }
 

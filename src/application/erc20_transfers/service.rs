@@ -115,12 +115,20 @@ pub(crate) enum Erc20TransferSearchError {
     TooManyTokenFilters,
     #[error("invalid ERC-20 transfer catalog resolution: {0:?}")]
     InvalidCatalogResolution(Erc20TransferCatalogResolutionIssue),
+    #[error("ERC-20 transfer window exceeds the public limit")]
+    WindowTooLarge,
+    #[error("ERC-20 transfer window is invalid")]
+    InvalidWindow,
     #[error("ERC-20 transfer extraction is unavailable")]
     ExtractionUnavailable,
+    #[error("ERC-20 transfer extraction timed out")]
+    ExtractionTimeout,
     #[error("ERC-20 transfer upstream provider failed")]
     UpstreamProviderError,
     #[error("ERC-20 transfer upstream provider timed out")]
     UpstreamProviderTimeout,
+    #[error("ERC-20 transfer extraction response was internally inconsistent")]
+    InternalError,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -131,12 +139,20 @@ pub(crate) enum Erc20TransferCatalogResolutionIssue {
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum Erc20TransferExtractionError {
+    #[error("ERC-20 transfer window exceeds the public limit")]
+    WindowTooLarge,
+    #[error("ERC-20 transfer window is invalid")]
+    InvalidWindow,
     #[error("ERC-20 transfer extraction is unavailable")]
     ExtractionUnavailable,
+    #[error("ERC-20 transfer extraction timed out")]
+    ExtractionTimeout,
     #[error("ERC-20 transfer upstream provider failed")]
     UpstreamProviderError,
     #[error("ERC-20 transfer upstream provider timed out")]
     UpstreamProviderTimeout,
+    #[error("ERC-20 transfer extraction response was internally inconsistent")]
+    InternalError,
 }
 
 #[allow(dead_code)]
@@ -432,9 +448,13 @@ fn enforce_token_filter_limit(
 impl From<Erc20TransferExtractionError> for Erc20TransferSearchError {
     fn from(error: Erc20TransferExtractionError) -> Self {
         match error {
+            Erc20TransferExtractionError::WindowTooLarge => Self::WindowTooLarge,
+            Erc20TransferExtractionError::InvalidWindow => Self::InvalidWindow,
             Erc20TransferExtractionError::ExtractionUnavailable => Self::ExtractionUnavailable,
+            Erc20TransferExtractionError::ExtractionTimeout => Self::ExtractionTimeout,
             Erc20TransferExtractionError::UpstreamProviderError => Self::UpstreamProviderError,
             Erc20TransferExtractionError::UpstreamProviderTimeout => Self::UpstreamProviderTimeout,
+            Erc20TransferExtractionError::InternalError => Self::InternalError,
         }
     }
 }

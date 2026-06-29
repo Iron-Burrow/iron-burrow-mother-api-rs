@@ -922,9 +922,22 @@ fn map_bigwig_error(error: &BigwigError) -> BalanceItemErrorCode {
         | BigwigError::Unauthorized
         | BigwigError::RateLimited { .. }
         | BigwigError::ProviderUnavailable { .. }
+        | BigwigError::ExtractionTimeout
         | BigwigError::ProviderTimeout
         | BigwigError::InternalError => BalanceItemErrorCode::BalanceProviderUnavailable,
-        BigwigError::RequestValidation(_)
+        BigwigError::InvalidExtractionRequest
+        | BigwigError::InvalidAddress
+        | BigwigError::InvalidContractAddress
+        | BigwigError::InvalidDirection
+        | BigwigError::InvalidWindowShape
+        | BigwigError::ReversedBlockRange
+        | BigwigError::BlockOutOfRange
+        | BigwigError::ReversedTimestampRange
+        | BigwigError::TimestampOutOfRange
+        | BigwigError::LookbackTooLarge
+        | BigwigError::RangeTooLarge
+        | BigwigError::TooManyContractAddresses
+        | BigwigError::RequestValidation(_)
         | BigwigError::MalformedSuccessResponse
         | BigwigError::MalformedErrorResponse
         | BigwigError::UnexpectedSuccessStatus(_)

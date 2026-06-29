@@ -313,9 +313,13 @@ fn erc20_transfer_search_error_to_api_error(error: Erc20TransferSearchError) -> 
             );
             ApiError::internal_error()
         }
+        Erc20TransferSearchError::WindowTooLarge => ApiError::window_too_large(),
+        Erc20TransferSearchError::InvalidWindow => ApiError::invalid_window(),
         Erc20TransferSearchError::ExtractionUnavailable => ApiError::extraction_unavailable(),
+        Erc20TransferSearchError::ExtractionTimeout => ApiError::extraction_timeout(),
         Erc20TransferSearchError::UpstreamProviderError => ApiError::upstream_provider_error(),
         Erc20TransferSearchError::UpstreamProviderTimeout => ApiError::upstream_provider_timeout(),
+        Erc20TransferSearchError::InternalError => ApiError::internal_error(),
     }
 }
 

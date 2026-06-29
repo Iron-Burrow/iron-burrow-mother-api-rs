@@ -1097,6 +1097,7 @@ fn maps_every_bigwig_request_wide_failure_class() {
             retry_after_seconds: Some(9),
         },
         BigwigError::ProviderTimeout,
+        BigwigError::ExtractionTimeout,
         BigwigError::InternalError,
     ];
     for error in provider_failures {
@@ -1107,6 +1108,18 @@ fn maps_every_bigwig_request_wide_failure_class() {
     }
 
     let internal_failures = [
+        BigwigError::InvalidExtractionRequest,
+        BigwigError::InvalidAddress,
+        BigwigError::InvalidContractAddress,
+        BigwigError::InvalidDirection,
+        BigwigError::InvalidWindowShape,
+        BigwigError::ReversedBlockRange,
+        BigwigError::BlockOutOfRange,
+        BigwigError::ReversedTimestampRange,
+        BigwigError::TimestampOutOfRange,
+        BigwigError::LookbackTooLarge,
+        BigwigError::RangeTooLarge,
+        BigwigError::TooManyContractAddresses,
         BigwigError::RequestValidation(BigwigRequestValidationCode::MalformedBody),
         BigwigError::RequestValidation(BigwigRequestValidationCode::EmptyAccounts),
         BigwigError::RequestValidation(BigwigRequestValidationCode::EmptyTargets),
