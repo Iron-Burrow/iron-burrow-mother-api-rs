@@ -8,7 +8,13 @@ use serde::{de::IgnoredAny, Deserialize};
 use tracing::warn;
 
 use crate::{
-    adapters::http::error::ApiError,
+    adapters::http::{
+        dto::balances::{
+            BalanceAccountRequest, BalanceAsOfRequest, BalanceAssetRequest, BulkBalanceRequest,
+            ExtraFields, SingleBalanceRequest,
+        },
+        error::ApiError,
+    },
     application::balances::{
         catalog::CatalogBalanceTargetResolver,
         quote::PriceQuoteClient,
@@ -29,47 +35,6 @@ const MAX_ACCOUNTS: usize = 50;
 const MAX_ASSETS: usize = 20;
 const MAX_RESOLUTION_ITEMS: usize = 1_000;
 const RESERVED_NETWORK_ALIAS_FIELDS: [&str; 3] = ["chain", "chain_id", "chain_slug"];
-
-type ExtraFields = HashMap<String, IgnoredAny>;
-
-#[derive(Debug, Deserialize)]
-pub struct SingleBalanceRequest {
-    as_of: BalanceAsOfRequest,
-    account: BalanceAccountRequest,
-    quote_currency: String,
-    assets: Vec<BalanceAssetRequest>,
-    #[serde(default, flatten)]
-    extra: ExtraFields,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct BulkBalanceRequest {
-    as_of: BalanceAsOfRequest,
-    accounts: Vec<BalanceAccountRequest>,
-    quote_currency: String,
-    assets: Vec<BalanceAssetRequest>,
-    #[serde(default, flatten)]
-    extra: ExtraFields,
-}
-
-#[derive(Debug, Deserialize)]
-struct BalanceAsOfRequest {
-    kind: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct BalanceAccountRequest {
-    network_slug: String,
-    address: String,
-    client_ref: Option<String>,
-    #[serde(default, flatten)]
-    extra: ExtraFields,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-struct BalanceAssetRequest {
-    asset_slug: String,
-}
 
 pub async fn resolve_single_balance(
     State(state): State<AppState>,

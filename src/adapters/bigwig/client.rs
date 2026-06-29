@@ -3,9 +3,9 @@ use std::time::Duration;
 use reqwest::{header::RETRY_AFTER, StatusCode, Url};
 use tracing::warn;
 
-use crate::adapters::bigwig::error::{map_error_response, BigwigError};
+use crate::adapters::bigwig::error::{map_error_response, BigwigClientInitError, BigwigError};
 use crate::adapters::bigwig::{
-    balances::{BigwigClientInitError, BigwigRequest, BigwigResponse},
+    balances::{BigwigRequest, BigwigResponse},
     error::map_reqwest_error,
 };
 use crate::config::Config;
@@ -159,103 +159,4 @@ pub(crate) fn create_bigwig_client(config: &Config) -> Option<BigwigClient> {
 }
 
 #[cfg(test)]
-mod tests {
-    use crate::test_utils::constants::INFRA_GATEWAY_URL;
-
-    use super::*;
-
-    fn valid_config() -> Config {
-        Config {
-            infra_gateway_url: Some(INFRA_GATEWAY_URL.to_string()),
-            infra_gateway_token: Some("test-token".to_string()),
-            ..Config::default()
-        }
-    }
-
-    #[test]
-    fn try_from_valid_config_creates_client() {
-        let config = valid_config();
-
-        let client = BigwigClient::try_from(&config).expect("valid config should create a client");
-
-        assert_eq!(client.base_host(), Some("infra-gateway-hub"));
-        assert_eq!(client.timeout_ms(), 30000);
-    }
-
-    #[test]
-    fn try_from_missing_url_fails() {
-        let config = Config {
-            infra_gateway_token: Some("test-token".to_string()),
-            ..Config::default()
-        };
-
-        let error = BigwigClient::try_from(&config).expect_err("missing URL should fail");
-
-        assert_eq!(error, BigwigClientInitError::MissingBaseUrl);
-    }
-
-    #[test]
-    fn try_from_missing_token_fails() {
-        let config = Config {
-            infra_gateway_url: Some(INFRA_GATEWAY_URL.to_string()),
-            ..Config::default()
-        };
-
-        let error = BigwigClient::try_from(&config).expect_err("missing token should fail");
-
-        assert_eq!(error, BigwigClientInitError::MissingToken);
-    }
-
-    #[test]
-    fn client_new_rejects_empty_token() {
-        let error =
-            BigwigClient::new(INFRA_GATEWAY_URL, " ", 30000).expect_err("empty token should fail");
-
-        assert_eq!(error, BigwigClientInitError::EmptyToken);
-    }
-
-    #[test]
-    fn client_new_rejects_zero_timeout() {
-        let error = BigwigClient::new(INFRA_GATEWAY_URL, "test-token", 0)
-            .expect_err("zero timeout should fail");
-
-        assert_eq!(error, BigwigClientInitError::InvalidTimeout);
-    }
-
-    #[test]
-    fn create_client_returns_none_when_bigwig_config_is_absent() {
-        assert!(create_bigwig_client(&Config::default()).is_none());
-    }
-
-    #[test]
-    fn create_client_returns_none_for_partial_or_invalid_bigwig_config() {
-        for config in [
-            Config {
-                infra_gateway_url: Some(INFRA_GATEWAY_URL.to_string()),
-                ..Config::default()
-            },
-            Config {
-                infra_gateway_token: Some("test-token".to_string()),
-                ..Config::default()
-            },
-            Config {
-                infra_gateway_url: Some("not a url".to_string()),
-                infra_gateway_token: Some("test-token".to_string()),
-                ..Config::default()
-            },
-            Config {
-                infra_gateway_url: Some(INFRA_GATEWAY_URL.to_string()),
-                infra_gateway_token: Some(" ".to_string()),
-                ..Config::default()
-            },
-            Config {
-                infra_gateway_url: Some(INFRA_GATEWAY_URL.to_string()),
-                infra_gateway_token: Some("test-token".to_string()),
-                bigwig_request_timeout_ms: 0,
-                ..Config::default()
-            },
-        ] {
-            assert!(create_bigwig_client(&config).is_none());
-        }
-    }
-}
+mod tests;

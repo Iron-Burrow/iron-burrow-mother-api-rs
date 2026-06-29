@@ -31,6 +31,24 @@ pub enum BigwigError {
     UnexpectedErrorResponse { status: u16 },
 }
 
+#[derive(Debug, thiserror::Error, Eq, PartialEq)]
+pub enum BigwigClientInitError {
+    #[error("INFRA_GATEWAY_URL is required")]
+    MissingBaseUrl,
+
+    #[error("invalid INFRA_GATEWAY_URL: {0}")]
+    InvalidBaseUrl(String),
+
+    #[error("INFRA_GATEWAY_TOKEN is required")]
+    MissingToken,
+
+    #[error("INFRA_GATEWAY_TOKEN must not be empty")]
+    EmptyToken,
+
+    #[error("BIGWIG_REQUEST_TIMEOUT_MS must be greater than zero")]
+    InvalidTimeout,
+}
+
 pub(super) fn map_error_response(
     status: StatusCode,
     body: &[u8],
