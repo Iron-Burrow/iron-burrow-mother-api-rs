@@ -525,11 +525,7 @@ fn plan_network_group(
         }
     }
 
-    let item_count = group
-        .accounts
-        .len()
-        .checked_mul(targets.len())
-        .unwrap_or(usize::MAX);
+    let item_count = group.accounts.len().saturating_mul(targets.len());
     if group.accounts.len() > BIGWIG_MAX_ACCOUNTS
         || targets.len() > BIGWIG_MAX_TARGETS
         || item_count > BIGWIG_MAX_ITEMS

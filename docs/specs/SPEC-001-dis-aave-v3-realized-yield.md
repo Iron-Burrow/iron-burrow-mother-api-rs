@@ -257,7 +257,7 @@ enum DisErrorCode {
     UnsupportedChain,
     UnsupportedMarket,
     UnsupportedAsset,
-    InvalidBlockRange,
+    BlockRange,
     BlockNotFinal,
     BigwigRateLimited,
     BigwigProviderUnavailable,

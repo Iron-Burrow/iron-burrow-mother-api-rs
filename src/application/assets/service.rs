@@ -19,23 +19,23 @@ const MAX_LIMIT: u64 = 1000;
 
 #[derive(Clone, Debug)]
 pub struct AssetEnrichmentQuery {
-    pub include: Vec<AssetEnrichmentInclude>,
+    pub include: Vec<PriceEnrichmentInclude>,
     pub params: Option<AssetEnrichmentParams>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AssetEnrichmentInclude {
-    PriceStats,
-    PriceTrend,
-    PriceSeries,
+pub enum PriceEnrichmentInclude {
+    Stats,
+    Trend,
+    Series,
 }
 
-impl AssetEnrichmentInclude {
+impl PriceEnrichmentInclude {
     fn source(self) -> &'static str {
         match self {
-            Self::PriceStats => "price_stats",
-            Self::PriceTrend => "price_trend",
-            Self::PriceSeries => "price_series",
+            Self::Stats => "price_stats",
+            Self::Trend => "price_trend",
+            Self::Series => "price_series",
         }
     }
 }
@@ -204,9 +204,9 @@ impl AssetsService {
 
         for include in enrichment_query.include {
             let result = match include {
-                AssetEnrichmentInclude::PriceStats => client.price_stats_raw(&request).await,
-                AssetEnrichmentInclude::PriceTrend => client.price_trend_raw(&request).await,
-                AssetEnrichmentInclude::PriceSeries => client.price_series_raw(&request).await,
+                PriceEnrichmentInclude::Stats => client.price_stats_raw(&request).await,
+                PriceEnrichmentInclude::Trend => client.price_trend_raw(&request).await,
+                PriceEnrichmentInclude::Series => client.price_series_raw(&request).await,
             };
 
             match result {
@@ -287,7 +287,7 @@ struct AssetEnrichments {
 }
 
 impl AssetEnrichments {
-    fn from_include(include: &[AssetEnrichmentInclude]) -> Self {
+    fn from_include(include: &[PriceEnrichmentInclude]) -> Self {
         let mut signals = AssetSignals::default();
 
         for include in include {
@@ -300,15 +300,15 @@ impl AssetEnrichments {
         }
     }
 
-    fn set_signal(&mut self, include: AssetEnrichmentInclude, signal: Option<serde_json::Value>) {
+    fn set_signal(&mut self, include: PriceEnrichmentInclude, signal: Option<serde_json::Value>) {
         match include {
-            AssetEnrichmentInclude::PriceStats => self.signals.price_stats = Some(signal),
-            AssetEnrichmentInclude::PriceTrend => self.signals.price_trend = Some(signal),
-            AssetEnrichmentInclude::PriceSeries => self.signals.price_series = Some(signal),
+            PriceEnrichmentInclude::Stats => self.signals.price_stats = Some(signal),
+            PriceEnrichmentInclude::Trend => self.signals.price_trend = Some(signal),
+            PriceEnrichmentInclude::Series => self.signals.price_series = Some(signal),
         }
     }
 
-    fn fail(&mut self, include: AssetEnrichmentInclude, code: EnrichmentErrorCode) {
+    fn fail(&mut self, include: PriceEnrichmentInclude, code: EnrichmentErrorCode) {
         self.set_signal(include, None);
         self.enrichment_errors
             .push(EnrichmentErrorPayload::new(include.source(), code));
@@ -332,19 +332,19 @@ struct AssetSignals {
 }
 
 impl AssetSignals {
-    fn set_requested(&mut self, include: AssetEnrichmentInclude) {
+    fn set_requested(&mut self, include: PriceEnrichmentInclude) {
         match include {
-            AssetEnrichmentInclude::PriceStats => {
+            PriceEnrichmentInclude::Stats => {
                 if self.price_stats.is_none() {
                     self.price_stats = Some(None);
                 }
             }
-            AssetEnrichmentInclude::PriceTrend => {
+            PriceEnrichmentInclude::Trend => {
                 if self.price_trend.is_none() {
                     self.price_trend = Some(None);
                 }
             }
-            AssetEnrichmentInclude::PriceSeries => {
+            PriceEnrichmentInclude::Series => {
                 if self.price_series.is_none() {
                     self.price_series = Some(None);
                 }
@@ -352,17 +352,17 @@ impl AssetSignals {
         }
     }
 
-    fn requested(&self) -> Vec<AssetEnrichmentInclude> {
+    fn requested(&self) -> Vec<PriceEnrichmentInclude> {
         let mut requested = Vec::new();
 
         if self.price_stats.is_some() {
-            requested.push(AssetEnrichmentInclude::PriceStats);
+            requested.push(PriceEnrichmentInclude::Stats);
         }
         if self.price_trend.is_some() {
-            requested.push(AssetEnrichmentInclude::PriceTrend);
+            requested.push(PriceEnrichmentInclude::Trend);
         }
         if self.price_series.is_some() {
-            requested.push(AssetEnrichmentInclude::PriceSeries);
+            requested.push(PriceEnrichmentInclude::Series);
         }
 
         requested
@@ -648,7 +648,7 @@ fn log_price_lookup_error(
 fn log_enrichment_error(
     client: &PriceIndexerClient,
     request: &PriceSignalRequest,
-    include: AssetEnrichmentInclude,
+    include: PriceEnrichmentInclude,
     error: &PriceSignalError,
 ) {
     warn!(
@@ -664,7 +664,7 @@ fn log_enrichment_error(
     );
 }
 
-fn log_invalid_enrichment_request(slug: &str, include: &[AssetEnrichmentInclude]) {
+fn log_invalid_enrichment_request(slug: &str, include: &[PriceEnrichmentInclude]) {
     warn!(
         asset_slug = slug,
         requested_sources = ?enrichment_sources(include),
@@ -674,7 +674,7 @@ fn log_invalid_enrichment_request(slug: &str, include: &[AssetEnrichmentInclude]
 
 fn log_disabled_enrichment_request(
     params: &AssetEnrichmentParams,
-    include: &[AssetEnrichmentInclude],
+    include: &[PriceEnrichmentInclude],
 ) {
     warn!(
         asset_slug = params.slug.as_str(),
@@ -686,7 +686,7 @@ fn log_disabled_enrichment_request(
     );
 }
 
-fn enrichment_sources(include: &[AssetEnrichmentInclude]) -> Vec<&'static str> {
+fn enrichment_sources(include: &[PriceEnrichmentInclude]) -> Vec<&'static str> {
     include.iter().map(|include| include.source()).collect()
 }
 

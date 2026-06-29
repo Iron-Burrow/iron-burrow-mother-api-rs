@@ -125,7 +125,7 @@ fn parse_time_and_offset(value: &str) -> Option<(ParsedTime, i64)> {
     let (time, offset_seconds) = if let Some(time) = value.strip_suffix('Z') {
         (time, 0)
     } else {
-        let offset_start = value.rfind(|character| character == '+' || character == '-')?;
+        let offset_start = value.rfind(['+', '-'])?;
         let time = &value[..offset_start];
         let offset = &value[offset_start..];
         let offset_seconds = parse_offset(offset)?;

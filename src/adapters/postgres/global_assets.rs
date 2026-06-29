@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use sqlx::{FromRow, PgPool};
 
-use crate::domain::asset_match::{confidence_rank, AssetMatch, MatchConfidence};
+use crate::domain::asset_match::{confidence_rank, AssetMatch, ExactMatchConfidence};
 use crate::domain::global_assets::{GlobalAsset, GlobalAssetDetail};
 use crate::domain::networks::NetworkRef;
 
@@ -421,17 +421,17 @@ fn find_confident_match_in_memory(
         .iter()
         .filter_map(|asset| {
             let confidence = if asset.slug.eq_ignore_ascii_case(normalized_query) {
-                MatchConfidence::SlugExact
+                ExactMatchConfidence::Slug
             } else if asset.symbol.eq_ignore_ascii_case(normalized_query) {
-                MatchConfidence::SymbolExact
+                ExactMatchConfidence::Symbol
             } else if asset.name.eq_ignore_ascii_case(normalized_query) {
-                MatchConfidence::NameExact
+                ExactMatchConfidence::Name
             } else if asset
                 .aliases
                 .iter()
                 .any(|alias| alias.eq_ignore_ascii_case(normalized_query))
             {
-                MatchConfidence::AliasExact
+                ExactMatchConfidence::Alias
             } else {
                 return None;
             };

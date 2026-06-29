@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Mutex;
 
-use crate::config::config::{
+use crate::config::env::{
     optional_env, parse_optional_bool_env, parse_optional_u64_env, parse_positive_optional_u64_env,
     Config,
 };
@@ -107,10 +107,7 @@ fn dis_retry_max_attempts_defaults_when_env_is_missing_or_empty() {
 
 #[test]
 fn boolean_config_defaults_trims_and_parses_common_values() {
-    assert_eq!(
-        parse_optional_bool_env("MISSING_ERC20_TRANSFERS_ENABLED", false).unwrap(),
-        false
-    );
+    assert!(!parse_optional_bool_env("MISSING_ERC20_TRANSFERS_ENABLED", false).unwrap());
 
     std::env::set_var("EMPTY_ERC20_TRANSFERS_ENABLED", "   ");
     std::env::set_var("TRUE_ERC20_TRANSFERS_ENABLED", " TRUE ");
@@ -118,10 +115,7 @@ fn boolean_config_defaults_trims_and_parses_common_values() {
     std::env::set_var("FALSE_ERC20_TRANSFERS_ENABLED", " false ");
     std::env::set_var("ZERO_ERC20_TRANSFERS_ENABLED", "0");
 
-    assert_eq!(
-        parse_optional_bool_env("EMPTY_ERC20_TRANSFERS_ENABLED", true).unwrap(),
-        true
-    );
+    assert!(parse_optional_bool_env("EMPTY_ERC20_TRANSFERS_ENABLED", true).unwrap());
     assert!(parse_optional_bool_env("TRUE_ERC20_TRANSFERS_ENABLED", false).unwrap());
     assert!(parse_optional_bool_env("ONE_ERC20_TRANSFERS_ENABLED", false).unwrap());
     assert!(!parse_optional_bool_env("FALSE_ERC20_TRANSFERS_ENABLED", true).unwrap());

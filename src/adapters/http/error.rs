@@ -6,7 +6,7 @@ use axum::{
 use serde::Serialize;
 use utoipa::ToSchema;
 
-use crate::application::filters::onchain_window::OnchainWindowError;
+use crate::application::filters::onchain_window::InvalidOnchainWindowError;
 
 #[derive(Debug)]
 pub struct ApiError {
@@ -377,29 +377,29 @@ impl ApiError {
     }
 }
 
-impl From<OnchainWindowError> for ApiError {
-    fn from(error: OnchainWindowError) -> Self {
+impl From<InvalidOnchainWindowError> for ApiError {
+    fn from(error: InvalidOnchainWindowError) -> Self {
         match error {
-            OnchainWindowError::InvalidBlockRange {
+            InvalidOnchainWindowError::BlockRange {
                 from_block,
                 to_block,
             } => ApiError::invalid_window_with_message(format!(
                 "from_block must be less than or equal to to_block: from_block={from_block}, to_block={to_block}"
             )),
 
-            OnchainWindowError::InvalidTimestampRange {
+            InvalidOnchainWindowError::TimestampRange {
                 from_timestamp,
                 to_timestamp,
             } => ApiError::invalid_window_with_message(format!(
                 "from_timestamp must be less than or equal to to_timestamp: from_timestamp={from_timestamp}, to_timestamp={to_timestamp}"
             )),
 
-            OnchainWindowError::InvalidLookbackSeconds {
+            InvalidOnchainWindowError::LookbackSeconds {
                 lookback_seconds,
             } => ApiError::invalid_window_with_message(format!(
                 "lookback_seconds must be greater than zero: lookback_seconds={lookback_seconds}"
             )),
-            OnchainWindowError::InvalidTimestamp { field, value } => {
+            InvalidOnchainWindowError::Timestamp { field, value } => {
                 ApiError::invalid_window_with_message(format!(
                     "{field} must be a valid RFC3339 timestamp: {value}"
                 ))

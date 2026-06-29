@@ -234,6 +234,9 @@ mod tests {
         assert_eq!(json["resolved"], false);
         assert_eq!(json["result"]["kind"], "unknown");
         assert!(json["result"]["resource_url"].is_null());
-        assert!(json["result"]["recommendations"].as_array().unwrap().len() > 0);
+        assert!(!json["result"]["recommendations"]
+            .as_array()
+            .unwrap()
+            .is_empty());
     }
 }

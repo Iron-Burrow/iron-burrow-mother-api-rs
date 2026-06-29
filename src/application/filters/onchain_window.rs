@@ -20,9 +20,9 @@ pub(crate) struct BlockWindow {
 }
 
 impl BlockWindow {
-    pub(crate) fn new(from_block: u64, to_block: u64) -> Result<Self, OnchainWindowError> {
+    pub(crate) fn new(from_block: u64, to_block: u64) -> Result<Self, InvalidOnchainWindowError> {
         if from_block > to_block {
-            return Err(OnchainWindowError::InvalidBlockRange {
+            return Err(InvalidOnchainWindowError::BlockRange {
                 from_block,
                 to_block,
             });
@@ -55,23 +55,23 @@ impl TimestampWindow {
     pub(crate) fn new(
         from_timestamp: String,
         to_timestamp: String,
-    ) -> Result<Self, OnchainWindowError> {
+    ) -> Result<Self, InvalidOnchainWindowError> {
         let Some(from) = parse_rfc3339(&from_timestamp) else {
-            return Err(OnchainWindowError::InvalidTimestamp {
+            return Err(InvalidOnchainWindowError::Timestamp {
                 field: TimestampField::FromTimestamp,
                 value: from_timestamp,
             });
         };
 
         let Some(to) = parse_rfc3339(&to_timestamp) else {
-            return Err(OnchainWindowError::InvalidTimestamp {
+            return Err(InvalidOnchainWindowError::Timestamp {
                 field: TimestampField::ToTimestamp,
                 value: to_timestamp,
             });
         };
 
         if compare_rfc3339(&from, &to).is_gt() {
-            return Err(OnchainWindowError::InvalidTimestampRange {
+            return Err(InvalidOnchainWindowError::TimestampRange {
                 from_timestamp,
                 to_timestamp,
             });
@@ -100,9 +100,9 @@ pub(crate) enum LookbackTarget {
 }
 
 impl LookbackWindow {
-    pub(crate) fn latest(lookback_seconds: u64) -> Result<Self, OnchainWindowError> {
+    pub(crate) fn latest(lookback_seconds: u64) -> Result<Self, InvalidOnchainWindowError> {
         if lookback_seconds == 0 {
-            return Err(OnchainWindowError::InvalidLookbackSeconds { lookback_seconds });
+            return Err(InvalidOnchainWindowError::LookbackSeconds { lookback_seconds });
         }
 
         Ok(Self {
@@ -115,24 +115,24 @@ impl LookbackWindow {
 /// Errors
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub(crate) enum OnchainWindowError {
+pub(crate) enum InvalidOnchainWindowError {
     #[error("from_block must be less than or equal to to_block")]
-    InvalidBlockRange { from_block: u64, to_block: u64 },
+    BlockRange { from_block: u64, to_block: u64 },
 
     #[error("{field} must be a valid RFC3339 timestamp")]
-    InvalidTimestamp {
+    Timestamp {
         field: TimestampField,
         value: String,
     },
 
     #[error("from_timestamp must be less than or equal to to_timestamp")]
-    InvalidTimestampRange {
+    TimestampRange {
         from_timestamp: String,
         to_timestamp: String,
     },
 
     #[error("lookback_seconds must be greater than zero")]
-    InvalidLookbackSeconds { lookback_seconds: u64 },
+    LookbackSeconds { lookback_seconds: u64 },
 }
 
 impl fmt::Display for TimestampField {

@@ -9,8 +9,8 @@ use crate::{
     adapters::http::error::ApiError,
     adapters::price_indexer::{PriceIndexerClient, PriceSignalError, PriceSignalRequest},
     application::assets::service::{
-        AssetEnrichmentInclude, AssetEnrichmentParams, AssetEnrichmentQuery, AssetResponse,
-        AssetsResponse, AssetsService, AssetsServiceError,
+        AssetEnrichmentParams, AssetEnrichmentQuery, AssetResponse, AssetsResponse, AssetsService,
+        AssetsServiceError, PriceEnrichmentInclude,
     },
     state::AppState,
 };
@@ -167,7 +167,7 @@ fn parse_asset_enrichment_query(
     Some(AssetEnrichmentQuery { include, params })
 }
 
-fn parse_asset_enrichment_include(raw_include: Option<&str>) -> Vec<AssetEnrichmentInclude> {
+fn parse_asset_enrichment_include(raw_include: Option<&str>) -> Vec<PriceEnrichmentInclude> {
     let Some(raw_include) = raw_include else {
         return Vec::new();
     };
@@ -177,9 +177,9 @@ fn parse_asset_enrichment_include(raw_include: Option<&str>) -> Vec<AssetEnrichm
     for token in raw_include.split(',') {
         let normalized = token.trim().to_ascii_lowercase();
         let parsed = match normalized.as_str() {
-            "pricestats" => Some(AssetEnrichmentInclude::PriceStats),
-            "pricetrend" => Some(AssetEnrichmentInclude::PriceTrend),
-            "priceseries" => Some(AssetEnrichmentInclude::PriceSeries),
+            "pricestats" => Some(PriceEnrichmentInclude::Stats),
+            "pricetrend" => Some(PriceEnrichmentInclude::Trend),
+            "priceseries" => Some(PriceEnrichmentInclude::Series),
             _ => None,
         };
 

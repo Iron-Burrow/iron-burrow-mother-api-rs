@@ -993,7 +993,7 @@ async fn asset_detail_without_requested_enrichments_survives_disabled_price_inde
     assert_eq!(json["asset"]["asset_id"], "usdc");
     assert_eq!(json["price"]["status"], "unavailable");
     assert!(json["price"]["price"].is_null());
-    assert!(json["asset_network_maps"].as_array().unwrap().len() > 0);
+    assert!(!json["asset_network_maps"].as_array().unwrap().is_empty());
     assert!(json.get("chain_maps").is_none());
     assert!(json.get("signals").is_none());
     assert!(json.get("enrichment_errors").is_none());
@@ -1607,7 +1607,10 @@ async fn resolve_does_not_treat_network_aliases_as_assets() {
 
         assert_eq!(json["resolved"], false);
         assert_eq!(json["result"]["kind"], "unknown");
-        assert!(json["result"]["recommendations"].as_array().unwrap().len() > 0);
+        assert!(!json["result"]["recommendations"]
+            .as_array()
+            .unwrap()
+            .is_empty());
     }
 }
 
@@ -1633,7 +1636,10 @@ async fn resolve_unknown_returns_recommendations_without_404() {
     assert_eq!(json["resolved"], false);
     assert_eq!(json["result"]["kind"], "unknown");
     assert!(json["result"]["resource_url"].is_null());
-    assert!(json["result"]["recommendations"].as_array().unwrap().len() > 0);
+    assert!(!json["result"]["recommendations"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 }
 
 #[tokio::test]

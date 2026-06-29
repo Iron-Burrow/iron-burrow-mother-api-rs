@@ -1,6 +1,6 @@
 use sqlx::FromRow;
 
-use crate::domain::asset_match::{AssetMatch, MatchConfidence};
+use crate::domain::asset_match::{AssetMatch, ExactMatchConfidence};
 use crate::domain::global_assets::GlobalAsset;
 
 #[derive(FromRow)]
@@ -18,10 +18,10 @@ pub(super) struct AssetMatchRow {
 
 pub(super) fn map_match_row(row: AssetMatchRow) -> AssetMatch {
     let confidence = match row.match_kind.as_str() {
-        "slug_exact" => MatchConfidence::SlugExact,
-        "symbol_exact" => MatchConfidence::SymbolExact,
-        "name_exact" => MatchConfidence::NameExact,
-        _ => MatchConfidence::AliasExact,
+        "slug_exact" => ExactMatchConfidence::Slug,
+        "symbol_exact" => ExactMatchConfidence::Symbol,
+        "name_exact" => ExactMatchConfidence::Name,
+        _ => ExactMatchConfidence::Alias,
     };
 
     AssetMatch {
