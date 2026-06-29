@@ -7,7 +7,9 @@ agent_edit_policy: update_when_relevant
 
 # Production Smoke Tests
 
-Brief runbook for the ERC-20 transfer search release gate from
+Brief runbook for the Beta balance surface from
+[SPEC-008](specs/SPEC-008-balance-endpoint-beta-contract-hardening.md) and
+the optional ERC-20 transfer search release gate from
 [SPEC-007](specs/SPEC-007-public-erc-20-transfer-search-v1.md).
 
 Run these from the production repository root. Requires `curl`, `jq`, `grep`,
@@ -18,13 +20,20 @@ headers to public smoke requests.
 
 ## Release Gate
 
+Do not call the balance surface Beta-ready until:
+
+- Mother API is deployed with `PUBLIC_API_SURFACE=beta`;
+- health, single-balance, bulk-balance, validation-error, disabled-route, and
+  unknown-route checks below pass;
+- `cargo test` passes for the release commit.
+
 Do not keep `ERC20_TRANSFERS_ENABLED=true` for first external users until:
 
 - Bigwig Hub has `extraction.enabled: true`;
 - Mother API has `INFRA_GATEWAY_URL`, `INFRA_GATEWAY_TOKEN`, and
   `BIGWIG_REQUEST_TIMEOUT_MS=30000`;
-- checks 1-9 below pass;
-- check 10 does not show an availability or timeout failure.
+- transfer-search checks 1-9 below pass;
+- transfer-search check 10 does not show an availability or timeout failure.
 
 If any check fails after enabling the route, set `ERC20_TRANSFERS_ENABLED=false`
 again in the target environment and redeploy before exposing the route.
@@ -42,6 +51,8 @@ export IB_API="${IB_API:-https://${CADDY_DOMAIN:-api.ironburrow.com}}"
 export JSON_HEADER='Content-Type: application/json'
 
 export WATCHED_ADDRESS="${WATCHED_ADDRESS:-0xabc0000000000000000000000000000000000000}"
+export BALANCE_ACCOUNT_A="${BALANCE_ACCOUNT_A:-0x1234567890abcdef1234567890abcdef1234beef}"
+export BALANCE_ACCOUNT_B="${BALANCE_ACCOUNT_B:-0x2222222222222222222222222222222222222222}"
 export USDC_CONTRACT='0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
 export TEST_FROM_BLOCK="${TEST_FROM_BLOCK:-18600000}"
 export TEST_TO_BLOCK="${TEST_TO_BLOCK:-18600500}"
@@ -55,6 +66,45 @@ contract, filters, and failure behavior without depending on a funded wallet.
 ## Test Payloads
 
 ```bash
+jq -n \
+  --arg address "$BALANCE_ACCOUNT_A" \
+  '{
+    as_of: {kind: "latest"},
+    account: {
+      network_slug: "eth-mainnet",
+      address: $address,
+      client_ref: "single-smoke"
+    },
+    quote_currency: "USD",
+    assets: [
+      {asset_slug: "ethereum"}
+    ]
+  }' > /tmp/mother-balance-single.json
+
+jq -n \
+  --arg address_a "$BALANCE_ACCOUNT_A" \
+  --arg address_b "$BALANCE_ACCOUNT_B" \
+  '{
+    as_of: {kind: "latest"},
+    accounts: [
+      {
+        network_slug: "base-mainnet",
+        address: $address_a,
+        client_ref: "base-smoke"
+      },
+      {
+        network_slug: "eth-mainnet",
+        address: $address_b,
+        client_ref: "eth-smoke"
+      }
+    ],
+    quote_currency: "USD",
+    assets: [
+      {asset_slug: "usdc"},
+      {asset_slug: "ethereum"}
+    ]
+  }' > /tmp/mother-balance-bulk.json
+
 jq -n \
   --arg address "$WATCHED_ADDRESS" \
   --argjson from "$TEST_FROM_BLOCK" \
@@ -106,22 +156,105 @@ jq -n \
   }' > /tmp/mother-erc20-usdc-mixed.json
 ```
 
-## Checks
+## Balance Beta Checks
 
-### 1. Health And Config
+### B1. Health And Beta Route Surface
 
-Expected: health is up, status is production-ready, and the transfer route is
-registered. `GET` should return `405`; `404` means `ERC20_TRANSFERS_ENABLED`
-is still false.
+Expected: health is up, known Alpha-only routes return
+`403 endpoint_disabled`, and truly unknown routes return `404`.
 
 ```bash
 curl -sS "$IB_API/health" \
   | jq -e '.ok == true and .service == "iron-burrow-mother-api"'
 
-curl -sS "$IB_API/v1/status" \
-  | jq -e '.ok == true and .environment == "production" and .checks.database == "reachable"'
+status="$(curl -sS -o /tmp/mother-disabled-route.out.json -w '%{http_code}' \
+  "$IB_API/v1/status")"
+echo "GET /v1/status -> HTTP $status"
+test "$status" = "403"
+jq -e '.ok == false and .error.code == "endpoint_disabled"' \
+  /tmp/mother-disabled-route.out.json
 
-grep -E '^(INFRA_GATEWAY_URL|INFRA_GATEWAY_TOKEN|BIGWIG_REQUEST_TIMEOUT_MS|BIGWIG_MAX_CONTRACT_ADDRESSES|ERC20_TRANSFERS_ENABLED|ERC20_TRANSFERS_MAX_TOKEN_FILTERS)=' .env.production \
+status="$(curl -sS -o /tmp/mother-unknown-route.out -w '%{http_code}' \
+  "$IB_API/v1/not-a-real-route")"
+echo "GET /v1/not-a-real-route -> HTTP $status"
+test "$status" = "404"
+```
+
+### B2. Single Balance
+
+Expected: HTTP `200`, `ok: true`, single-balance response shape, canonical
+`network_slug`, and either resolved positions or sanitized item-level errors.
+
+```bash
+status="$(curl -sS -o /tmp/mother-balance-single.out.json -w '%{http_code}' \
+  -X POST "$IB_API/v1/balances" \
+  -H "$JSON_HEADER" \
+  -d @/tmp/mother-balance-single.json)"
+echo "HTTP $status"
+test "$status" = "200"
+jq -e '.status as $status | .ok == true and .type == "balances" and (["complete", "partial", "failed"] | index($status) != null) and .account.network_slug == "eth-mainnet" and (.positions | type) == "array" and (.errors | type) == "array"' \
+  /tmp/mother-balance-single.out.json
+```
+
+### B3. Bulk Balances
+
+Expected: HTTP `200`, `ok: true`, bulk response shape, public summary counts,
+and per-account result arrays.
+
+```bash
+status="$(curl -sS -o /tmp/mother-balance-bulk.out.json -w '%{http_code}' \
+  -X POST "$IB_API/v1/balances/bulk" \
+  -H "$JSON_HEADER" \
+  -d @/tmp/mother-balance-bulk.json)"
+echo "HTTP $status"
+test "$status" = "200"
+jq -e '.status as $status | .ok == true and .type == "balances_bulk" and (["complete", "partial", "failed"] | index($status) != null) and .summary.requested_accounts == 2 and .summary.requested_assets == 2 and .summary.requested_resolution_items == 4 and (.accounts | length) == 2' \
+  /tmp/mother-balance-bulk.out.json
+```
+
+### B4. Balance Validation Errors
+
+Expected: unsupported fields reject with `400 unknown_field`, and reserved
+network aliases reject with `400 invalid_request`.
+
+```bash
+jq '.unexpected = true' \
+  /tmp/mother-balance-single.json > /tmp/mother-balance-unknown-field.json
+
+status="$(curl -sS -o /tmp/mother-balance-unknown-field.out.json -w '%{http_code}' \
+  -X POST "$IB_API/v1/balances" \
+  -H "$JSON_HEADER" \
+  -d @/tmp/mother-balance-unknown-field.json)"
+echo "unknown field -> HTTP $status"
+test "$status" = "400"
+jq -e '.ok == false and .error.code == "unknown_field"' \
+  /tmp/mother-balance-unknown-field.out.json
+
+jq '.account.chain = "eth-mainnet"' \
+  /tmp/mother-balance-single.json > /tmp/mother-balance-reserved-alias.json
+
+status="$(curl -sS -o /tmp/mother-balance-reserved-alias.out.json -w '%{http_code}' \
+  -X POST "$IB_API/v1/balances" \
+  -H "$JSON_HEADER" \
+  -d @/tmp/mother-balance-reserved-alias.json)"
+echo "reserved alias -> HTTP $status"
+test "$status" = "400"
+jq -e '.ok == false and .error.code == "invalid_request"' \
+  /tmp/mother-balance-reserved-alias.out.json
+```
+
+## ERC-20 Transfer Search Checks
+
+### 1. Health And Config
+
+Expected: health is up and the transfer route is registered. `GET` should
+return `405`; `404` means `ERC20_TRANSFERS_ENABLED` is still false.
+
+```bash
+curl -sS "$IB_API/health" \
+  | jq -e '.ok == true and .service == "iron-burrow-mother-api"'
+
+grep -E '^(PUBLIC_API_SURFACE|INFRA_GATEWAY_URL|INFRA_GATEWAY_TOKEN|BIGWIG_REQUEST_TIMEOUT_MS|BIGWIG_MAX_CONTRACT_ADDRESSES|ERC20_TRANSFERS_ENABLED|ERC20_TRANSFERS_MAX_TOKEN_FILTERS)=' .env.production \
   | sed 's/INFRA_GATEWAY_TOKEN=.*/INFRA_GATEWAY_TOKEN=<redacted>/'
 
 curl -sS -o /dev/null -w 'GET /v1/erc20-transfers/search -> HTTP %{http_code}\n' \
@@ -286,6 +419,11 @@ fi
 
 ## Operational Notes
 
+- Balance routes require the Mother catalog and can return
+  `503 asset_network_map_unavailable` if the catalog is unavailable.
+- Supported balance items with unavailable Bigwig or Price Indexer dependencies
+  remain `200 OK` responses with sanitized item-level errors.
+- Unsupported asset-network pairs are skipped and reported in `skipped[]`.
 - Bigwig Hub extraction must be enabled before Mother keeps the public gate on.
 - Public block windows are capped at 5,000 inclusive blocks on `eth-mainnet`.
 - Public lookback windows are capped at 86,400 seconds.
@@ -303,7 +441,10 @@ fi
 
 ## Pass Condition
 
-The release gate passes when checks 1-9 match their expected HTTP status and
-JSON shape, and check 10 does not report `extraction_unavailable`,
-`upstream_provider_timeout`, or `extraction_timeout` for the valid USDC smoke
-payload.
+The balance Beta gate passes when balance checks B1-B4 match their expected
+HTTP status and JSON shape.
+
+The optional transfer-search gate passes when transfer checks 1-9 match their
+expected HTTP status and JSON shape, and transfer check 10 does not report
+`extraction_unavailable`, `upstream_provider_timeout`, or `extraction_timeout`
+for the valid USDC smoke payload.

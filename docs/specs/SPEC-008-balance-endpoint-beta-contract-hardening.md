@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 owner: iron-burrow
 last_reviewed: 2026-06-29
 agent_edit_policy: update_when_relevant
@@ -7,46 +7,44 @@ agent_edit_policy: update_when_relevant
 
 # SPEC-008 - Balance Endpoint Beta Contract Hardening
 
-Draft implementation spec for tightening Mother API balance endpoints for the
-private Beta surface.
+Accepted implementation spec for tightening Mother API balance endpoints for
+the private Beta surface.
 
-This spec is not a public contract until accepted. Accepted
+This spec records the accepted Beta hardening delta. Accepted
 [SPEC-006](SPEC-006-network-scoped-balances-v1.md) remains the balance design
 record, accepted [SPEC-007](SPEC-007-public-erc-20-transfer-search-v1.md)
 remains the ERC-20 transfer-search design record, and
-[CONTRACTS.md](../../CONTRACTS.md) remains authoritative for implemented public
-callers.
+[CONTRACTS.md](../../CONTRACTS.md) remains authoritative for implemented
+public callers.
 
 ## Summary
 
-Mother API Beta should expose a deliberately small public surface:
+Mother API Beta exposes a deliberately small public surface:
 
 - `GET /health`
 - `POST /v1/balances`
 - `POST /v1/balances/bulk`
 - `POST /v1/erc20-transfers/search`, when its feature gate is enabled
 
-The balance endpoints are already implemented and described by SPEC-006, but
-they still need Beta-level public contract discipline: strict request parsing,
-schema-ready HTTP DTOs, reusable examples, OpenAPI coverage, public error
-examples, and route-surface tests.
+The balance endpoints are implemented and described by SPEC-006. This spec
+adds the Beta-level public contract discipline needed for external consumers:
+strict request parsing, schema-ready HTTP DTOs, reusable examples, OpenAPI
+coverage, public error examples, smoke checks, and route-surface tests.
 
-This spec defines the remaining hardening delta. It does not add a new balance
-capability or change balance orchestration ownership.
+This spec does not add a new balance capability or change balance
+orchestration ownership.
 
-## Current State
+## Implemented State
 
 - Runtime balance routes exist at `POST /v1/balances` and
   `POST /v1/balances/bulk`.
-- Balance request DTOs exist in the HTTP adapter layer.
-- Balance response shaping exists, but the response schema must be made safe
-  as a public OpenAPI source instead of deriving public schemas from
-  application or Bigwig internals.
-- Current balance parsing ignores some unknown fields. Beta must reject unknown
-  public JSON fields.
-- Current `CONTRACTS.md` documents a larger Alpha surface. Any runtime or
-  contract behavior change made while implementing this spec must update
-  `CONTRACTS.md` in the same PR.
+- Balance request and response DTOs live at the HTTP adapter boundary and are
+  safe public OpenAPI schema sources.
+- Balance parsing rejects unsupported JSON fields with `400 unknown_field`.
+- Reserved public network alias fields `chain`, `chain_id`, and `chain_slug`
+  reject with `400 invalid_request`.
+- `CONTRACTS.md`, OpenAPI generation, reusable examples, route-surface tests,
+  and production smoke checks describe the implemented Beta behavior.
 
 ## Goals
 
@@ -75,7 +73,7 @@ capability or change balance orchestration ownership.
 
 ## Beta Route Surface
 
-For Beta, only these public routes should be active:
+For Beta, only these public routes are active:
 
 | Method | Path | Notes |
 | ------ | ---- | ----- |
@@ -96,7 +94,7 @@ Known non-Beta routes must not remain active in a Beta deployment, including:
 - deprecated prediction/demo routes
 - any incomplete or internal route not listed in the Beta table above
 
-Known-but-disabled Beta routes should return a Mother API JSON error envelope:
+Known-but-disabled Beta routes return a Mother API JSON error envelope:
 
 ```json
 {
@@ -221,8 +219,8 @@ Request-wide errors must document:
 - whether the failure is request-side, dependency-side, or internal.
 
 Bigwig and Price Indexer runtime failures for supported balance items remain
-item-level balance response errors as specified by SPEC-006. They should be
-covered by success-response examples with `status: "partial"` or
+item-level balance response errors as specified by SPEC-006. They are covered
+by success-response examples with `status: "partial"` or
 `status: "failed"` rather than incorrectly promoted to request-wide HTTP
 errors.
 
@@ -257,7 +255,7 @@ OpenAPI must not expose non-Beta routes as active Beta paths. If disabled
 routes are documented at all, they must be explicitly documented as disabled
 with `endpoint_disabled`.
 
-## Implementation PR Split
+## Completed Implementation PR Split
 
 ### PR 1 - Balance DTO Schemas and Examples
 
@@ -323,7 +321,7 @@ Scope:
 
 ## Test Plan
 
-Implementation must add or update tests for:
+The implementation adds or updates tests for:
 
 - single balance request parses;
 - bulk balance request parses;
@@ -348,7 +346,7 @@ Before calling balances Beta-ready, `cargo test` must pass.
 
 ## Beta Exit Criteria
 
-Balances are Beta-ready when:
+Balances are Beta-ready when all of these criteria are satisfied:
 
 - `POST /v1/balances` is publicly documented, tested, and OpenAPI-covered.
 - `POST /v1/balances/bulk` is publicly documented, tested, and
