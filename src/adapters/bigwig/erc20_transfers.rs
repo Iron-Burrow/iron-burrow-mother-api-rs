@@ -198,10 +198,10 @@ pub(crate) fn map_bigwig_transfer_error(error: BigwigError) -> Erc20TransferExtr
             Erc20TransferExtractionError::WindowTooLarge
         }
         BigwigError::RpcError => Erc20TransferExtractionError::UpstreamProviderError,
-        BigwigError::Timeout | BigwigError::ProviderTimeout => {
-            Erc20TransferExtractionError::UpstreamProviderTimeout
+        BigwigError::ProviderTimeout => Erc20TransferExtractionError::UpstreamProviderTimeout,
+        BigwigError::Timeout | BigwigError::ExtractionTimeout => {
+            Erc20TransferExtractionError::ExtractionTimeout
         }
-        BigwigError::ExtractionTimeout => Erc20TransferExtractionError::ExtractionTimeout,
         BigwigError::Transport
         | BigwigError::Unauthorized
         | BigwigError::UnsupportedNetwork
@@ -424,7 +424,7 @@ mod tests {
         );
         assert_eq!(
             map_bigwig_transfer_error(BigwigError::Timeout),
-            Erc20TransferExtractionError::UpstreamProviderTimeout
+            Erc20TransferExtractionError::ExtractionTimeout
         );
         assert_eq!(
             map_bigwig_transfer_error(BigwigError::Transport),
@@ -490,7 +490,7 @@ mod tests {
                 extraction_request(block_window(), Vec::new()),
             )
             .await,
-            Err(Erc20TransferExtractionError::UpstreamProviderTimeout)
+            Err(Erc20TransferExtractionError::ExtractionTimeout)
         );
         handle.join().unwrap();
     }
