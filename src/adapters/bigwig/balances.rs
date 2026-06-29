@@ -2,8 +2,14 @@ use serde::{de, Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, thiserror::Error, Eq, PartialEq)]
 pub enum BigwigClientInitError {
+    #[error("INFRA_GATEWAY_URL is required")]
+    MissingBaseUrl,
+
     #[error("invalid INFRA_GATEWAY_URL: {0}")]
     InvalidBaseUrl(String),
+
+    #[error("INFRA_GATEWAY_TOKEN is required")]
+    MissingToken,
 
     #[error("INFRA_GATEWAY_TOKEN must not be empty")]
     EmptyToken,
