@@ -64,7 +64,7 @@ endpoints are Stable.
 | `GET`  | `/v1/assets/{slug}/signal/price-trend`  | None | Returns a strict price trend signal for one asset.           |
 | `POST` | `/v1/balances`                          | None | Resolves one latest network-scoped EVM balance snapshot.     |
 | `POST` | `/v1/balances/bulk`                     | None | Resolves latest snapshots for explicit network accounts.     |
-| `GET`  | `/v1/resolve`                           | None | Resolves a Sentinel search query against global assets.     |
+| `GET`  | `/v1/search-engine`                     | None | Resolves a search query against global assets.     |
 
 Mother API does not currently authenticate callers. API keys, rate
 limiting, billing, and x402 are explicitly out of scope.
@@ -1270,7 +1270,7 @@ Examples:
 
 ## Stable endpoints (continued)
 
-### `GET /v1/resolve`
+### `GET /v1/search-engine`
 
 Resolves broad Sentinel search queries against Mother API-owned global
 assets. Unknown queries return a successful unresolved response with

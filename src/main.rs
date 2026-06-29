@@ -1,31 +1,24 @@
-mod app;
-mod assets;
+mod adapters;
+mod application;
+mod common;
 #[allow(dead_code)]
-mod balances;
 mod config;
-mod db;
-mod dis;
-#[allow(dead_code)]
-mod erc20_transfers;
-mod error;
+mod domain;
+mod infra;
 #[allow(dead_code)]
 mod openapi;
-mod price_indexer;
-mod repositories;
-mod resolve;
-mod routes;
 mod state;
 
-use std::net::SocketAddr;
+#[cfg(test)]
+mod test_utils;
 
+use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tracing::{info, warn};
 
-use crate::{
-    app::{create_app, BALANCE_ROUTE_INVENTORY},
-    config::Config,
-    state::AppState,
-};
+use crate::adapters::http::router::build_router;
+use crate::config::Config;
+use crate::state::AppState;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -34,13 +27,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_env()?;
     let address = config.socket_addr()?;
     let state = AppState::try_new(config)?;
-    let app = create_app(state.clone());
+    let router = build_router(state.clone());
     let listener = TcpListener::bind(address).await?;
 
-    info!(
-        balance_routes = BALANCE_ROUTE_INVENTORY,
-        "Mother API balance routes registered"
-    );
     info!(
         service = "iron-burrow-mother-api",
         host = %state.config.http_host,
@@ -50,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Iron Burrow Mother API listening"
     );
 
-    axum::serve(listener, app)
+    axum::serve(listener, router)
         .with_graceful_shutdown(shutdown_signal(address))
         .await?;
 

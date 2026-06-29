@@ -180,7 +180,7 @@ with these internal adapters:
 
 ```txt
 CatalogBalanceTargetResolver
-BigwigLatestBalancesClient
+BigwigClient
 PriceQuoteClient
 BalanceResponseAssembler
 ```

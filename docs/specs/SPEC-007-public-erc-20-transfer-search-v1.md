@@ -241,13 +241,20 @@ Bigwig call:
    address for the requested `network_slug`.
 4. Reject the whole request if any asset slug is invalid or incompatible.
 5. Normalize all explicit and resolved contract addresses to lowercase.
-6. Merge explicit contract addresses and resolved asset contract addresses.
+6. Merge resolved asset contract addresses first, then explicit contract
+   addresses.
 7. Deduplicate the merged set.
 8. Enforce Mother API's public max token filter limit.
 9. Pass the merged set to Bigwig as `contract_addresses`.
 10. If the merged set is empty, omit or pass an empty `contract_addresses`
     filter; Bigwig treats omitted, `null`, and `[]` as no token-contract
     filter.
+
+`max_token_filters` counts the final unique concrete contract-address set
+after asset-slug resolution, normalization, merge, and deduplication. Mother
+API does not enforce a separate raw pre-deduplication token-filter count
+limit, though malformed JSON, invalid slug formats, invalid address formats,
+and unknown fields are still rejected before catalog lookup.
 
 Mother API must never pass `asset_slug` values to Bigwig.
 
@@ -657,6 +664,11 @@ This limit equals the Bigwig 3.5.2 production
 `extraction.max_contract_addresses` value. Mother API should fail at startup
 if its public limit exceeds the configured Bigwig limit.
 
+The limit is enforced after Mother API resolves asset slugs, normalizes all
+explicit and resolved contract addresses, merges the two sources, and
+deduplicates by concrete contract address. Duplicate raw filter entries do not
+count multiple times after deduplication.
+
 ## DTO Names
 
 Recommended Rust DTO names:
@@ -664,9 +676,9 @@ Recommended Rust DTO names:
 ```rust
 Erc20TransferSearchRequest
 Erc20TransferSearchResponse
-Erc20TransferSearchWindow
-Erc20TransferTokenFilters
-ResolvedErc20TokenFilter
+OnchainWindowDTO
+TokenFiltersDOT
+ResolvedTokenFilterDTO
 Erc20TransferRow
 Erc20TransferToken
 Erc20TransferAmount

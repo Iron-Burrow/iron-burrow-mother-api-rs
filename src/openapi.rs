@@ -1,19 +1,20 @@
 use utoipa::OpenApi;
 
-use crate::{
-    config::Config,
-    erc20_transfers::{
-        Erc20TransferAmount, Erc20TransferBlockWindow, Erc20TransferDirection,
-        Erc20TransferLookbackTarget, Erc20TransferLookbackWindow, Erc20TransferRow,
-        Erc20TransferSearchLimits, Erc20TransferSearchRequest, Erc20TransferSearchResponse,
-        Erc20TransferSearchWindow, Erc20TransferTimestampWindow, Erc20TransferToken,
-        Erc20TransferTokenFilterResolution, Erc20TransferTokenFilterSource,
-        Erc20TransferTokenFilters, ResolvedErc20TokenFilter,
-    },
-    error::{ErrorBody, ErrorResponse},
+use crate::adapters::http::dto::erc20_transfers::{
+    Erc20TransferAmount, Erc20TransferRow, Erc20TransferSearchLimits, Erc20TransferSearchRequest,
+    Erc20TransferSearchResponse, Erc20TransferToken,
 };
+use crate::adapters::http::dto::filters::onchain_window::{
+    BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO, TimestampWindowDTO,
+};
+use crate::adapters::http::dto::filters::token_filters::{
+    ResolvedTokenFilterDTO, TokenFilterDTO, TokenFilterResolutionDTO, TokenFilterSourceDTO,
+};
+use crate::adapters::http::dto::filters::transfer_direction::TransferDirectionDTO;
+use crate::adapters::http::error::{ErrorBody, ErrorResponse};
+use crate::config::Config;
 
-pub fn document(config: &Config) -> utoipa::openapi::OpenApi {
+pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
     if config.erc20_transfers_enabled {
         Erc20TransfersApiDoc::openapi()
     } else {
@@ -29,23 +30,23 @@ pub fn document(config: &Config) -> utoipa::openapi::OpenApi {
     ),
     components(schemas(
         Erc20TransferAmount,
-        Erc20TransferBlockWindow,
-        Erc20TransferDirection,
-        Erc20TransferLookbackTarget,
-        Erc20TransferLookbackWindow,
+        BlockWindowDTO,
+        TransferDirectionDTO,
+        LookbackTargetDTO,
+        LookbackWindowDTO,
         Erc20TransferRow,
         Erc20TransferSearchLimits,
         Erc20TransferSearchRequest,
         Erc20TransferSearchResponse,
-        Erc20TransferSearchWindow,
-        Erc20TransferTimestampWindow,
+        OnchainWindowDTO,
+        TimestampWindowDTO,
         Erc20TransferToken,
-        Erc20TransferTokenFilterResolution,
-        Erc20TransferTokenFilterSource,
-        Erc20TransferTokenFilters,
+        TokenFilterResolutionDTO,
+        TokenFilterSourceDTO,
+        TokenFilterDTO,
         ErrorBody,
         ErrorResponse,
-        ResolvedErc20TokenFilter
+        ResolvedTokenFilterDTO
     ))
 )]
 struct BaseApiDoc;
@@ -59,23 +60,23 @@ struct BaseApiDoc;
     paths(erc20_transfer_search_operation),
     components(schemas(
         Erc20TransferAmount,
-        Erc20TransferBlockWindow,
-        Erc20TransferDirection,
-        Erc20TransferLookbackTarget,
-        Erc20TransferLookbackWindow,
+        BlockWindowDTO,
+        TransferDirectionDTO,
+        LookbackTargetDTO,
+        LookbackWindowDTO,
         Erc20TransferRow,
         Erc20TransferSearchLimits,
         Erc20TransferSearchRequest,
         Erc20TransferSearchResponse,
-        Erc20TransferSearchWindow,
-        Erc20TransferTimestampWindow,
+        OnchainWindowDTO,
+        TimestampWindowDTO,
         Erc20TransferToken,
-        Erc20TransferTokenFilterResolution,
-        Erc20TransferTokenFilterSource,
-        Erc20TransferTokenFilters,
+        TokenFilterResolutionDTO,
+        TokenFilterSourceDTO,
+        TokenFilterDTO,
         ErrorBody,
         ErrorResponse,
-        ResolvedErc20TokenFilter
+        ResolvedTokenFilterDTO
     ))
 )]
 struct Erc20TransfersApiDoc;
@@ -130,9 +131,9 @@ mod tests {
         for schema in [
             "Erc20TransferSearchRequest",
             "Erc20TransferSearchResponse",
-            "Erc20TransferSearchWindow",
-            "Erc20TransferTokenFilters",
-            "ResolvedErc20TokenFilter",
+            "OnchainWindowDTO",
+            "TokenFilterDTO",
+            "ResolvedTokenFilterDTO",
             "Erc20TransferRow",
             "Erc20TransferToken",
             "Erc20TransferAmount",
@@ -219,7 +220,7 @@ mod tests {
         let schemas = json["components"]["schemas"]
             .as_object()
             .expect("OpenAPI components.schemas should be an object");
-        let enum_values = schemas["Erc20TransferDirection"]["enum"]
+        let enum_values = schemas["TransferDirectionDTO"]["enum"]
             .as_array()
             .expect("direction schema should define enum values")
             .iter()

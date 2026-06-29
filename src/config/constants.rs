@@ -1,0 +1,10 @@
+pub(super) const DEFAULT_APP_ENV: &str = "development";
+pub(super) const DEFAULT_HTTP_HOST: &str = "0.0.0.0";
+pub(super) const DEFAULT_HTTP_PORT: u16 = 3000;
+pub(super) const DEFAULT_PRICE_INDEXER_TIMEOUT_MS: u64 = 2000;
+pub(super) const DEFAULT_DIS_REQUEST_TIMEOUT_MS: u64 = 5000;
+pub(super) const DEFAULT_DIS_RETRY_MAX_ATTEMPTS: u64 = 2;
+pub(super) const DEFAULT_BIGWIG_REQUEST_TIMEOUT_MS: u64 = 30000;
+pub(super) const DEFAULT_ERC20_TRANSFERS_ENABLED: bool = false;
+pub(super) const DEFAULT_ERC20_TRANSFERS_MAX_TOKEN_FILTERS: u64 = 20;
+pub(super) const DEFAULT_BIGWIG_MAX_CONTRACT_ADDRESSES: u64 = 20;
