@@ -4,6 +4,14 @@ use utoipa::{
     OpenApi,
 };
 
+use crate::adapters::http::dto::balances::{
+    examples as balance_examples, BalanceAccountIdentityPayload, BalanceAccountPayload,
+    BalanceAccountRequest, BalanceAmountPayload, BalanceAsOfRequest, BalanceAssetRequest,
+    BalanceBlockPayload, BalanceErrorPayload, BalanceEvidencePayload, BalancePositionPayload,
+    BalanceQuotePayload, BalanceQuoteStatus, BalanceResponseStatus, BalanceSkippedPayload,
+    BalanceSummaryPayload, BulkAsOfPayload, BulkBalanceRequest, BulkBalanceResponse,
+    SingleAsOfPayload, SingleBalanceRequest, SingleBalanceResponse,
+};
 use crate::adapters::http::dto::erc20_transfers::{
     examples as erc20_transfer_examples, Erc20TransferAmount, Erc20TransferRow,
     Erc20TransferSearchLimits, Erc20TransferSearchRequest, Erc20TransferSearchResponse,
@@ -26,6 +34,8 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
         BaseApiDoc::openapi()
     };
 
+    add_balance_examples(&mut document);
+
     if config.erc20_transfers_enabled {
         add_erc20_transfer_examples(&mut document);
     }
@@ -39,7 +49,26 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
         title = "Iron Burrow Mother API",
         version = env!("CARGO_PKG_VERSION")
     ),
+    paths(resolve_single_balance_operation, resolve_bulk_balances_operation),
     components(schemas(
+        BalanceAccountIdentityPayload,
+        BalanceAccountPayload,
+        BalanceAccountRequest,
+        BalanceAmountPayload,
+        BalanceAsOfRequest,
+        BalanceAssetRequest,
+        BalanceBlockPayload,
+        BalanceErrorPayload,
+        BalanceEvidencePayload,
+        BalancePositionPayload,
+        BalanceQuotePayload,
+        BalanceQuoteStatus,
+        BalanceResponseStatus,
+        BalanceSkippedPayload,
+        BalanceSummaryPayload,
+        BulkAsOfPayload,
+        BulkBalanceRequest,
+        BulkBalanceResponse,
         Erc20TransferAmount,
         BlockWindowDTO,
         TransferDirectionDTO,
@@ -57,7 +86,10 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
         TokenFilterDTO,
         ErrorBody,
         ErrorResponse,
-        ResolvedTokenFilterDTO
+        ResolvedTokenFilterDTO,
+        SingleAsOfPayload,
+        SingleBalanceRequest,
+        SingleBalanceResponse
     ))
 )]
 struct BaseApiDoc;
@@ -68,8 +100,30 @@ struct BaseApiDoc;
         title = "Iron Burrow Mother API",
         version = env!("CARGO_PKG_VERSION")
     ),
-    paths(erc20_transfer_search_operation),
+    paths(
+        resolve_single_balance_operation,
+        resolve_bulk_balances_operation,
+        erc20_transfer_search_operation
+    ),
     components(schemas(
+        BalanceAccountIdentityPayload,
+        BalanceAccountPayload,
+        BalanceAccountRequest,
+        BalanceAmountPayload,
+        BalanceAsOfRequest,
+        BalanceAssetRequest,
+        BalanceBlockPayload,
+        BalanceErrorPayload,
+        BalanceEvidencePayload,
+        BalancePositionPayload,
+        BalanceQuotePayload,
+        BalanceQuoteStatus,
+        BalanceResponseStatus,
+        BalanceSkippedPayload,
+        BalanceSummaryPayload,
+        BulkAsOfPayload,
+        BulkBalanceRequest,
+        BulkBalanceResponse,
         Erc20TransferAmount,
         BlockWindowDTO,
         TransferDirectionDTO,
@@ -87,10 +141,85 @@ struct BaseApiDoc;
         TokenFilterDTO,
         ErrorBody,
         ErrorResponse,
-        ResolvedTokenFilterDTO
+        ResolvedTokenFilterDTO,
+        SingleAsOfPayload,
+        SingleBalanceRequest,
+        SingleBalanceResponse
     ))
 )]
 struct Erc20TransfersApiDoc;
+
+#[utoipa::path(
+    post,
+    path = "/v1/balances",
+    tag = "balances",
+    summary = "Resolve one latest balance snapshot",
+    description = "Resolves one latest EVM balance snapshot for a canonical network_slug and explicit asset slugs. Requests use network_slug, never chain or chain_id. Supported quote_currency values are USD, MXN, USDC, and BTC. The single endpoint accepts exactly one account and up to 20 assets, with at most 1,000 account-asset resolution items.",
+    request_body(
+        content = SingleBalanceRequest,
+        content_type = "application/json"
+    ),
+    responses(
+        (
+            status = 200,
+            description = "Single-account balance snapshot. Provider failures for supported balance items remain item-level errors inside this response.",
+            body = SingleBalanceResponse
+        ),
+        (
+            status = 400,
+            description = "Malformed, semantically invalid, or oversized balance request",
+            body = ErrorResponse
+        ),
+        (
+            status = 500,
+            description = "Mother API detected an internally inconsistent balance state",
+            body = ErrorResponse
+        ),
+        (
+            status = 503,
+            description = "Mother API balance catalog is temporarily unavailable",
+            body = ErrorResponse
+        )
+    )
+)]
+#[allow(dead_code)]
+async fn resolve_single_balance_operation() {}
+
+#[utoipa::path(
+    post,
+    path = "/v1/balances/bulk",
+    tag = "balances",
+    summary = "Resolve latest balance snapshots in bulk",
+    description = "Resolves latest EVM balance snapshots for explicit canonical network_slug accounts and asset slugs. Requests use network_slug, never chain or chain_id. Supported quote_currency values are USD, MXN, USDC, and BTC. Bulk accepts 1 to 50 accounts, up to 20 assets, and up to 1,000 account-asset resolution items.",
+    request_body(
+        content = BulkBalanceRequest,
+        content_type = "application/json"
+    ),
+    responses(
+        (
+            status = 200,
+            description = "Bulk balance snapshot response. Provider failures for supported balance items remain per-account item-level errors inside this response.",
+            body = BulkBalanceResponse
+        ),
+        (
+            status = 400,
+            description = "Malformed, semantically invalid, or oversized balance request",
+            body = ErrorResponse
+        ),
+        (
+            status = 500,
+            description = "Mother API detected an internally inconsistent balance state",
+            body = ErrorResponse
+        ),
+        (
+            status = 503,
+            description = "Mother API balance catalog is temporarily unavailable",
+            body = ErrorResponse
+        )
+    )
+)]
+#[allow(dead_code)]
+async fn resolve_bulk_balances_operation() {}
 
 #[utoipa::path(
     post,
@@ -145,6 +274,126 @@ struct Erc20TransfersApiDoc;
 )]
 #[allow(dead_code)]
 async fn erc20_transfer_search_operation() {}
+
+fn add_balance_examples(document: &mut utoipa::openapi::OpenApi) {
+    add_single_balance_examples(document);
+    add_bulk_balance_examples(document);
+}
+
+fn add_single_balance_examples(document: &mut utoipa::openapi::OpenApi) {
+    let Some(path_item) = document.paths.paths.get_mut("/v1/balances") else {
+        return;
+    };
+    let Some(operation) = path_item.post.as_mut() else {
+        return;
+    };
+
+    if let Some(request_body) = operation.request_body.as_mut() {
+        if let Some(content) = request_body.content.get_mut("application/json") {
+            add_content_examples(
+                content,
+                [(
+                    "single_balance",
+                    "Single latest balance request",
+                    balance_examples::single_request(),
+                )],
+            );
+        }
+    }
+
+    add_response_examples(
+        operation,
+        "200",
+        [
+            (
+                "success",
+                "Successful single-account balance response",
+                balance_examples::single_success_response(),
+            ),
+            (
+                "item_level_provider_failure",
+                "Item-level balance provider failure response",
+                balance_examples::single_item_level_failure_response(),
+            ),
+        ],
+    );
+    add_response_examples(
+        operation,
+        "400",
+        [
+            (
+                "validation_error",
+                "Invalid balance request",
+                balance_examples::validation_error_response(),
+            ),
+            (
+                "request_too_large",
+                "Balance request exceeds public limits",
+                balance_examples::request_too_large_response(),
+            ),
+        ],
+    );
+}
+
+fn add_bulk_balance_examples(document: &mut utoipa::openapi::OpenApi) {
+    let Some(path_item) = document.paths.paths.get_mut("/v1/balances/bulk") else {
+        return;
+    };
+    let Some(operation) = path_item.post.as_mut() else {
+        return;
+    };
+
+    if let Some(request_body) = operation.request_body.as_mut() {
+        if let Some(content) = request_body.content.get_mut("application/json") {
+            add_content_examples(
+                content,
+                [(
+                    "bulk_balances",
+                    "Bulk latest balance request",
+                    balance_examples::bulk_request(),
+                )],
+            );
+        }
+    }
+
+    add_response_examples(
+        operation,
+        "200",
+        [
+            (
+                "success",
+                "Successful bulk balance response",
+                balance_examples::bulk_success_response(),
+            ),
+            (
+                "skipped_item",
+                "Unsupported asset-network pair skipped",
+                balance_examples::skipped_item_response(),
+            ),
+            (
+                "item_level_provider_failure",
+                "Per-account item-level balance provider failure response",
+                balance_examples::item_level_failure_response(),
+            ),
+        ],
+    );
+    add_response_examples(
+        operation,
+        "400",
+        [
+            (
+                "validation_error",
+                "Invalid balance request",
+                balance_examples::validation_error_response(),
+            ),
+            (
+                "request_too_large",
+                "Balance request exceeds public limits",
+                balance_examples::request_too_large_response(),
+            ),
+        ],
+    );
+}
 
 fn add_erc20_transfer_examples(document: &mut utoipa::openapi::OpenApi) {
     let Some(path_item) = document.paths.paths.get_mut("/v1/erc20-transfers/search") else {
@@ -336,9 +585,331 @@ fn add_content_examples<const N: usize>(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use serde_json::Value;
 
     use super::*;
+
+    #[test]
+    fn openapi_includes_balance_schemas_by_default() {
+        let json = document_json(&Config::default());
+        let schemas = json["components"]["schemas"]
+            .as_object()
+            .expect("OpenAPI components.schemas should be an object");
+
+        for schema in [
+            "SingleBalanceRequest",
+            "BulkBalanceRequest",
+            "BalanceAsOfRequest",
+            "BalanceAccountRequest",
+            "BalanceAssetRequest",
+            "SingleBalanceResponse",
+            "BulkBalanceResponse",
+            "BalanceResponseStatus",
+            "BalanceQuoteStatus",
+            "BalanceAccountPayload",
+            "BalancePositionPayload",
+            "BalanceErrorPayload",
+            "ErrorResponse",
+        ] {
+            assert!(schemas.contains_key(schema), "missing schema {schema}");
+        }
+    }
+
+    #[test]
+    fn default_openapi_paths_match_beta_balance_surface() {
+        let json = document_json(&Config::default());
+        let paths = path_set(&json);
+
+        assert_eq!(
+            paths,
+            BTreeSet::from(["/v1/balances".to_string(), "/v1/balances/bulk".to_string()])
+        );
+    }
+
+    #[test]
+    fn enabled_openapi_paths_add_transfer_search() {
+        let json = document_json(&Config {
+            erc20_transfers_enabled: true,
+            ..Config::default()
+        });
+        let paths = path_set(&json);
+
+        assert_eq!(
+            paths,
+            BTreeSet::from([
+                "/v1/balances".to_string(),
+                "/v1/balances/bulk".to_string(),
+                "/v1/erc20-transfers/search".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn balance_paths_include_request_bodies_statuses_and_public_notes() {
+        let json = document_json(&Config::default());
+
+        assert_balance_operation(
+            &json,
+            "/v1/balances",
+            "SingleBalanceRequest",
+            "SingleBalanceResponse",
+            ["one account", "20 assets", "1,000"],
+        );
+        assert_balance_operation(
+            &json,
+            "/v1/balances/bulk",
+            "BulkBalanceRequest",
+            "BulkBalanceResponse",
+            ["50 accounts", "20 assets", "1,000"],
+        );
+    }
+
+    #[test]
+    fn balance_schemas_use_stable_public_fields() {
+        let json = document_json(&Config::default());
+        let schemas = &json["components"]["schemas"];
+
+        assert_schema_properties(
+            schemas,
+            "SingleBalanceRequest",
+            &["account", "as_of", "assets", "quote_currency"],
+        );
+        assert_schema_properties(
+            schemas,
+            "BulkBalanceRequest",
+            &["accounts", "as_of", "assets", "quote_currency"],
+        );
+        assert_schema_properties(schemas, "BalanceAsOfRequest", &["kind"]);
+        assert_schema_properties(
+            schemas,
+            "BalanceAccountRequest",
+            &["address", "client_ref", "network_slug"],
+        );
+        assert_schema_properties(schemas, "BalanceAssetRequest", &["asset_slug"]);
+        assert_schema_properties(
+            schemas,
+            "SingleBalanceResponse",
+            &[
+                "account",
+                "as_of",
+                "errors",
+                "evidence",
+                "ok",
+                "positions",
+                "quote_currency",
+                "skipped",
+                "status",
+                "type",
+            ],
+        );
+        assert_schema_properties(
+            schemas,
+            "BulkBalanceResponse",
+            &[
+                "accounts",
+                "as_of",
+                "errors",
+                "ok",
+                "quote_currency",
+                "status",
+                "summary",
+                "type",
+            ],
+        );
+        assert_schema_properties(schemas, "SingleAsOfPayload", &["kind", "observed_at"]);
+        assert_schema_properties(schemas, "BulkAsOfPayload", &["kind"]);
+        assert_schema_properties(
+            schemas,
+            "BalanceSummaryPayload",
+            &[
+                "failed_items",
+                "positions_returned",
+                "requested_accounts",
+                "requested_assets",
+                "requested_resolution_items",
+                "skipped_items",
+            ],
+        );
+        assert_schema_properties(
+            schemas,
+            "BalanceAccountPayload",
+            &[
+                "account",
+                "errors",
+                "evidence",
+                "positions",
+                "skipped",
+                "status",
+            ],
+        );
+        assert_schema_properties(
+            schemas,
+            "BalanceAccountIdentityPayload",
+            &["address", "client_ref", "network_slug"],
+        );
+        assert_schema_properties(
+            schemas,
+            "BalanceEvidencePayload",
+            &["block", "network_slug", "observed_at", "source"],
+        );
+        assert_schema_properties(schemas, "BalanceBlockPayload", &["hash", "number"]);
+        assert_schema_properties(
+            schemas,
+            "BalancePositionPayload",
+            &["asset_slug", "balance", "network_slug", "quote", "symbol"],
+        );
+        assert_schema_properties(
+            schemas,
+            "BalanceAmountPayload",
+            &["amount", "decimals", "raw_amount"],
+        );
+        assert_schema_properties(
+            schemas,
+            "BalanceQuotePayload",
+            &["currency", "price_as_of", "status", "unit_price", "value"],
+        );
+        assert_schema_properties(
+            schemas,
+            "BalanceSkippedPayload",
+            &["asset_slug", "network_slug", "reason"],
+        );
+        assert_schema_properties(
+            schemas,
+            "BalanceErrorPayload",
+            &["asset_slug", "code", "message", "network_slug"],
+        );
+
+        for disallowed_field in [
+            "chain",
+            "chain_id",
+            "chain_slug",
+            "route_id",
+            "provider_id",
+            "upstream_url",
+        ] {
+            assert!(
+                !schema_property_exists(schemas, disallowed_field),
+                "OpenAPI schemas must not expose {disallowed_field}"
+            );
+        }
+    }
+
+    #[test]
+    fn balance_openapi_enums_match_public_values() {
+        let json = document_json(&Config::default());
+        let schemas = &json["components"]["schemas"];
+
+        assert_eq!(
+            schema_enum_values(schemas, "BalanceResponseStatus"),
+            ["complete", "partial", "failed"]
+        );
+        assert_eq!(
+            schema_enum_values(schemas, "BalanceQuoteStatus"),
+            ["available", "unavailable", "unsupported"]
+        );
+    }
+
+    #[test]
+    fn balance_openapi_includes_public_examples_and_they_are_valid() {
+        let json = document_json(&Config::default());
+
+        let single_operation = &json["paths"]["/v1/balances"]["post"];
+        let single_request_examples =
+            &single_operation["requestBody"]["content"]["application/json"]["examples"];
+        let single_responses = &single_operation["responses"];
+
+        let single_request = example_value(single_request_examples, "single_balance");
+        assert_eq!(single_request, balance_examples::single_request());
+        serde_json::from_value::<SingleBalanceRequest>(single_request)
+            .expect("single request example should deserialize");
+
+        let single_success = response_example_value(single_responses, "200", "success");
+        assert_eq!(single_success, balance_examples::single_success_response());
+        serde_json::from_value::<SingleBalanceResponse>(single_success)
+            .expect("single success example should deserialize");
+
+        let single_failure =
+            response_example_value(single_responses, "200", "item_level_provider_failure");
+        assert_eq!(
+            single_failure,
+            balance_examples::single_item_level_failure_response()
+        );
+        serde_json::from_value::<SingleBalanceResponse>(single_failure)
+            .expect("single item-level failure example should deserialize");
+
+        assert_error_example(response_example_value(
+            single_responses,
+            "400",
+            "validation_error",
+        ));
+        assert_error_example(response_example_value(
+            single_responses,
+            "400",
+            "request_too_large",
+        ));
+
+        let bulk_operation = &json["paths"]["/v1/balances/bulk"]["post"];
+        let bulk_request_examples =
+            &bulk_operation["requestBody"]["content"]["application/json"]["examples"];
+        let bulk_responses = &bulk_operation["responses"];
+
+        let bulk_request = example_value(bulk_request_examples, "bulk_balances");
+        assert_eq!(bulk_request, balance_examples::bulk_request());
+        serde_json::from_value::<BulkBalanceRequest>(bulk_request)
+            .expect("bulk request example should deserialize");
+
+        for (name, expected) in [
+            ("success", balance_examples::bulk_success_response()),
+            ("skipped_item", balance_examples::skipped_item_response()),
+            (
+                "item_level_provider_failure",
+                balance_examples::item_level_failure_response(),
+            ),
+        ] {
+            let value = response_example_value(bulk_responses, "200", name);
+            assert_eq!(value, expected);
+            serde_json::from_value::<BulkBalanceResponse>(value)
+                .expect("bulk response example should deserialize");
+        }
+
+        assert_error_example(response_example_value(
+            bulk_responses,
+            "400",
+            "validation_error",
+        ));
+        assert_error_example(response_example_value(
+            bulk_responses,
+            "400",
+            "request_too_large",
+        ));
+    }
+
+    #[test]
+    fn openapi_does_not_expose_hidden_or_disabled_routes() {
+        let json = document_json(&Config::default());
+        let paths = json["paths"]
+            .as_object()
+            .expect("OpenAPI paths should be an object");
+
+        for hidden_path in [
+            "/v1/status",
+            "/v1/assets",
+            "/v1/assets/{slug}",
+            "/v1/assets/{slug}/signal/price-stats",
+            "/v1/assets/{slug}/signal/price-trend",
+            "/v1/predictions/fifa-world-cup/winner",
+            "/v1/predictions/fifa-world-cup/{country}",
+            "/v1/search-engine",
+            "/v1/erc20-transfers/search",
+        ] {
+            assert!(
+                !paths.contains_key(hidden_path),
+                "OpenAPI must not expose hidden or disabled path {hidden_path}"
+            );
+        }
+    }
 
     #[test]
     fn openapi_includes_erc20_transfer_schemas_by_default() {
@@ -538,6 +1109,142 @@ mod tests {
 
     fn document_json(config: &Config) -> Value {
         serde_json::to_value(document(config)).expect("OpenAPI should serialize")
+    }
+
+    fn path_set(json: &Value) -> BTreeSet<String> {
+        json["paths"]
+            .as_object()
+            .expect("OpenAPI paths should be an object")
+            .keys()
+            .cloned()
+            .collect()
+    }
+
+    fn assert_balance_operation(
+        json: &Value,
+        path: &str,
+        request_schema: &str,
+        response_schema: &str,
+        expected_description_fragments: [&str; 3],
+    ) {
+        let operation = &json["paths"][path]["post"];
+        assert!(
+            operation.is_object(),
+            "balance path {path} should expose a POST operation"
+        );
+        assert_eq!(
+            operation["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+            format!("#/components/schemas/{request_schema}")
+        );
+        assert_eq!(
+            operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            format!("#/components/schemas/{response_schema}")
+        );
+
+        for status in ["400", "500", "503"] {
+            assert_eq!(
+                operation["responses"][status]["content"]["application/json"]["schema"]["$ref"],
+                "#/components/schemas/ErrorResponse",
+                "balance path {path} should expose ErrorResponse for {status}"
+            );
+        }
+
+        let responses = operation["responses"]
+            .as_object()
+            .expect("balance responses should be an object");
+        assert_eq!(
+            responses.keys().cloned().collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                "200".to_string(),
+                "400".to_string(),
+                "500".to_string(),
+                "503".to_string()
+            ])
+        );
+
+        let description = operation["description"]
+            .as_str()
+            .expect("balance operation should have a public description");
+        for fragment in [
+            "network_slug",
+            "USD",
+            "MXN",
+            "USDC",
+            "BTC",
+            expected_description_fragments[0],
+            expected_description_fragments[1],
+            expected_description_fragments[2],
+        ] {
+            assert!(
+                description.contains(fragment),
+                "balance path {path} description should mention {fragment}"
+            );
+        }
+    }
+
+    fn assert_schema_properties(schemas: &Value, schema_name: &str, expected_fields: &[&str]) {
+        let properties = schemas[schema_name]["properties"]
+            .as_object()
+            .unwrap_or_else(|| panic!("{schema_name} should define object properties"));
+        let actual = properties.keys().cloned().collect::<BTreeSet<_>>();
+        let expected = expected_fields
+            .iter()
+            .map(|field| field.to_string())
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(actual, expected, "unexpected fields for {schema_name}");
+    }
+
+    fn schema_property_exists(schema: &Value, property_name: &str) -> bool {
+        match schema {
+            Value::Object(object) => {
+                if object
+                    .get("properties")
+                    .and_then(Value::as_object)
+                    .is_some_and(|properties| properties.contains_key(property_name))
+                {
+                    return true;
+                }
+
+                object
+                    .values()
+                    .any(|value| schema_property_exists(value, property_name))
+            }
+            Value::Array(values) => values
+                .iter()
+                .any(|value| schema_property_exists(value, property_name)),
+            _ => false,
+        }
+    }
+
+    fn schema_enum_values<'a>(schemas: &'a Value, schema_name: &str) -> Vec<&'a str> {
+        schemas[schema_name]["enum"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{schema_name} should define enum values"))
+            .iter()
+            .map(|value| value.as_str().expect("enum value should be a string"))
+            .collect()
+    }
+
+    fn assert_error_example(value: Value) {
+        assert_eq!(value["ok"], false);
+        assert!(
+            value["error"]["code"].is_string(),
+            "error example should expose error.code"
+        );
+        assert!(
+            value["error"]["message"].is_string(),
+            "error example should expose error.message"
+        );
+        assert_eq!(
+            value
+                .as_object()
+                .expect("error response should be an object")
+                .keys()
+                .cloned()
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from(["error".to_string(), "ok".to_string()])
+        );
     }
 
     fn response_example_value(responses: &Value, status: &str, name: &str) -> Value {

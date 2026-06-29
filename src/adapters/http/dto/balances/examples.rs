@@ -77,6 +77,35 @@ pub(crate) fn single_success_response() -> Value {
     })
 }
 
+pub(crate) fn single_item_level_failure_response() -> Value {
+    json!({
+        "ok": true,
+        "type": "balances",
+        "status": "failed",
+        "as_of": {
+            "kind": "latest",
+            "observed_at": null
+        },
+        "quote_currency": "MXN",
+        "account": {
+            "network_slug": ETH_NETWORK,
+            "address": ACCOUNT_A,
+            "client_ref": "main-safe"
+        },
+        "evidence": null,
+        "positions": [],
+        "skipped": [],
+        "errors": [
+            {
+                "network_slug": ETH_NETWORK,
+                "asset_slug": "ethereum",
+                "code": "balance_provider_unavailable",
+                "message": "Balance is temporarily unavailable for this asset on this network."
+            }
+        ]
+    })
+}
+
 pub(crate) fn bulk_success_response() -> Value {
     json!({
         "ok": true,
