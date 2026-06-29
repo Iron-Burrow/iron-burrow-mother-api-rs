@@ -1,10 +1,9 @@
-use std::collections::HashMap;
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
 
 use crate::{
+    adapters::http::{error::ApiError, types::JsonObject, validation::reject_unknown_fields},
     application::balances::service::{
         BalanceAccountResult, BalanceEvidence, BalanceItemErrorCode, BalanceItemOutcome,
         BalanceQuoteOutcome, BalanceSnapshotAccount, BalanceSnapshotResult,
@@ -15,48 +14,156 @@ use crate::{
 #[allow(dead_code)]
 pub(crate) mod examples;
 
-pub type ExtraFields = HashMap<String, Value>;
+const RESERVED_NETWORK_ALIAS_FIELDS: [&str; 3] = ["chain", "chain_id", "chain_slug"];
+const SINGLE_BALANCE_FIELDS: [&str; 4] = ["as_of", "account", "quote_currency", "assets"];
+const BULK_BALANCE_FIELDS: [&str; 4] = ["as_of", "accounts", "quote_currency", "assets"];
+const AS_OF_FIELDS: [&str; 1] = ["kind"];
+const ACCOUNT_FIELDS: [&str; 3] = ["network_slug", "address", "client_ref"];
+const ASSET_FIELDS: [&str; 1] = ["asset_slug"];
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SingleBalanceRequest {
     pub(crate) as_of: BalanceAsOfRequest,
     pub(crate) account: BalanceAccountRequest,
     pub(crate) quote_currency: String,
     pub(crate) assets: Vec<BalanceAssetRequest>,
-    #[serde(default, flatten, skip_serializing)]
-    #[schema(ignore)]
-    pub(crate) extra: ExtraFields,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct BulkBalanceRequest {
     pub(crate) as_of: BalanceAsOfRequest,
     pub(crate) accounts: Vec<BalanceAccountRequest>,
     pub(crate) quote_currency: String,
     pub(crate) assets: Vec<BalanceAssetRequest>,
-    #[serde(default, flatten, skip_serializing)]
-    #[schema(ignore)]
-    pub(crate) extra: ExtraFields,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct BalanceAsOfRequest {
     pub(crate) kind: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct BalanceAccountRequest {
     pub(crate) network_slug: String,
     pub(crate) address: String,
     pub(crate) client_ref: Option<String>,
-    #[serde(default, flatten, skip_serializing)]
-    #[schema(ignore)]
-    pub(crate) extra: ExtraFields,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct BalanceAssetRequest {
     pub(crate) asset_slug: String,
+}
+
+impl TryFrom<&JsonObject> for SingleBalanceRequest {
+    type Error = ApiError;
+
+    fn try_from(request: &JsonObject) -> Result<Self, Self::Error> {
+        reject_reserved_alias_fields_in_object(request)?;
+        reject_unknown_fields(request, &SINGLE_BALANCE_FIELDS)?;
+        validate_as_of_object(request.get("as_of"))?;
+        validate_account_object(request.get("account"))?;
+        validate_asset_array(request.get("assets"))?;
+
+        serde_json::from_value(Value::Object(request.clone()))
+            .map_err(|_| ApiError::invalid_request())
+    }
+}
+
+impl TryFrom<&JsonObject> for BulkBalanceRequest {
+    type Error = ApiError;
+
+    fn try_from(request: &JsonObject) -> Result<Self, Self::Error> {
+        reject_reserved_alias_fields_in_object(request)?;
+        reject_unknown_fields(request, &BULK_BALANCE_FIELDS)?;
+        validate_as_of_object(request.get("as_of"))?;
+        validate_account_array(request.get("accounts"))?;
+        validate_asset_array(request.get("assets"))?;
+
+        serde_json::from_value(Value::Object(request.clone()))
+            .map_err(|_| ApiError::invalid_request())
+    }
+}
+
+fn reject_reserved_alias_fields_in_object(object: &JsonObject) -> Result<(), ApiError> {
+    if RESERVED_NETWORK_ALIAS_FIELDS
+        .iter()
+        .any(|field| object.contains_key(*field))
+    {
+        return Err(ApiError::invalid_request());
+    }
+
+    for value in object.values() {
+        reject_reserved_alias_fields(value)?;
+    }
+
+    Ok(())
+}
+
+fn reject_reserved_alias_fields(value: &Value) -> Result<(), ApiError> {
+    match value {
+        Value::Object(object) => reject_reserved_alias_fields_in_object(object),
+        Value::Array(values) => {
+            for value in values {
+                reject_reserved_alias_fields(value)?;
+            }
+
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn validate_as_of_object(value: Option<&Value>) -> Result<(), ApiError> {
+    let Some(Value::Object(as_of)) = value else {
+        return Err(ApiError::invalid_request());
+    };
+
+    reject_unknown_fields(as_of, &AS_OF_FIELDS)
+}
+
+fn validate_account_object(value: Option<&Value>) -> Result<(), ApiError> {
+    let Some(Value::Object(account)) = value else {
+        return Err(ApiError::invalid_request());
+    };
+
+    reject_unknown_fields(account, &ACCOUNT_FIELDS)
+}
+
+fn validate_account_array(value: Option<&Value>) -> Result<(), ApiError> {
+    let Some(Value::Array(accounts)) = value else {
+        return Err(ApiError::invalid_request());
+    };
+
+    for account in accounts {
+        validate_account_object(Some(account))?;
+    }
+
+    Ok(())
+}
+
+fn validate_asset_array(value: Option<&Value>) -> Result<(), ApiError> {
+    let Some(Value::Array(assets)) = value else {
+        return Err(ApiError::invalid_request());
+    };
+
+    for asset in assets {
+        validate_asset_object(asset)?;
+    }
+
+    Ok(())
+}
+
+fn validate_asset_object(value: &Value) -> Result<(), ApiError> {
+    let Value::Object(asset) = value else {
+        return Err(ApiError::invalid_request());
+    };
+
+    reject_unknown_fields(asset, &ASSET_FIELDS)
 }
 
 #[derive(Clone, Copy, Debug, Default)]

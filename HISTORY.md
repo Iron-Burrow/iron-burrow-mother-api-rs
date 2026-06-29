@@ -206,3 +206,6 @@ implementation, and documentation changes.
 - Hardened PR 7 public documentation for `/v1/erc20-transfers/search` with
   contract examples, OpenAPI examples, token-filter semantics, public limits,
   and error-code drift checks tied to DTO-shaped fixtures.
+- Hardened balance request parsing for SPEC-008 PR 2 so unsupported JSON
+  fields now return `400 unknown_field`, while reserved network aliases remain
+  `400 invalid_request` and existing balance validation codes are preserved.
