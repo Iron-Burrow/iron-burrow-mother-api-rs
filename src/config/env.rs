@@ -3,9 +3,16 @@ use std::{env, net::SocketAddr};
 use super::constants::*;
 use crate::config::error::ConfigError;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PublicApiSurface {
+    Alpha,
+    Beta,
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub(crate) struct Config {
     pub(crate) app_env: String,
+    pub(crate) public_api_surface: PublicApiSurface,
     pub(crate) http_host: String,
     pub(crate) http_port: u16,
     pub(crate) database_url: Option<String>,
@@ -27,6 +34,11 @@ impl Config {
     pub(crate) fn from_env() -> Result<Self, ConfigError> {
         let config = Self {
             app_env: env::var("APP_ENV").unwrap_or_else(|_| DEFAULT_APP_ENV.to_string()),
+            public_api_surface: parse_optional_public_api_surface_env(
+                "PUBLIC_API_SURFACE",
+                PublicApiSurface::Alpha,
+            )
+            .map_err(ConfigError::InvalidPublicApiSurface)?,
             http_host: env::var("HTTP_HOST").unwrap_or_else(|_| DEFAULT_HTTP_HOST.to_string()),
             http_port: match env::var("HTTP_PORT") {
                 Ok(value) => value
@@ -107,6 +119,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             app_env: DEFAULT_APP_ENV.to_string(),
+            public_api_surface: PublicApiSurface::Alpha,
             http_host: DEFAULT_HTTP_HOST.to_string(),
             http_port: DEFAULT_HTTP_PORT,
             database_url: None,
@@ -131,6 +144,7 @@ impl std::fmt::Debug for Config {
         formatter
             .debug_struct("Config")
             .field("app_env", &self.app_env)
+            .field("public_api_surface", &self.public_api_surface)
             .field("http_host", &self.http_host)
             .field("http_port", &self.http_port)
             .field("database_url", &self.database_url)
@@ -206,6 +220,28 @@ pub(super) fn parse_optional_bool_env(key: &str, default: bool) -> Result<bool, 
             match trimmed.to_ascii_lowercase().as_str() {
                 "true" | "1" => Ok(true),
                 "false" | "0" => Ok(false),
+                _ => Err(value),
+            }
+        }
+        Err(_) => Ok(default),
+    }
+}
+
+pub(super) fn parse_optional_public_api_surface_env(
+    key: &str,
+    default: PublicApiSurface,
+) -> Result<PublicApiSurface, String> {
+    match env::var(key) {
+        Ok(value) => {
+            let trimmed = value.trim();
+
+            if trimmed.is_empty() {
+                return Ok(default);
+            }
+
+            match trimmed.to_ascii_lowercase().as_str() {
+                "alpha" => Ok(PublicApiSurface::Alpha),
+                "beta" => Ok(PublicApiSurface::Beta),
                 _ => Err(value),
             }
         }

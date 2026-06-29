@@ -16,8 +16,10 @@ use tower::ServiceExt;
 use super::*;
 use crate::test_utils::fixtures::global_assets::sample_assets;
 use crate::{
-    adapters::dis::DisClient, adapters::postgres::global_assets::GlobalAssetRepository,
-    adapters::price_indexer::PriceIndexerClient, config::Config,
+    adapters::dis::DisClient,
+    adapters::postgres::global_assets::GlobalAssetRepository,
+    adapters::price_indexer::PriceIndexerClient,
+    config::{Config, PublicApiSurface},
 };
 use crate::{domain::global_assets::GlobalAsset, state::AppState};
 
@@ -28,6 +30,13 @@ fn test_app() -> Router {
         Config::default(),
         GlobalAssetRepository::in_memory(sample_assets()),
     ))
+}
+
+fn beta_config() -> Config {
+    Config {
+        public_api_surface: PublicApiSurface::Beta,
+        ..Config::default()
+    }
 }
 
 fn test_app_with_price_indexer(price_indexer_url: &str, timeout_ms: u64) -> Router {
@@ -111,6 +120,139 @@ async fn unknown_route_returns_stable_not_found() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn beta_surface_keeps_balance_and_health_routes_active() {
+    let app = build_router(AppState::new(beta_config()));
+
+    let health_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(health_response.status(), StatusCode::OK);
+
+    for uri in ["/v1/balances", "/v1/balances/bulk"] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(uri)
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{uri}");
+    }
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/balances")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+}
+
+#[tokio::test]
+async fn beta_surface_keeps_transfer_search_feature_gated() {
+    let disabled_response = build_router(AppState::new(beta_config()))
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/erc20-transfers/search")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(disabled_response.status(), StatusCode::NOT_FOUND);
+
+    let enabled_response = build_router(AppState::new(Config {
+        public_api_surface: PublicApiSurface::Beta,
+        erc20_transfers_enabled: true,
+        ..Config::default()
+    }))
+    .oneshot(
+        Request::builder()
+            .method("POST")
+            .uri("/v1/erc20-transfers/search")
+            .header("content-type", "application/json")
+            .body(Body::from("{}"))
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(enabled_response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn beta_surface_returns_endpoint_disabled_for_known_non_beta_routes() {
+    let app = build_router(AppState::new(beta_config()));
+
+    for uri in [
+        "/v1/status",
+        "/v1/assets",
+        "/v1/assets/resolve",
+        "/v1/assets/bitcoin",
+        "/v1/assets/bitcoin/signal/price-stats",
+        "/v1/assets/bitcoin/signal/price-trend",
+        "/v1/search-engine",
+        "/v1/predictions/fifa-world-cup/winner",
+        "/v1/predictions/fifa-world-cup/mexico",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{uri}");
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+
+        assert_eq!(json["ok"], false, "{uri}");
+        assert_eq!(json["error"]["code"], "endpoint_disabled", "{uri}");
+        assert_eq!(
+            json["error"]["message"], "This endpoint is currently disabled for the Beta release.",
+            "{uri}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn beta_surface_preserves_not_found_for_unknown_routes() {
+    let app = build_router(AppState::new(beta_config()));
+
+    for uri in ["/v1/not-a-route", "/definitely-not-a-route"] {
+        let response = app
+            .clone()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{uri}");
+    }
 }
 
 #[test]

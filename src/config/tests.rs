@@ -2,8 +2,8 @@ use std::net::SocketAddr;
 use std::sync::Mutex;
 
 use crate::config::env::{
-    optional_env, parse_optional_bool_env, parse_optional_u64_env, parse_positive_optional_u64_env,
-    Config,
+    optional_env, parse_optional_bool_env, parse_optional_public_api_surface_env,
+    parse_optional_u64_env, parse_positive_optional_u64_env, Config, PublicApiSurface,
 };
 use crate::config::error::ConfigError;
 use crate::test_utils::constants::{INFRA_GATEWAY_URL, PRICE_INDEXER_URL};
@@ -42,6 +42,7 @@ fn default_config_matches_public_contract() {
     let config = Config::default();
 
     assert_eq!(config.app_env, "development");
+    assert_eq!(config.public_api_surface, PublicApiSurface::Alpha);
     assert_eq!(config.http_host, "0.0.0.0");
     assert_eq!(config.http_port, 3000);
     assert_eq!(config.database_url, None);
@@ -61,6 +62,57 @@ fn default_config_matches_public_contract() {
         config.socket_addr().unwrap(),
         "0.0.0.0:3000".parse::<SocketAddr>().unwrap()
     );
+}
+
+#[test]
+fn public_api_surface_config_defaults_trims_and_parses_known_values() {
+    assert_eq!(
+        parse_optional_public_api_surface_env(
+            "MISSING_PUBLIC_API_SURFACE",
+            PublicApiSurface::Alpha
+        )
+        .unwrap(),
+        PublicApiSurface::Alpha
+    );
+
+    std::env::set_var("EMPTY_PUBLIC_API_SURFACE", "   ");
+    std::env::set_var("ALPHA_PUBLIC_API_SURFACE", " ALPHA ");
+    std::env::set_var("BETA_PUBLIC_API_SURFACE", " beta ");
+
+    assert_eq!(
+        parse_optional_public_api_surface_env("EMPTY_PUBLIC_API_SURFACE", PublicApiSurface::Beta)
+            .unwrap(),
+        PublicApiSurface::Beta
+    );
+    assert_eq!(
+        parse_optional_public_api_surface_env("ALPHA_PUBLIC_API_SURFACE", PublicApiSurface::Beta)
+            .unwrap(),
+        PublicApiSurface::Alpha
+    );
+    assert_eq!(
+        parse_optional_public_api_surface_env("BETA_PUBLIC_API_SURFACE", PublicApiSurface::Alpha)
+            .unwrap(),
+        PublicApiSurface::Beta
+    );
+
+    std::env::remove_var("EMPTY_PUBLIC_API_SURFACE");
+    std::env::remove_var("ALPHA_PUBLIC_API_SURFACE");
+    std::env::remove_var("BETA_PUBLIC_API_SURFACE");
+}
+
+#[test]
+fn public_api_surface_config_rejects_invalid_values() {
+    std::env::set_var("INVALID_PUBLIC_API_SURFACE", "gamma");
+
+    assert_eq!(
+        parse_optional_public_api_surface_env(
+            "INVALID_PUBLIC_API_SURFACE",
+            PublicApiSurface::Alpha
+        ),
+        Err("gamma".to_string())
+    );
+
+    std::env::remove_var("INVALID_PUBLIC_API_SURFACE");
 }
 
 #[test]
@@ -242,6 +294,37 @@ fn from_env_parses_erc20_transfer_config() {
     assert!(config.erc20_transfers_enabled);
     assert_eq!(config.erc20_transfers_max_token_filters, 12);
     assert_eq!(config.bigwig_max_contract_addresses, 30);
+}
+
+#[test]
+fn from_env_parses_public_api_surface_config() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let _snapshot = EnvVarSnapshot::capture("PUBLIC_API_SURFACE");
+
+    std::env::set_var("PUBLIC_API_SURFACE", "beta");
+    assert_eq!(
+        Config::from_env().unwrap().public_api_surface,
+        PublicApiSurface::Beta
+    );
+
+    std::env::set_var("PUBLIC_API_SURFACE", "alpha");
+    assert_eq!(
+        Config::from_env().unwrap().public_api_surface,
+        PublicApiSurface::Alpha
+    );
+}
+
+#[test]
+fn from_env_rejects_invalid_public_api_surface() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let _snapshot = EnvVarSnapshot::capture("PUBLIC_API_SURFACE");
+
+    std::env::set_var("PUBLIC_API_SURFACE", "staging");
+
+    assert_eq!(
+        Config::from_env(),
+        Err(ConfigError::InvalidPublicApiSurface("staging".to_string()))
+    );
 }
 
 #[test]

@@ -2,6 +2,8 @@
 pub(crate) enum ConfigError {
     #[error("HTTP_PORT must be a valid u16, got {0:?}")]
     InvalidHttpPort(String),
+    #[error("PUBLIC_API_SURFACE must be one of alpha or beta, got {0:?}")]
+    InvalidPublicApiSurface(String),
     #[error("PRICE_INDEXER_TIMEOUT_MS must be a valid u64, got {0:?}")]
     InvalidPriceIndexerTimeout(String),
     #[error("DIS_REQUEST_TIMEOUT_MS must be a valid u64, got {0:?}")]

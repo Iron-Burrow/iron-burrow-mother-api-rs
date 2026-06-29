@@ -40,6 +40,14 @@ impl ApiError {
         }
     }
 
+    pub fn endpoint_disabled() -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            code: "endpoint_disabled",
+            message: "This endpoint is currently disabled for the Beta release.".to_string(),
+        }
+    }
+
     pub fn query_too_long() -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
