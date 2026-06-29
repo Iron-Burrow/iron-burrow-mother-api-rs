@@ -467,7 +467,10 @@ async fn load_erc20_token_catalog_rows_db(
         join mother_api.global_asset global_asset
           on global_asset.status = 'active'
          and global_asset.id = asset_chain_map.asset_id
-        order by requested_contracts.contract_address asc, asset_chain_map.sort_order asc
+        order by
+          requested_contracts.contract_address asc,
+          asset_chain_map.sort_order asc,
+          global_asset.slug asc
         "#,
     )
     .bind(network_slug)
@@ -671,21 +674,26 @@ fn load_erc20_token_catalog_rows_in_memory(
             continue;
         };
 
-        rows.push(Erc20TokenCatalogRow {
-            contract_address,
-            asset_slug: asset.slug.clone(),
-            asset_symbol: asset.symbol.clone(),
-            decimals: chain_map.decimals,
-        });
+        rows.push((
+            contract_address.clone(),
+            mapping.sort_order,
+            Erc20TokenCatalogRow {
+                contract_address,
+                asset_slug: asset.slug.clone(),
+                asset_symbol: asset.symbol.clone(),
+                decimals: chain_map.decimals,
+            },
+        ));
     }
 
     rows.sort_by(|left, right| {
-        left.contract_address
-            .cmp(&right.contract_address)
-            .then_with(|| left.asset_slug.cmp(&right.asset_slug))
+        left.0
+            .cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1))
+            .then_with(|| left.2.asset_slug.cmp(&right.2.asset_slug))
     });
-    rows.dedup_by(|left, right| left.contract_address == right.contract_address);
-    rows
+    rows.dedup_by(|left, right| left.0 == right.0);
+    rows.into_iter().map(|(_, _, row)| row).collect()
 }
 
 fn list_recommendations_in_memory(
@@ -842,5 +850,63 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["beta", "alpha", "zeta"]
         );
+    }
+
+    #[tokio::test]
+    async fn erc20_token_catalog_lookup_keeps_lowest_sort_order_mapping() {
+        let contract = "0x1111111111111111111111111111111111111111";
+        let repository = GlobalAssetRepository::in_memory_with_chain_maps(
+            vec![
+                sample_asset(
+                    "usdc",
+                    "USDC",
+                    "USD Coin",
+                    "crypto",
+                    "/assets/usdc",
+                    &[],
+                    20,
+                ),
+                sample_asset(
+                    "wrapped-ether",
+                    "WETH",
+                    "Wrapped Ether",
+                    "crypto",
+                    "/assets/wrapped-ether",
+                    &[],
+                    10,
+                ),
+            ],
+            vec![
+                in_memory_chain_map(
+                    "usdc",
+                    "eth-mainnet",
+                    "Ethereum Mainnet",
+                    Some("eip155:1"),
+                    false,
+                    Some(contract),
+                    20,
+                ),
+                in_memory_chain_map(
+                    "wrapped-ether",
+                    "eth-mainnet",
+                    "Ethereum Mainnet",
+                    Some("eip155:1"),
+                    false,
+                    Some(contract),
+                    10,
+                ),
+            ],
+        );
+
+        let rows = repository
+            .load_erc20_token_catalog_rows("eth-mainnet", &[contract.to_string()])
+            .await
+            .unwrap();
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].contract_address, contract);
+        assert_eq!(rows[0].asset_slug, "wrapped-ether");
+        assert_eq!(rows[0].asset_symbol, "WETH");
+        assert_eq!(rows[0].decimals, Some(18));
     }
 }

@@ -247,7 +247,9 @@ async fn enrich_token_metadata(
                 symbol: row.asset_symbol,
                 decimals,
             };
-            metadata_by_contract.insert(metadata.contract_address.clone(), metadata);
+            metadata_by_contract
+                .entry(metadata.contract_address.clone())
+                .or_insert(metadata);
         }
     }
 
