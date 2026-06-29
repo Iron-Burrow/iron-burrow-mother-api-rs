@@ -203,3 +203,6 @@ implementation, and documentation changes.
   validation failures before dependency calls, asset-resolution failures,
   upstream failure mapping, route absence when disabled, and OpenAPI path
   gating.
+- Hardened PR 7 public documentation for `/v1/erc20-transfers/search` with
+  contract examples, OpenAPI examples, token-filter semantics, public limits,
+  and error-code drift checks tied to DTO-shaped fixtures.

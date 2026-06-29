@@ -454,6 +454,8 @@ pub struct ErrorBody {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use serde_json::Value;
 
     use super::*;
@@ -498,5 +500,39 @@ mod tests {
         let response = ApiError::transfer_unsupported_network().into_response();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn all_public_error_codes_are_documented_in_contract_catalogue() {
+        let source = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/adapters/http/error.rs"
+        ));
+        let contract = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/CONTRACTS.md"));
+        let catalogue = contract
+            .split_once("### Error code catalogue")
+            .expect("CONTRACTS.md should have an error code catalogue")
+            .1
+            .split_once("`error.code` values listed above are stable")
+            .expect("CONTRACTS.md should close the error code catalogue")
+            .0;
+
+        let codes = source
+            .split("code: \"")
+            .skip(1)
+            .map(|remaining| {
+                remaining
+                    .split_once('"')
+                    .expect("public error code should close string literal")
+                    .0
+            })
+            .collect::<BTreeSet<_>>();
+
+        for code in codes {
+            assert!(
+                catalogue.contains(&format!("`{code}`")),
+                "public error code {code} is missing from CONTRACTS.md error catalogue"
+            );
+        }
     }
 }

@@ -934,7 +934,231 @@ error envelopes. Bigwig owns the internal bounded transfer extraction. Mother
 API does not index transfers, call EVM RPC directly, infer native transfers,
 or enrich prices for this endpoint.
 
-**Request:**
+Fields:
+
+| Field | Type | Notes |
+| ----- | ---- | ----- |
+| `network_slug` | string | Required. Currently only `eth-mainnet`. |
+| `address` | string | Required EVM address, normalized to lowercase in execution and response. |
+| `direction` | string | Required. One of `any`, `from`, or `to`. |
+| `tokens.asset_slugs` | array of strings | Optional exact catalog slugs. Each must resolve to an ERC-20 contract on `network_slug`. |
+| `tokens.contract_addresses` | array of strings | Optional ERC-20 contract addresses. Unknown contracts are valid filters. |
+| `window.from_block` / `window.to_block` | integers | Block window. |
+| `window.from_timestamp` / `window.to_timestamp` | strings | Timestamp window alternative. |
+| `window.lookback_seconds` / `window.to` | integer/string | Lookback alternative. `to` is currently `latest`. |
+
+`tokens` may be omitted, `null`, or `{}` for an unfiltered ERC-20 transfer
+search.
+
+Token filter semantics:
+
+- `tokens.asset_slugs` are exact canonical Mother API asset slugs. Symbols,
+  aliases, and generic names are not accepted.
+- Each asset slug must resolve to an ERC-20 contract on `network_slug`.
+- Mother API resolves asset slugs first, then appends explicit
+  `tokens.contract_addresses`.
+- Explicit contract addresses are valid even when unknown to the Mother
+  catalog; unknown explicit contracts return `null` catalog metadata.
+- All accepted contract addresses normalize to lowercase.
+- The merged concrete contract-address set is deduplicated before the public
+  token-filter limit is applied.
+- If any asset slug is invalid, unknown, unavailable on the requested network,
+  native, or non-ERC-20, Mother API rejects the whole request before calling
+  Bigwig.
+
+Mother API never silently converts native assets into wrapped assets:
+
+```text
+ethereum != wrapped-ether
+ETH != WETH
+```
+
+If callers want WETH transfer logs, they must request `wrapped-ether` or the
+WETH contract address. `Unknown asset slugs never produce empty successful
+transfer responses.`
+
+Public limits:
+
+| Limit | Maximum |
+| ----- | ------- |
+| Unique token filters after resolution and deduplication | 20 |
+| Returned rows | 5,000 |
+
+`limits.truncated: true` indicates a valid success response capped by the
+upstream extraction row limit.
+
+**Examples:**
+
+Unfiltered search request:
+
+<!-- erc20-transfer-example: request-unfiltered -->
+
+```json
+{
+  "network_slug": "eth-mainnet",
+  "address": "0xabc0000000000000000000000000000000000000",
+  "direction": "any",
+  "tokens": null,
+  "window": {
+    "from_block": 18600000,
+    "to_block": 18600500
+  }
+}
+```
+
+Unfiltered success response:
+
+<!-- erc20-transfer-example: response-unfiltered -->
+
+```json
+{
+  "ok": true,
+  "type": "erc20_transfer_search",
+  "network_slug": "eth-mainnet",
+  "address": "0xabc0000000000000000000000000000000000000",
+  "direction": "any",
+  "window": {
+    "from_block": 18600000,
+    "to_block": 18600500
+  },
+  "token_filters": {
+    "requested": {
+      "asset_slugs": [],
+      "contract_addresses": []
+    },
+    "resolved_contract_addresses": []
+  },
+  "transfers": [],
+  "limits": {
+    "max_rows": 5000,
+    "truncated": false
+  }
+}
+```
+
+Asset slug filter request:
+
+<!-- erc20-transfer-example: request-asset-slug -->
+
+```json
+{
+  "network_slug": "eth-mainnet",
+  "address": "0xabc0000000000000000000000000000000000000",
+  "direction": "any",
+  "tokens": {
+    "asset_slugs": ["usdc"],
+    "contract_addresses": []
+  },
+  "window": {
+    "from_block": 18600000,
+    "to_block": 18600500
+  }
+}
+```
+
+Asset slug filter success response:
+
+<!-- erc20-transfer-example: response-asset-slug -->
+
+```json
+{
+  "ok": true,
+  "type": "erc20_transfer_search",
+  "network_slug": "eth-mainnet",
+  "address": "0xabc0000000000000000000000000000000000000",
+  "direction": "any",
+  "window": {
+    "from_block": 18600000,
+    "to_block": 18600500
+  },
+  "token_filters": {
+    "requested": {
+      "asset_slugs": ["usdc"],
+      "contract_addresses": []
+    },
+    "resolved_contract_addresses": [
+      {
+        "contract_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "asset_slug": "usdc",
+        "symbol": "USDC",
+        "decimals": 6,
+        "source": "asset_slug"
+      }
+    ]
+  },
+  "transfers": [],
+  "limits": {
+    "max_rows": 5000,
+    "truncated": false
+  }
+}
+```
+
+Contract address filter request:
+
+<!-- erc20-transfer-example: request-contract-address -->
+
+```json
+{
+  "network_slug": "eth-mainnet",
+  "address": "0xabc0000000000000000000000000000000000000",
+  "direction": "any",
+  "tokens": {
+    "asset_slugs": [],
+    "contract_addresses": [
+      "0x1111111111111111111111111111111111111111"
+    ]
+  },
+  "window": {
+    "from_block": 18600000,
+    "to_block": 18600500
+  }
+}
+```
+
+Contract address filter success response:
+
+<!-- erc20-transfer-example: response-contract-address -->
+
+```json
+{
+  "ok": true,
+  "type": "erc20_transfer_search",
+  "network_slug": "eth-mainnet",
+  "address": "0xabc0000000000000000000000000000000000000",
+  "direction": "any",
+  "window": {
+    "from_block": 18600000,
+    "to_block": 18600500
+  },
+  "token_filters": {
+    "requested": {
+      "asset_slugs": [],
+      "contract_addresses": [
+        "0x1111111111111111111111111111111111111111"
+      ]
+    },
+    "resolved_contract_addresses": [
+      {
+        "contract_address": "0x1111111111111111111111111111111111111111",
+        "asset_slug": null,
+        "symbol": null,
+        "decimals": null,
+        "source": "contract_address"
+      }
+    ]
+  },
+  "transfers": [],
+  "limits": {
+    "max_rows": 5000,
+    "truncated": false
+  }
+}
+```
+
+Mixed filter request:
+
+<!-- erc20-transfer-example: request-mixed-filters -->
 
 ```json
 {
@@ -954,31 +1178,9 @@ or enrich prices for this endpoint.
 }
 ```
 
-Fields:
+Mixed filter success response:
 
-| Field | Type | Notes |
-| ----- | ---- | ----- |
-| `network_slug` | string | Required. Currently only `eth-mainnet`. |
-| `address` | string | Required EVM address, normalized to lowercase in execution and response. |
-| `direction` | string | Required. One of `any`, `from`, or `to`. |
-| `tokens.asset_slugs` | array of strings | Optional exact catalog slugs. Each must resolve to an ERC-20 contract on `network_slug`. |
-| `tokens.contract_addresses` | array of strings | Optional ERC-20 contract addresses. Unknown contracts are valid filters. |
-| `window.from_block` / `window.to_block` | integers | Block window. |
-| `window.from_timestamp` / `window.to_timestamp` | strings | Timestamp window alternative. |
-| `window.lookback_seconds` / `window.to` | integer/string | Lookback alternative. `to` is currently `latest`. |
-
-`tokens` may be omitted, `null`, or `{}` for an unfiltered ERC-20 transfer
-search. Mother API normalizes and deduplicates resolved and explicit contract
-addresses before calling Bigwig.
-
-Public limits:
-
-| Limit | Maximum |
-| ----- | ------- |
-| Unique token filters after resolution | 20 |
-| Returned rows | 5,000 |
-
-**Response — `200 OK`:**
+<!-- erc20-transfer-example: response-mixed-filters -->
 
 ```json
 {
@@ -1033,11 +1235,237 @@ Public limits:
         "decimal": "12.5"
       },
       "direction": "from"
+    },
+    {
+      "block_number": 18600002,
+      "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000002",
+      "log_index": 13,
+      "token": {
+        "contract_address": "0x1111111111111111111111111111111111111111",
+        "asset_slug": null,
+        "symbol": null,
+        "decimals": null
+      },
+      "from": "0x3333333333333333333333333333333333333333",
+      "to": "0xabc0000000000000000000000000000000000000",
+      "amount": {
+        "raw": "1000000",
+        "decimal": null
+      },
+      "direction": "to"
     }
   ],
   "limits": {
     "max_rows": 5000,
     "truncated": false
+  }
+}
+```
+
+Native asset rejection request:
+
+<!-- erc20-transfer-example: request-native-asset-rejection -->
+
+```json
+{
+  "network_slug": "eth-mainnet",
+  "address": "0xabc0000000000000000000000000000000000000",
+  "direction": "any",
+  "tokens": {
+    "asset_slugs": ["ethereum"],
+    "contract_addresses": []
+  },
+  "window": {
+    "from_block": 18600000,
+    "to_block": 18600500
+  }
+}
+```
+
+Native asset rejection response:
+
+<!-- erc20-transfer-example: error-native-asset-rejection -->
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "asset_not_erc20_on_network",
+    "message": "Asset is not an ERC-20 token on the requested network."
+  }
+}
+```
+
+Unknown slug rejection request:
+
+<!-- erc20-transfer-example: request-unknown-slug-rejection -->
+
+```json
+{
+  "network_slug": "eth-mainnet",
+  "address": "0xabc0000000000000000000000000000000000000",
+  "direction": "any",
+  "tokens": {
+    "asset_slugs": ["missing-but-syntactically-valid"],
+    "contract_addresses": []
+  },
+  "window": {
+    "from_block": 18600000,
+    "to_block": 18600500
+  }
+}
+```
+
+Unknown slug rejection response:
+
+<!-- erc20-transfer-example: error-unknown-slug-rejection -->
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "asset_not_found",
+    "message": "Asset was not found."
+  }
+}
+```
+
+Too many filters request:
+
+<!-- erc20-transfer-example: request-too-many-filters -->
+
+```json
+{
+  "network_slug": "eth-mainnet",
+  "address": "0xabc0000000000000000000000000000000000000",
+  "direction": "any",
+  "tokens": {
+    "asset_slugs": [],
+    "contract_addresses": [
+      "0x0000000000000000000000000000000000000001",
+      "0x0000000000000000000000000000000000000002",
+      "0x0000000000000000000000000000000000000003",
+      "0x0000000000000000000000000000000000000004",
+      "0x0000000000000000000000000000000000000005",
+      "0x0000000000000000000000000000000000000006",
+      "0x0000000000000000000000000000000000000007",
+      "0x0000000000000000000000000000000000000008",
+      "0x0000000000000000000000000000000000000009",
+      "0x000000000000000000000000000000000000000a",
+      "0x000000000000000000000000000000000000000b",
+      "0x000000000000000000000000000000000000000c",
+      "0x000000000000000000000000000000000000000d",
+      "0x000000000000000000000000000000000000000e",
+      "0x000000000000000000000000000000000000000f",
+      "0x0000000000000000000000000000000000000010",
+      "0x0000000000000000000000000000000000000011",
+      "0x0000000000000000000000000000000000000012",
+      "0x0000000000000000000000000000000000000013",
+      "0x0000000000000000000000000000000000000014",
+      "0x0000000000000000000000000000000000000015"
+    ]
+  },
+  "window": {
+    "from_block": 18600000,
+    "to_block": 18600500
+  }
+}
+```
+
+Too many filters response:
+
+<!-- erc20-transfer-example: error-too-many-filters -->
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "too_many_token_filters",
+    "message": "Too many token filters were requested."
+  }
+}
+```
+
+Truncated success response:
+
+<!-- erc20-transfer-example: response-truncated -->
+
+```json
+{
+  "ok": true,
+  "type": "erc20_transfer_search",
+  "network_slug": "eth-mainnet",
+  "address": "0xabc0000000000000000000000000000000000000",
+  "direction": "any",
+  "window": {
+    "from_block": 18600000,
+    "to_block": 18600500
+  },
+  "token_filters": {
+    "requested": {
+      "asset_slugs": ["usdc"],
+      "contract_addresses": [
+        "0x1111111111111111111111111111111111111111"
+      ]
+    },
+    "resolved_contract_addresses": [
+      {
+        "contract_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "asset_slug": "usdc",
+        "symbol": "USDC",
+        "decimals": 6,
+        "source": "asset_slug"
+      },
+      {
+        "contract_address": "0x1111111111111111111111111111111111111111",
+        "asset_slug": null,
+        "symbol": null,
+        "decimals": null,
+        "source": "contract_address"
+      }
+    ]
+  },
+  "transfers": [
+    {
+      "block_number": 18600001,
+      "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
+      "log_index": 12,
+      "token": {
+        "contract_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "asset_slug": "usdc",
+        "symbol": "USDC",
+        "decimals": 6
+      },
+      "from": "0xabc0000000000000000000000000000000000000",
+      "to": "0x2222222222222222222222222222222222222222",
+      "amount": {
+        "raw": "12500000",
+        "decimal": "12.5"
+      },
+      "direction": "from"
+    },
+    {
+      "block_number": 18600002,
+      "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000002",
+      "log_index": 13,
+      "token": {
+        "contract_address": "0x1111111111111111111111111111111111111111",
+        "asset_slug": null,
+        "symbol": null,
+        "decimals": null
+      },
+      "from": "0x3333333333333333333333333333333333333333",
+      "to": "0xabc0000000000000000000000000000000000000",
+      "amount": {
+        "raw": "1000000",
+        "decimal": null
+      },
+      "direction": "to"
+    }
+  ],
+  "limits": {
+    "max_rows": 5000,
+    "truncated": true
   }
 }
 ```
@@ -1667,7 +2095,7 @@ Fields:
 | 400  | `invalid_contract_address` | A transfer token `contract_addresses` filter is malformed.          |
 | 400  | `missing_query`         | `q` query parameter is missing or empty after trimming.                |
 | 400  | `query_too_long`        | Trimmed `q` exceeds 128 characters.                                    |
-| 404  | `asset_not_found`       | Asset detail lookup failed, or price-indexer has no requested signal.  |
+| 404  | `asset_not_found`       | Asset detail lookup failed, price-indexer has no requested signal, or a transfer asset slug is unknown. |
 | 404  | `unsupported_network`   | A transfer search request uses a network unsupported by that endpoint. |
 | 422  | `asset_not_available_on_network` | A transfer asset filter exists but is unavailable on the requested network. |
 | 422  | `asset_not_erc20_on_network` | A transfer asset filter is native or not ERC-20 on the requested network. |
