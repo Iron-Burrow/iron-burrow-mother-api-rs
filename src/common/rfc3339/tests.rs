@@ -139,3 +139,13 @@ fn parse_offset_rejects_invalid_layout() {
 fn parse_rfc3339_rejects_single_digit_seconds_before_fraction() {
     assert_eq!(parse_rfc3339("1970-01-01T00:00:0.123Z"), None);
 }
+
+#[test]
+fn rfc3339_parser_accepts_offsets_and_rejects_invalid_values() {
+    assert_eq!(
+        parse_rfc3339("2026-06-25T00:00:00Z"),
+        parse_rfc3339("2026-06-24T19:00:00-05:00")
+    );
+    assert!(parse_rfc3339("2026-02-29T00:00:00Z").is_none());
+    assert!(parse_rfc3339("2026-06-25 00:00:00Z").is_none());
+}

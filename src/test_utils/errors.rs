@@ -1,8 +1,6 @@
 use reqwest::StatusCode;
 use serde_json::Value;
 
-use crate::adapters::http::error::ApiError;
-
 pub(crate) fn assert_public_error(
     status: StatusCode,
     response: &Value,

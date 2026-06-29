@@ -148,7 +148,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "invalid_window",
-            message: message,
+            message,
         }
     }
 
@@ -475,5 +475,12 @@ mod tests {
         assert_eq!(error.len(), 2);
         assert!(error.contains_key("code"));
         assert!(error.contains_key("message"));
+    }
+
+    #[tokio::test]
+    async fn transfer_unsupported_network_uses_not_found_status() {
+        let response = ApiError::transfer_unsupported_network().into_response();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }

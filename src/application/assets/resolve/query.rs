@@ -37,9 +37,7 @@ pub fn normalize_query(value: &str) -> String {
     for character in value.trim().to_lowercase().chars() {
         let folded = fold_common_accent(character);
 
-        if folded.is_ascii_alphanumeric() || folded.is_whitespace() {
-            cleaned.push(folded);
-        } else if folded.is_alphanumeric() {
+        if folded.is_alphanumeric() || folded.is_whitespace() {
             cleaned.push(folded);
         } else {
             cleaned.push(' ');

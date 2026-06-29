@@ -1,6 +1,3 @@
-use std::time::Duration;
-
-use reqwest::{header::RETRY_AFTER, StatusCode, Url};
 use serde::{de, Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, thiserror::Error, Eq, PartialEq)]
@@ -184,6 +181,7 @@ mod tests {
 
     use crate::test_utils::constants::*;
 
+    use reqwest::StatusCode;
     use serde_json::{json, Value};
 
     use crate::adapters::bigwig::{

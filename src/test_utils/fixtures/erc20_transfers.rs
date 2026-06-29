@@ -1,15 +1,19 @@
 use serde_json::{json, Value};
 
 use crate::{
-    adapters::{
-        http::dto::erc20_transfers::Erc20TransferSearchRequest, postgres::GlobalAssetRepository,
-    },
+    adapters::http::dto::erc20_transfers::Erc20TransferSearchRequest,
     application::erc20_transfers::service::{build_command, Erc20TransferSearchCommand},
-    test_utils::{
-        fixtures::global_assets::{global_assets_repository, sample_assets},
-        json::json_object,
-    },
+    test_utils::{fixtures::global_assets::global_assets_repository, json::json_object},
 };
+
+use crate::config::Config;
+
+pub(crate) fn erc20_transfers_enabled_config() -> Config {
+    Config {
+        erc20_transfers_enabled: true,
+        ..Config::default()
+    }
+}
 
 pub(crate) fn valid_erc20_transfers_request_body() -> Value {
     json!({

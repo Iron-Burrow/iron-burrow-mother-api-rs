@@ -1,22 +1,13 @@
-use axum::{
-    body::Body,
-    http::{Request, StatusCode},
-    response::IntoResponse,
-    Router,
-};
+use axum::{http::StatusCode, response::IntoResponse};
 use serde_json::{json, Value};
-use tower::ServiceExt;
 
 use super::*;
+use crate::test_utils::json::json_object;
 use crate::{
-    adapters::http::{
-        dto::filters::{
-            onchain_window::{BlockWindowDTO, OnchainWindowDTO},
-            token_filters::TokenFilterDTO,
-            transfer_direction::TransferDirectionDTO,
-        },
-        router::build_router,
-        types::JsonObject,
+    adapters::http::dto::filters::{
+        onchain_window::{BlockWindowDTO, OnchainWindowDTO},
+        token_filters::TokenFilterDTO,
+        transfer_direction::TransferDirectionDTO,
     },
     application::{
         erc20_transfers::service::{
@@ -27,7 +18,6 @@ use crate::{
             transfer_direction::TransferDirection,
         },
     },
-    common::rfc3339::parse_rfc3339,
     test_utils::{
         errors::assert_public_error,
         fixtures::{
@@ -35,13 +25,10 @@ use crate::{
                 erc20_transfers_command_from_body, erc20_transfers_request_with_tokens_body,
                 erc20_transfers_without_tokens_body, valid_erc20_transfers_request_body,
             },
-            global_assets::{global_assets_repository, sample_assets},
+            global_assets::global_assets_repository,
         },
     },
 };
-use crate::{adapters::postgres::global_assets::GlobalAssetRepository, config::Config};
-
-use crate::test_utils::json::json_object;
 
 const TEST_MAX_TOKEN_FILTERS: u64 = 20;
 
@@ -235,4 +222,23 @@ async fn command_enforces_final_token_filter_limit_after_dedupe() {
 
         assert_public_error(status, &json, expected_status, expected_code);
     }
+}
+
+#[tokio::test]
+async fn command_token_filters_have_no_asset_slug_field() {
+    let command = erc20_transfers_command_from_body(
+        valid_erc20_transfers_request_body(),
+        TEST_MAX_TOKEN_FILTERS,
+    )
+    .await;
+    let debug = format!("{:?}", command.tokens);
+
+    assert!(!debug.contains("asset_slugs"));
+    assert_eq!(
+        command.tokens.contract_addresses,
+        [
+            "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+            "0x1111111111111111111111111111111111111111",
+        ]
+    );
 }

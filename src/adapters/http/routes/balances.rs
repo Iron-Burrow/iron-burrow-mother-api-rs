@@ -275,24 +275,21 @@ mod tests {
         net::{TcpListener, TcpStream},
     };
 
-    use axum::{
-        body::Body,
-        http::{Request, StatusCode},
-        response::IntoResponse,
-        Router,
-    };
+    use axum::{http::StatusCode, response::IntoResponse, Router};
     use serde_json::{json, Value};
-    use tower::ServiceExt;
 
-    use crate::adapters::{bigwig::client::BigwigClient, http::router::build_router};
-    use crate::test_utils::fixtures::global_assets::sample_assets;
-    use crate::{
-        adapters::postgres::errors::RepositoryError, test_utils::errors::assert_public_error,
+    use crate::application::balances::service::BalancePlanIssue;
+    use crate::test_utils::{
+        errors::assert_public_error, fixtures::global_assets::sample_assets, http::post_raw,
     };
     use crate::{
-        adapters::postgres::global_assets::GlobalAssetRepository,
-        adapters::price_indexer::PriceIndexerClient,
-        application::balances::service::BalancePlanIssue, config::Config,
+        adapters::{
+            bigwig::client::BigwigClient,
+            http::router::build_router,
+            postgres::{errors::RepositoryError, global_assets::GlobalAssetRepository},
+            price_indexer::PriceIndexerClient,
+        },
+        config::Config,
     };
 
     use super::*;
@@ -969,29 +966,6 @@ mod tests {
             serde_json::to_vec(&body).unwrap(),
         )
         .await
-    }
-
-    async fn post_raw(
-        app: Router,
-        uri: &str,
-        content_type: Option<&str>,
-        body: Vec<u8>,
-    ) -> (StatusCode, Value) {
-        let mut request = Request::builder().method("POST").uri(uri);
-        if let Some(content_type) = content_type {
-            request = request.header("content-type", content_type);
-        }
-        let response = app
-            .oneshot(request.body(Body::from(body)).unwrap())
-            .await
-            .unwrap();
-        let status = response.status();
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let json = serde_json::from_slice(&body).unwrap();
-
-        (status, json)
     }
 
     async fn response_error_code(response: axum::response::Response) -> String {
