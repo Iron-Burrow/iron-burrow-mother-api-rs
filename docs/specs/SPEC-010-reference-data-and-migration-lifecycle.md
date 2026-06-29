@@ -5,7 +5,7 @@ last_reviewed: 2026-06-25
 agent_edit_policy: update_when_relevant
 ---
 
-# SPEC-009 - Reference Data and Migration Lifecycle
+# SPEC-010 - Reference Data and Migration Lifecycle
 
 Draft implementation specification for separating Mother API schema migrations,
 canonical reference data, and development-only fixtures.
