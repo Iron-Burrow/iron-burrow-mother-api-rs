@@ -361,6 +361,31 @@ mod tests {
                 BigwigError::RequestValidation(BigwigRequestValidationCode::RequestTooLarge),
             ),
             (
+                StatusCode::BAD_REQUEST,
+                "invalid_extraction_request",
+                BigwigError::InvalidExtractionRequest,
+            ),
+            (
+                StatusCode::BAD_REQUEST,
+                "invalid_address",
+                BigwigError::InvalidAddress,
+            ),
+            (
+                StatusCode::BAD_REQUEST,
+                "invalid_contract_address",
+                BigwigError::InvalidContractAddress,
+            ),
+            (
+                StatusCode::BAD_REQUEST,
+                "invalid_direction",
+                BigwigError::InvalidDirection,
+            ),
+            (
+                StatusCode::BAD_REQUEST,
+                "invalid_window_shape",
+                BigwigError::InvalidWindowShape,
+            ),
+            (
                 StatusCode::UNAUTHORIZED,
                 "unauthorized",
                 BigwigError::Unauthorized,
@@ -381,6 +406,41 @@ mod tests {
                 BigwigError::NoRouteSatisfiesOperation,
             ),
             (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "reversed_block_range",
+                BigwigError::ReversedBlockRange,
+            ),
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "block_out_of_range",
+                BigwigError::BlockOutOfRange,
+            ),
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "reversed_timestamp_range",
+                BigwigError::ReversedTimestampRange,
+            ),
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "timestamp_out_of_range",
+                BigwigError::TimestampOutOfRange,
+            ),
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "lookback_too_large",
+                BigwigError::LookbackTooLarge,
+            ),
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "range_too_large",
+                BigwigError::RangeTooLarge,
+            ),
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "too_many_contract_addresses",
+                BigwigError::TooManyContractAddresses,
+            ),
+            (
                 StatusCode::TOO_MANY_REQUESTS,
                 "gateway_rate_limited",
                 BigwigError::RateLimited {
@@ -399,6 +459,11 @@ mod tests {
                 StatusCode::GATEWAY_TIMEOUT,
                 "provider_timeout",
                 BigwigError::ProviderTimeout,
+            ),
+            (
+                StatusCode::GATEWAY_TIMEOUT,
+                "extraction_timeout",
+                BigwigError::ExtractionTimeout,
             ),
             (
                 StatusCode::INTERNAL_SERVER_ERROR,

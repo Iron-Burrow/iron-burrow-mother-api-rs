@@ -138,7 +138,7 @@ struct Erc20TransfersApiDoc;
         ),
         (
             status = 504,
-            description = "Upstream transfer provider timed out",
+            description = "Transfer extraction or upstream provider timed out",
             body = ErrorResponse
         )
     )
@@ -247,6 +247,11 @@ fn add_erc20_transfer_examples(document: &mut utoipa::openapi::OpenApi) {
                 "Unique token-filter limit exceeded",
                 erc20_transfer_examples::too_many_filters_response(),
             ),
+            (
+                "window_too_large",
+                "Search window exceeds the public limit",
+                erc20_transfer_examples::window_too_large_response(),
+            ),
         ],
     );
     add_response_examples(
@@ -279,11 +284,18 @@ fn add_erc20_transfer_examples(document: &mut utoipa::openapi::OpenApi) {
     add_response_examples(
         operation,
         "504",
-        [(
-            "upstream_provider_timeout",
-            "Upstream provider timeout",
-            erc20_transfer_examples::upstream_provider_timeout_response(),
-        )],
+        [
+            (
+                "upstream_provider_timeout",
+                "Upstream provider timeout",
+                erc20_transfer_examples::upstream_provider_timeout_response(),
+            ),
+            (
+                "extraction_timeout",
+                "Overall extraction timeout",
+                erc20_transfer_examples::extraction_timeout_response(),
+            ),
+        ],
     );
 }
 
@@ -445,6 +457,10 @@ mod tests {
             erc20_transfer_examples::too_many_filters_response()
         );
         assert_eq!(
+            response_example_value(responses, "422", "window_too_large"),
+            erc20_transfer_examples::window_too_large_response()
+        );
+        assert_eq!(
             response_example_value(responses, "500", "internal_error"),
             erc20_transfer_examples::internal_error_response()
         );
@@ -459,6 +475,10 @@ mod tests {
         assert_eq!(
             response_example_value(responses, "504", "upstream_provider_timeout"),
             erc20_transfer_examples::upstream_provider_timeout_response()
+        );
+        assert_eq!(
+            response_example_value(responses, "504", "extraction_timeout"),
+            erc20_transfer_examples::extraction_timeout_response()
         );
     }
 

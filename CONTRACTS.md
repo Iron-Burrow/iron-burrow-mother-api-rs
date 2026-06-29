@@ -981,6 +981,8 @@ Public limits:
 
 | Limit | Maximum |
 | ----- | ------- |
+| Block window on `eth-mainnet` | 5,000 inclusive blocks |
+| Lookback window | 86,400 seconds |
 | Unique token filters after resolution and deduplication | 20 |
 | Returned rows | 5,000 |
 
@@ -1502,6 +1504,8 @@ Request-wide errors:
   on `network_slug`.
 - `422 asset_not_erc20_on_network` — an asset maps to native or non-ERC-20
   support on `network_slug`.
+- `422 window_too_large` — the requested block, timestamp, or lookback
+  window exceeds the public extraction limit.
 - `503 asset_contract_mapping_unavailable` — catalog resolution or metadata
   enrichment is temporarily unavailable.
 - `400 invalid_contract_address` — a contract address is malformed.
@@ -1511,6 +1515,8 @@ Request-wide errors:
   an unavailable dependency class.
 - `502 upstream_provider_error` — the upstream RPC provider failed.
 - `504 upstream_provider_timeout` — the upstream RPC provider timed out.
+- `504 extraction_timeout` — the overall synchronous extraction deadline was
+  exceeded.
 - `500 internal_error` — Mother API detects inconsistent catalog or response
   shaping state.
 
@@ -2099,6 +2105,7 @@ Fields:
 | 404  | `unsupported_network`   | A transfer search request uses a network unsupported by that endpoint. |
 | 422  | `asset_not_available_on_network` | A transfer asset filter exists but is unavailable on the requested network. |
 | 422  | `asset_not_erc20_on_network` | A transfer asset filter is native or not ERC-20 on the requested network. |
+| 422  | `window_too_large`     | A transfer search window exceeds the public extraction limit.           |
 | 422  | `too_many_token_filters` | A transfer search exceeds its unique token-filter limit.              |
 | 502  | `upstream_auth_failed`  | Mother API could not authenticate to price-indexer.                    |
 | 502  | `price_indexer_error`   | Price-indexer failed while handling a valid signal request.            |
@@ -2107,8 +2114,9 @@ Fields:
 | 503  | `database_unavailable`  | `DATABASE_URL` is unset or Postgres is unreachable.                    |
 | 503  | `asset_network_map_unavailable` | The balance catalog is unconfigured or temporarily unavailable. |
 | 503  | `asset_contract_mapping_unavailable` | Transfer asset contract mapping is unconfigured or temporarily unavailable. |
-| 503  | `extraction_unavailable` | Bigwig ERC-20 transfer extraction is disabled, unconfigured, unreachable, or malformed after the Mother route gate is enabled. |
+| 503  | `extraction_unavailable` | Bigwig ERC-20 transfer extraction is disabled, unconfigured, unreachable, or unavailable after the Mother route gate is enabled. |
 | 503  | `price_indexer_unavailable` | Price-indexer is unconfigured, unreachable, or timed out.          |
+| 504  | `extraction_timeout`   | Bigwig exceeded the overall synchronous extraction deadline.            |
 | 504  | `upstream_provider_timeout` | Bigwig's upstream RPC provider timed out during transfer extraction. |
 | 400  | `unsupported_prediction_subject` | Requested prediction country is unsupported for the event.    |
 | 503  | `prediction_provider_unavailable` | DIS reports the prediction provider is unavailable or failed. |

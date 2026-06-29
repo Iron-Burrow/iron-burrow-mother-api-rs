@@ -152,6 +152,14 @@ impl ApiError {
         }
     }
 
+    pub fn window_too_large() -> Self {
+        Self {
+            status: StatusCode::UNPROCESSABLE_ENTITY,
+            code: "window_too_large",
+            message: "Transfer search window exceeds the public limit.".to_string(),
+        }
+    }
+
     pub fn invalid_asset_slug() -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
@@ -277,6 +285,14 @@ impl ApiError {
             status: StatusCode::SERVICE_UNAVAILABLE,
             code: "extraction_unavailable",
             message: "ERC-20 transfer extraction is temporarily unavailable.".to_string(),
+        }
+    }
+
+    pub fn extraction_timeout() -> Self {
+        Self {
+            status: StatusCode::GATEWAY_TIMEOUT,
+            code: "extraction_timeout",
+            message: "ERC-20 transfer extraction timed out.".to_string(),
         }
     }
 

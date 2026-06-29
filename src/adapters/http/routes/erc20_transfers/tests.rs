@@ -286,6 +286,84 @@ async fn bigwig_provider_timeout_returns_upstream_provider_timeout() {
 }
 
 #[tokio::test]
+async fn bigwig_range_too_large_returns_window_too_large() {
+    let Some((base_url, handle)) = spawn_bigwig_server(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        bigwig_error_body("range_too_large"),
+    ) else {
+        return;
+    };
+    let client = BigwigClient::new(&base_url, "test-token", 2_000).unwrap();
+
+    let (status, response) = post_json(
+        transfers_router_with_bigwig_client(erc20_transfers_enabled_config(), client),
+        "/v1/erc20-transfers/search",
+        valid_erc20_transfers_request_body(),
+    )
+    .await;
+
+    assert_public_error(
+        status,
+        &response,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "window_too_large",
+    );
+    handle.join().unwrap();
+}
+
+#[tokio::test]
+async fn bigwig_extraction_timeout_returns_extraction_timeout() {
+    let Some((base_url, handle)) = spawn_bigwig_server(
+        StatusCode::GATEWAY_TIMEOUT,
+        bigwig_error_body("extraction_timeout"),
+    ) else {
+        return;
+    };
+    let client = BigwigClient::new(&base_url, "test-token", 2_000).unwrap();
+
+    let (status, response) = post_json(
+        transfers_router_with_bigwig_client(erc20_transfers_enabled_config(), client),
+        "/v1/erc20-transfers/search",
+        valid_erc20_transfers_request_body(),
+    )
+    .await;
+
+    assert_public_error(
+        status,
+        &response,
+        StatusCode::GATEWAY_TIMEOUT,
+        "extraction_timeout",
+    );
+    handle.join().unwrap();
+}
+
+#[tokio::test]
+async fn impossible_bigwig_validation_error_returns_internal_error() {
+    let Some((base_url, handle)) = spawn_bigwig_server(
+        StatusCode::BAD_REQUEST,
+        bigwig_error_body("invalid_extraction_request"),
+    ) else {
+        return;
+    };
+    let client = BigwigClient::new(&base_url, "test-token", 2_000).unwrap();
+
+    let (status, response) = post_json(
+        transfers_router_with_bigwig_client(erc20_transfers_enabled_config(), client),
+        "/v1/erc20-transfers/search",
+        valid_erc20_transfers_request_body(),
+    )
+    .await;
+
+    assert_public_error(
+        status,
+        &response,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "internal_error",
+    );
+    handle.join().unwrap();
+}
+
+#[tokio::test]
 async fn bigwig_transport_failure_returns_extraction_unavailable() {
     let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
         return;

@@ -15,14 +15,27 @@ pub(super) fn map_reqwest_error(error: reqwest::Error) -> BigwigError {
 pub enum BigwigError {
     Transport,
     Timeout,
+    InvalidExtractionRequest,
     Unauthorized,
     UnsupportedNetwork,
     NetworkNotEnabledForOperation,
     NoRouteSatisfiesOperation,
     RateLimited { retry_after_seconds: Option<u64> },
+    InvalidAddress,
+    InvalidContractAddress,
+    InvalidDirection,
+    InvalidWindowShape,
+    ReversedBlockRange,
+    BlockOutOfRange,
+    ReversedTimestampRange,
+    TimestampOutOfRange,
+    LookbackTooLarge,
+    RangeTooLarge,
+    TooManyContractAddresses,
     RpcError,
     ProviderUnavailable { retry_after_seconds: Option<u64> },
     ProviderTimeout,
+    ExtractionTimeout,
     InternalError,
     RequestValidation(BigwigRequestValidationCode),
     MalformedSuccessResponse,
@@ -101,6 +114,15 @@ pub(super) fn map_error_response(
         (StatusCode::BAD_REQUEST, "request_too_large") => {
             BigwigError::RequestValidation(BigwigRequestValidationCode::RequestTooLarge)
         }
+        (StatusCode::BAD_REQUEST, "invalid_extraction_request") => {
+            BigwigError::InvalidExtractionRequest
+        }
+        (StatusCode::BAD_REQUEST, "invalid_address") => BigwigError::InvalidAddress,
+        (StatusCode::BAD_REQUEST, "invalid_contract_address") => {
+            BigwigError::InvalidContractAddress
+        }
+        (StatusCode::BAD_REQUEST, "invalid_direction") => BigwigError::InvalidDirection,
+        (StatusCode::BAD_REQUEST, "invalid_window_shape") => BigwigError::InvalidWindowShape,
         (StatusCode::UNAUTHORIZED, "unauthorized") => BigwigError::Unauthorized,
         (StatusCode::NOT_FOUND, "unsupported_network") => BigwigError::UnsupportedNetwork,
         (StatusCode::UNPROCESSABLE_ENTITY, "network_not_enabled_for_operation") => {
@@ -108,6 +130,21 @@ pub(super) fn map_error_response(
         }
         (StatusCode::UNPROCESSABLE_ENTITY, "no_route_satisfies_operation") => {
             BigwigError::NoRouteSatisfiesOperation
+        }
+        (StatusCode::UNPROCESSABLE_ENTITY, "reversed_block_range") => {
+            BigwigError::ReversedBlockRange
+        }
+        (StatusCode::UNPROCESSABLE_ENTITY, "block_out_of_range") => BigwigError::BlockOutOfRange,
+        (StatusCode::UNPROCESSABLE_ENTITY, "reversed_timestamp_range") => {
+            BigwigError::ReversedTimestampRange
+        }
+        (StatusCode::UNPROCESSABLE_ENTITY, "timestamp_out_of_range") => {
+            BigwigError::TimestampOutOfRange
+        }
+        (StatusCode::UNPROCESSABLE_ENTITY, "lookback_too_large") => BigwigError::LookbackTooLarge,
+        (StatusCode::UNPROCESSABLE_ENTITY, "range_too_large") => BigwigError::RangeTooLarge,
+        (StatusCode::UNPROCESSABLE_ENTITY, "too_many_contract_addresses") => {
+            BigwigError::TooManyContractAddresses
         }
         (StatusCode::TOO_MANY_REQUESTS, "gateway_rate_limited") => BigwigError::RateLimited {
             retry_after_seconds,
@@ -119,6 +156,7 @@ pub(super) fn map_error_response(
             }
         }
         (StatusCode::GATEWAY_TIMEOUT, "provider_timeout") => BigwigError::ProviderTimeout,
+        (StatusCode::GATEWAY_TIMEOUT, "extraction_timeout") => BigwigError::ExtractionTimeout,
         (StatusCode::INTERNAL_SERVER_ERROR, "internal_error") => BigwigError::InternalError,
         _ => BigwigError::UnexpectedErrorResponse {
             status: status.as_u16(),
