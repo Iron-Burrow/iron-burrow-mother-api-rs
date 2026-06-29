@@ -1,9 +1,6 @@
 use std::collections::HashSet;
 
-use axum::{
-    extract::{rejection::JsonRejection, State},
-    Json,
-};
+use axum::{body::Bytes, extract::State, http::HeaderMap, Json};
 use tracing::warn;
 
 use crate::{
@@ -11,9 +8,11 @@ use crate::{
         dto::balances::{
             BalanceAccountRequest, BalanceAsOfRequest, BalanceAssetRequest,
             BalanceResponseAssembler, BalanceResponseAssemblerError, BulkBalanceRequest,
-            BulkBalanceResponse, ExtraFields, SingleBalanceRequest, SingleBalanceResponse,
+            BulkBalanceResponse, SingleBalanceRequest, SingleBalanceResponse,
         },
         error::ApiError,
+        json_body::parse_json_object_body,
+        validation::ensure_json_content_type,
     },
     application::balances::{
         catalog::CatalogBalanceTargetResolver,
@@ -30,15 +29,13 @@ use crate::{
 const MAX_ACCOUNTS: usize = 50;
 const MAX_ASSETS: usize = 20;
 const MAX_RESOLUTION_ITEMS: usize = 1_000;
-const RESERVED_NETWORK_ALIAS_FIELDS: [&str; 3] = ["chain", "chain_id", "chain_slug"];
 
 pub async fn resolve_single_balance(
     State(state): State<AppState>,
-    body: Result<Json<SingleBalanceRequest>, JsonRejection>,
+    headers: HeaderMap,
+    body: Bytes,
 ) -> Result<Json<SingleBalanceResponse>, ApiError> {
-    let Json(request) = body.map_err(|_| ApiError::invalid_request())?;
-    reject_reserved_request_fields(&request.extra)?;
-    reject_reserved_account_fields(&request.account)?;
+    let request = parse_single_balance_request(&headers, &body)?;
     let request = validate_request(
         request.as_of,
         vec![request.account],
@@ -55,13 +52,10 @@ pub async fn resolve_single_balance(
 
 pub async fn resolve_bulk_balances(
     State(state): State<AppState>,
-    body: Result<Json<BulkBalanceRequest>, JsonRejection>,
+    headers: HeaderMap,
+    body: Bytes,
 ) -> Result<Json<BulkBalanceResponse>, ApiError> {
-    let Json(request) = body.map_err(|_| ApiError::invalid_request())?;
-    reject_reserved_request_fields(&request.extra)?;
-    for account in &request.accounts {
-        reject_reserved_account_fields(account)?;
-    }
+    let request = parse_bulk_balance_request(&headers, &body)?;
     let request = validate_request(
         request.as_of,
         request.accounts,
@@ -73,23 +67,24 @@ pub async fn resolve_bulk_balances(
     Ok(Json(BalanceResponseAssembler.bulk(snapshot)))
 }
 
-fn reject_reserved_request_fields(extra: &ExtraFields) -> Result<(), ApiError> {
-    reject_reserved_fields(extra)
+fn parse_single_balance_request(
+    headers: &HeaderMap,
+    body: &[u8],
+) -> Result<SingleBalanceRequest, ApiError> {
+    ensure_json_content_type(headers).map_err(|_| ApiError::invalid_request())?;
+    let request = parse_json_object_body(body).map_err(|_| ApiError::invalid_request())?;
+
+    SingleBalanceRequest::try_from(request)
 }
 
-fn reject_reserved_account_fields(account: &BalanceAccountRequest) -> Result<(), ApiError> {
-    reject_reserved_fields(&account.extra)
-}
+fn parse_bulk_balance_request(
+    headers: &HeaderMap,
+    body: &[u8],
+) -> Result<BulkBalanceRequest, ApiError> {
+    ensure_json_content_type(headers).map_err(|_| ApiError::invalid_request())?;
+    let request = parse_json_object_body(body).map_err(|_| ApiError::invalid_request())?;
 
-fn reject_reserved_fields(extra: &ExtraFields) -> Result<(), ApiError> {
-    if RESERVED_NETWORK_ALIAS_FIELDS
-        .iter()
-        .any(|field| extra.contains_key(*field))
-    {
-        return Err(ApiError::invalid_request());
-    }
-
-    Ok(())
+    BulkBalanceRequest::try_from(request)
 }
 
 fn validate_request(
@@ -339,7 +334,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn single_route_returns_complete_snapshot_and_ignores_unknown_fields() {
+    async fn single_route_returns_complete_snapshot() {
         let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
             "eth-mainnet",
             1,
@@ -358,16 +353,14 @@ mod tests {
         };
         let app = balance_app(Some(&bigwig_url), Some(&price_url));
         let body = json!({
-            "as_of": {"kind": "latest", "future": true},
+            "as_of": {"kind": "latest"},
             "account": {
                 "network_slug": "eth-mainnet",
                 "address": "0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD",
-                "client_ref": "primary",
-                "label": "ignored"
+                "client_ref": "primary"
             },
             "quote_currency": " mxn ",
-            "assets": [{"asset_slug": "ethereum", "symbol": "ETH"}],
-            "future": {"ignored": true}
+            "assets": [{"asset_slug": "ethereum"}]
         });
 
         let (status, response) = post_json(app, "/v1/balances", body).await;
@@ -503,8 +496,14 @@ mod tests {
                 br#"{"as_of":{"kind":"latest"},"account":[],"quote_currency":"USD","assets":[]}"#
                     .as_slice(),
             ),
+            (Some("application/json"), br#"[]"#.as_slice()),
             (
                 None,
+                br#"{"as_of":{"kind":"latest"},"account":{"network_slug":"eth-mainnet","address":"0x1111111111111111111111111111111111111111"},"quote_currency":"USD","assets":[{"asset_slug":"ethereum"}]}"#
+                    .as_slice(),
+            ),
+            (
+                Some("text/plain"),
                 br#"{"as_of":{"kind":"latest"},"account":{"network_slug":"eth-mainnet","address":"0x1111111111111111111111111111111111111111"},"quote_currency":"USD","assets":[{"asset_slug":"ethereum"}]}"#
                     .as_slice(),
             ),
@@ -519,6 +518,66 @@ mod tests {
                 StatusCode::BAD_REQUEST,
                 "invalid_request",
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn balance_routes_reject_unknown_fields_with_unknown_field() {
+        let app = balance_app(None, None);
+        let single_cases = [
+            {
+                let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+                body["future"] = json!(true);
+                body
+            },
+            {
+                let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+                body["as_of"]["observed_at"] = json!("2026-06-18T12:00:00Z");
+                body
+            },
+            {
+                let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+                body["account"]["label"] = json!("primary");
+                body
+            },
+            {
+                let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+                body["assets"][0]["symbol"] = json!("ETH");
+                body
+            },
+        ];
+
+        for body in single_cases {
+            let (status, response) = post_json(app.clone(), "/v1/balances", body).await;
+            assert_public_error(status, &response, StatusCode::BAD_REQUEST, "unknown_field");
+        }
+
+        let bulk_cases = [
+            {
+                let mut body = bulk_body("eth-mainnet", ACCOUNT_A, "ethereum");
+                body["future"] = json!(true);
+                body
+            },
+            {
+                let mut body = bulk_body("eth-mainnet", ACCOUNT_A, "ethereum");
+                body["as_of"]["observed_at"] = json!("2026-06-18T12:00:00Z");
+                body
+            },
+            {
+                let mut body = bulk_body("eth-mainnet", ACCOUNT_A, "ethereum");
+                body["accounts"][0]["label"] = json!("primary");
+                body
+            },
+            {
+                let mut body = bulk_body("eth-mainnet", ACCOUNT_A, "ethereum");
+                body["assets"][0]["symbol"] = json!("ETH");
+                body
+            },
+        ];
+
+        for body in bulk_cases {
+            let (status, response) = post_json(app.clone(), "/v1/balances/bulk", body).await;
+            assert_public_error(status, &response, StatusCode::BAD_REQUEST, "unknown_field");
         }
     }
 
@@ -557,8 +616,35 @@ mod tests {
             );
         }
 
+        for field in ["chain", "chain_id", "chain_slug"] {
+            let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+            body["as_of"][field] = json!("eth-mainnet");
+
+            let (status, response) = post_json(app.clone(), "/v1/balances", body).await;
+            assert_public_error(
+                status,
+                &response,
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+            );
+        }
+
+        for field in ["chain", "chain_id", "chain_slug"] {
+            let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+            body["assets"][0][field] = json!("eth-mainnet");
+
+            let (status, response) = post_json(app.clone(), "/v1/balances", body).await;
+            assert_public_error(
+                status,
+                &response,
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+            );
+        }
+
         let mut both_names = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
         both_names["account"]["chain"] = json!("eth-mainnet");
+        both_names["future"] = json!(true);
         let (status, response) = post_json(app.clone(), "/v1/balances", both_names).await;
         assert_public_error(
             status,
@@ -880,7 +966,6 @@ mod tests {
             network_slug: network_slug.to_string(),
             address: address.to_string(),
             client_ref: None,
-            extra: ExtraFields::default(),
         }
     }
 
@@ -914,6 +999,18 @@ mod tests {
                 "network_slug": network_slug,
                 "address": address
             },
+            "quote_currency": "USD",
+            "assets": [{"asset_slug": asset_slug}]
+        })
+    }
+
+    fn bulk_body(network_slug: &str, address: &str, asset_slug: &str) -> Value {
+        json!({
+            "as_of": {"kind": "latest"},
+            "accounts": [{
+                "network_slug": network_slug,
+                "address": address
+            }],
             "quote_currency": "USD",
             "assets": [{"asset_slug": asset_slug}]
         })

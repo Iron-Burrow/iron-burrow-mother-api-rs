@@ -653,11 +653,12 @@ exactly `0x` followed by 40 ASCII hexadecimal characters; EIP-55 checksum
 validation is not required. The response preserves caller-provided address
 casing and `client_ref`.
 
-Unknown JSON fields are ignored except for reserved network alias fields.
-Requests containing `chain`, `chain_id`, or `chain_slug` at the top level,
-under `account`, or under `accounts[]` return `400 invalid_request`. Missing
-required fields, wrong field types, malformed JSON, or a missing/non-JSON
-`Content-Type` also return `400 invalid_request`.
+Unknown JSON fields in balance request objects return `400 unknown_field`.
+Requests containing reserved network alias fields `chain`, `chain_id`, or
+`chain_slug` anywhere in the balance request body return
+`400 invalid_request`. Missing required fields, wrong field types, malformed
+JSON, or a missing/non-JSON `Content-Type` also return
+`400 invalid_request`.
 
 **Request:**
 
@@ -897,6 +898,8 @@ Request-wide errors:
 
 - `400 invalid_request` — malformed/non-JSON body, missing required field,
   wrong field type, or a reserved `chain`/`chain_id`/`chain_slug` alias field.
+- `400 unknown_field` — the request, `as_of`, `account`, `accounts[]`, or
+  `assets[]` object contains an unsupported field.
 - `400 invalid_account` — an address is not exactly `0x` plus 40 ASCII hex
   characters.
 - `400 unsupported_network` — the network is unknown, non-EVM, legacy, or not
@@ -2091,8 +2094,8 @@ Fields:
 | 400  | `duplicate_asset`       | A balance request repeats an exact asset slug. |
 | 400  | `request_too_large`     | A balance request exceeds a public or grouped provider limit. |
 | 400  | `invalid_limit`         | `limit` query parameter is not a positive integer.                     |
-| 400  | `invalid_json`          | A JSON body is malformed, not an object, or sent without JSON content type. |
-| 400  | `unknown_field`         | A strict JSON request object contains an unsupported field.             |
+| 400  | `invalid_json`          | A strict JSON endpoint receives malformed JSON, a non-object body, or missing/non-JSON content type and exposes that specific code; balance endpoints map these failures to `invalid_request`. |
+| 400  | `unknown_field`         | A strict JSON request object, including balance request objects, contains an unsupported field. |
 | 400  | `missing_network_slug`  | A transfer search request omits `network_slug` or sends it empty.       |
 | 400  | `invalid_address`       | A transfer search address is not an EVM address.                       |
 | 400  | `invalid_direction`     | A transfer search direction is not `any`, `from`, or `to`.             |

@@ -1,3 +1,4 @@
+use axum::{body, response::IntoResponse};
 use serde_json::{json, Value};
 
 use super::*;
@@ -6,6 +7,7 @@ use crate::{
         BalanceAccountResult, BalanceEvidence, BalanceItemOutcome, BalanceQuoteOutcome,
     },
     domain::balance_catalog::BalanceTargetKind,
+    test_utils::json::json_object,
 };
 
 #[test]
@@ -17,6 +19,118 @@ fn documented_request_examples_match_public_dto_shape() {
     let bulk = examples::bulk_request();
     let request: BulkBalanceRequest = serde_json::from_value(bulk.clone()).unwrap();
     assert_eq!(serde_json::to_value(request).unwrap(), bulk);
+}
+
+#[tokio::test]
+async fn request_validation_rejects_unknown_fields_with_unknown_field() {
+    for body in [
+        {
+            let mut body = examples::single_request();
+            body["future"] = json!(true);
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["as_of"]["observed_at"] = json!("2026-06-18T12:00:00Z");
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["account"]["label"] = json!("treasury");
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["assets"][0]["symbol"] = json!("ETH");
+            body
+        },
+    ] {
+        assert_api_error_code(
+            SingleBalanceRequest::try_from(json_object(body)),
+            "unknown_field",
+        )
+        .await;
+    }
+
+    for body in [
+        {
+            let mut body = examples::bulk_request();
+            body["future"] = json!(true);
+            body
+        },
+        {
+            let mut body = examples::bulk_request();
+            body["accounts"][0]["label"] = json!("base");
+            body
+        },
+        {
+            let mut body = examples::bulk_request();
+            body["assets"][0]["symbol"] = json!("USDC");
+            body
+        },
+    ] {
+        assert_api_error_code(
+            BulkBalanceRequest::try_from(json_object(body)),
+            "unknown_field",
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn request_validation_rejects_reserved_aliases_with_invalid_request() {
+    for body in [
+        {
+            let mut body = examples::single_request();
+            body["chain"] = json!("eth-mainnet");
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["as_of"]["chain_id"] = json!(1);
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["account"]["chain_slug"] = json!("eth-mainnet");
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["assets"][0]["chain"] = json!("eth-mainnet");
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["future"] = json!({"chain": "eth-mainnet"});
+            body
+        },
+    ] {
+        assert_api_error_code(
+            SingleBalanceRequest::try_from(json_object(body)),
+            "invalid_request",
+        )
+        .await;
+    }
+
+    for body in [
+        {
+            let mut body = examples::bulk_request();
+            body["chain_id"] = json!(1);
+            body
+        },
+        {
+            let mut body = examples::bulk_request();
+            body["accounts"][0]["chain"] = json!("base-mainnet");
+            body
+        },
+    ] {
+        assert_api_error_code(
+            BulkBalanceRequest::try_from(json_object(body)),
+            "invalid_request",
+        )
+        .await;
+    }
 }
 
 #[test]
@@ -329,4 +443,18 @@ fn contains_key(value: &Value, needle: &str) -> bool {
         Value::Array(values) => values.iter().any(|value| contains_key(value, needle)),
         _ => false,
     }
+}
+
+async fn assert_api_error_code<T>(result: Result<T, ApiError>, expected_code: &str)
+where
+    T: std::fmt::Debug,
+{
+    let response = result.unwrap_err().into_response();
+    let body = body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["code"], expected_code);
 }
