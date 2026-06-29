@@ -242,7 +242,7 @@ pub(super) fn parse_optional_public_api_surface_env(
             match trimmed.to_ascii_lowercase().as_str() {
                 "alpha" => Ok(PublicApiSurface::Alpha),
                 "beta" => Ok(PublicApiSurface::Beta),
-                _ => Err(value),
+                _ => Err(trimmed.to_string()),
             }
         }
         Err(_) => Ok(default),

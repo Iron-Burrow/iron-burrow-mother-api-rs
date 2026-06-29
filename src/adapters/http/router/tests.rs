@@ -241,6 +241,29 @@ async fn beta_surface_returns_endpoint_disabled_for_known_non_beta_routes() {
 }
 
 #[tokio::test]
+async fn beta_surface_treats_head_as_disabled_for_known_get_routes() {
+    let response = build_router(AppState::new(beta_config()))
+        .oneshot(
+            Request::builder()
+                .method("HEAD")
+                .uri("/v1/assets/bitcoin")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("application/json")
+    );
+}
+
+#[tokio::test]
 async fn beta_surface_preserves_not_found_for_unknown_routes() {
     let app = build_router(AppState::new(beta_config()));
 

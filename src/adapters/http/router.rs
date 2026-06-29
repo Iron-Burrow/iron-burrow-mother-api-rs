@@ -133,7 +133,7 @@ fn unmatched_status(state: &AppState, method: &Method, path: &str) -> StatusCode
 }
 
 fn is_known_disabled_beta_route(method: &Method, path: &str) -> bool {
-    if method != Method::GET {
+    if !matches!(*method, Method::GET | Method::HEAD) {
         return false;
     }
 

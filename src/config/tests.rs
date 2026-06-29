@@ -102,7 +102,7 @@ fn public_api_surface_config_defaults_trims_and_parses_known_values() {
 
 #[test]
 fn public_api_surface_config_rejects_invalid_values() {
-    std::env::set_var("INVALID_PUBLIC_API_SURFACE", "gamma");
+    std::env::set_var("INVALID_PUBLIC_API_SURFACE", " gamma ");
 
     assert_eq!(
         parse_optional_public_api_surface_env(
