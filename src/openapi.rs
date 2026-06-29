@@ -154,7 +154,7 @@ struct Erc20TransfersApiDoc;
     path = "/v1/balances",
     tag = "balances",
     summary = "Resolve one latest balance snapshot",
-    description = "Resolves one latest EVM balance snapshot for a canonical network_slug and explicit asset slugs. Requests use network_slug, never chain or chain_id. Supported quote_currency values are USD, MXN, USDC, and BTC. The single endpoint accepts exactly one account and up to 20 assets, with at most 1,000 account-asset resolution items.",
+    description = "Resolves one latest EVM balance snapshot for a canonical network_slug and explicit asset slugs. Requests use network_slug, never chain or chain_id. Supported quote_currency values are USD, MXN, USDC, and BTC. The single endpoint accepts exactly one account and up to 20 assets, for at most 20 account-asset resolution items.",
     request_body(
         content = SingleBalanceRequest,
         content_type = "application/json"
@@ -655,7 +655,7 @@ mod tests {
             "/v1/balances",
             "SingleBalanceRequest",
             "SingleBalanceResponse",
-            ["one account", "20 assets", "1,000"],
+            ["one account", "20 assets", "20 account-asset"],
         );
         assert_balance_operation(
             &json,
