@@ -9,18 +9,15 @@ use tracing::warn;
 use crate::{
     adapters::http::{
         dto::balances::{
-            BalanceAccountRequest, BalanceAsOfRequest, BalanceAssetRequest, BulkBalanceRequest,
-            ExtraFields, SingleBalanceRequest,
+            BalanceAccountRequest, BalanceAsOfRequest, BalanceAssetRequest,
+            BalanceResponseAssembler, BalanceResponseAssemblerError, BulkBalanceRequest,
+            BulkBalanceResponse, ExtraFields, SingleBalanceRequest, SingleBalanceResponse,
         },
         error::ApiError,
     },
     application::balances::{
         catalog::CatalogBalanceTargetResolver,
         quote::PriceQuoteClient,
-        response::{
-            BalanceResponseAssembler, BalanceResponseAssemblerError, BulkBalanceResponse,
-            SingleBalanceResponse,
-        },
         service::{
             BalanceSnapshotAccount, BalanceSnapshotRequest, BalanceSnapshotService,
             BalanceSnapshotServiceError,
