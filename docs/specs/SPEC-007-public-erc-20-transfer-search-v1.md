@@ -1,7 +1,7 @@
 ---
 status: accepted
 owner: iron-burrow
-last_reviewed: 2026-06-25
+last_reviewed: 2026-06-29
 agent_edit_policy: update_when_relevant
 external_contract:
   - iron-burrow-infra-gateway/CONTRACTS.md@3.5.2
@@ -11,21 +11,20 @@ external_contract:
 
 # SPEC-007 - Public ERC-20 Transfer Search v1
 
-Accepted implementation spec for a future public Mother API ERC-20 transfer
-search endpoint.
+Accepted implementation spec for the public Mother API ERC-20 transfer search
+endpoint.
 
-This spec does not change the current public contract. `/v1/erc20-transfers/search`
-must not be treated as exposed or promised until the endpoint is implemented
-and [CONTRACTS.md](../../CONTRACTS.md) and [HISTORY.md](../../HISTORY.md) are
-updated in the same change.
+This spec is implemented by `/v1/erc20-transfers/search`. The binding public
+contract lives in [CONTRACTS.md](../../CONTRACTS.md), and implementation
+history is recorded in [HISTORY.md](../../HISTORY.md).
 
 The internal Bigwig transfer-extraction dependency is binding as of
 `iron-burrow-infra-gateway` 3.5.2. Mother API consumes Bigwig's Hub-only,
 authenticated `POST /internal/v1/extractions/erc20-transfers` contract as
 documented in Bigwig `CONTRACTS.md` and accepted Bigwig SPEC-005/SPEC-008.
 Those sources define the internal endpoint path, request and response shapes,
-limits, timeout behavior, all-or-nothing result behavior, and error taxonomy
-that this spec uses.
+limits, timeout behavior, truncation behavior, and error taxonomy that this
+spec uses.
 
 ## Purpose
 
@@ -387,15 +386,13 @@ Bigwig 3.5.2 production extraction limits are:
 | ----- | ------------- | ----- |
 | Max block range | derived | `eth_getLogs.max_block_span * extraction.max_chunks`; current `eth-mainnet` is `500 * 10 = 5,000` inclusive blocks. |
 | Max lookback | `86400` seconds | `lookback_seconds` must be positive and at or below this value. |
-| Max rows | `5000` | Bigwig rejects oversized results as `result_too_large`. |
+| Max rows | `5000` | Bigwig returns at most this many rows and reports whether the success response was truncated. |
 | Max contract addresses | `20` | Applied after Bigwig normalizes and deduplicates `contract_addresses`. |
 | Overall timeout | `30` seconds | Bigwig returns `extraction_timeout` for the whole synchronous operation deadline. |
 | Per-provider timeout | route-defined | Bigwig returns `provider_timeout` for one protected upstream operation. |
 
-Bigwig's row behavior is all-or-nothing. It never returns a successful
-response containing only part of the matching rows for this extractor. If
-unique rows would exceed `max_rows`, Bigwig stops scanning, discards
-accumulated rows, and returns `422 result_too_large`.
+Mother API consumes Bigwig's optional top-level `truncated` success flag for
+this extractor. Missing `truncated` is treated as `false` for compatibility.
 
 ## Response
 
@@ -462,7 +459,8 @@ accumulated rows, and returns `422 result_too_large`.
     }
   ],
   "limits": {
-    "max_rows": 5000
+    "max_rows": 5000,
+    "truncated": false
   }
 }
 ```
@@ -507,9 +505,14 @@ unknown explicit contract addresses, this field is `null` or omitted.
 
 Integer.
 
-Indicates the Bigwig row limit used for the search. Bigwig extraction is
-all-or-nothing: if the search exceeds this limit, Mother API maps Bigwig
-`result_too_large` to an error instead of returning partial rows.
+Indicates the Bigwig row limit used for the search.
+
+### `limits.truncated`
+
+Boolean.
+
+Mirrors Bigwig's success response truncation flag. When `true`, the response
+is valid but capped by the upstream extraction limit.
 
 ## Validation Rules
 
@@ -533,7 +536,7 @@ catalog resolution before calling Bigwig whenever possible.
 | ERC-20 asset mapping lacks a contract address     |         503 | `asset_contract_mapping_unavailable` |
 | Malformed contract address                        |         400 | `invalid_contract_address`           |
 | Too many unique token filters                     |         422 | `too_many_token_filters`             |
-| Bigwig result row limit exceeded                  |         422 | `result_too_large`                   |
+| Bigwig success response reached the row cap       |         200 | `limits.truncated: true`             |
 | Bigwig extraction disabled or unavailable         |         503 | `extraction_unavailable`             |
 | Bigwig extraction deadline exceeded               |         504 | `extraction_timeout`                 |
 | Provider failure                                  |         502 | `upstream_provider_error`            |
@@ -572,7 +575,7 @@ provider diagnostics.
 | `422 lookback_too_large` | `422 window_too_large` |
 | `422 range_too_large` | `422 window_too_large` |
 | `422 too_many_contract_addresses` after Mother limit enforcement | `500 internal_error` |
-| `422 result_too_large` | `422 result_too_large` |
+| Successful response with `truncated: true` | `200 OK` with `limits.truncated: true` |
 | `429 gateway_rate_limited` | `503 extraction_unavailable`; retain `Retry-After` internally |
 | `502 rpc_error` | `502 upstream_provider_error` |
 | `503 provider_unavailable` | `503 extraction_unavailable`; retain `Retry-After` internally |
@@ -710,7 +713,7 @@ automatically promoted into catalog assets.
 
 ## Acceptance Criteria
 
-This accepted spec is implementation-ready for code when:
+The implementation satisfies this accepted spec when:
 
 - the binding Bigwig transfer-extraction contract and version are cited;
 - `asset_slug` filters resolve into concrete ERC-20 contract addresses for the
@@ -738,8 +741,10 @@ This accepted spec is implementation-ready for code when:
 - response enriches known token contracts with catalog metadata;
 - unknown explicit token contracts remain usable but have nullable catalog
   metadata;
+- raw transfer amounts are always returned as strings;
+- decimal transfer amounts are returned only when catalog decimals are known;
+- Bigwig success truncation propagates to `limits.truncated`;
 - public documentation includes examples for asset-slug filters,
   contract-address filters, mixed filters, and unfiltered searches;
-- when the route is implemented, [CONTRACTS.md](../../CONTRACTS.md) documents
-  the public endpoint, response shape, limits, and error responses in the same
-  change.
+- [CONTRACTS.md](../../CONTRACTS.md) documents the public endpoint, response
+  shape, limits, and error responses.

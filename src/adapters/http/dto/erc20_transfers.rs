@@ -55,6 +55,7 @@ pub struct Erc20TransferRow {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 pub struct Erc20TransferSearchLimits {
     pub max_rows: u64,
+    pub truncated: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]

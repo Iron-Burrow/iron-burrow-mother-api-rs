@@ -66,6 +66,8 @@ pub(crate) struct BigwigErc20TransferResponse {
     pub to_timestamp: Option<String>,
     #[serde(default)]
     pub lookback_seconds: Option<u64>,
+    #[serde(default)]
+    pub truncated: bool,
     pub rows_extracted: u64,
     pub results: Vec<BigwigErc20TransferRow>,
 }
@@ -149,6 +151,7 @@ impl TryFrom<BigwigErc20TransferResponse> for Erc20TransferExtractionResult {
         }
 
         Ok(Self {
+            truncated: response.truncated,
             rows: response
                 .results
                 .into_iter()
@@ -316,6 +319,28 @@ mod tests {
             value["window"],
             json!({"lookback_seconds": 600, "to": "latest"})
         );
+    }
+
+    #[test]
+    fn success_response_defaults_missing_truncated_to_false() {
+        let response = serde_json::from_value::<BigwigErc20TransferResponse>(success_body())
+            .expect("fixture should match Bigwig success response");
+        let extraction =
+            Erc20TransferExtractionResult::try_from(response).expect("fixture should convert");
+
+        assert!(!extraction.truncated);
+    }
+
+    #[test]
+    fn success_response_propagates_truncated_flag() {
+        let mut body = success_body();
+        body["truncated"] = json!(true);
+        let response = serde_json::from_value::<BigwigErc20TransferResponse>(body)
+            .expect("fixture should match Bigwig success response");
+        let extraction =
+            Erc20TransferExtractionResult::try_from(response).expect("fixture should convert");
+
+        assert!(extraction.truncated);
     }
 
     #[tokio::test]

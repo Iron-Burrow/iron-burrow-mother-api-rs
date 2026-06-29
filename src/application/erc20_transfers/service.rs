@@ -1,4 +1,7 @@
-use std::{collections::HashSet, future::Future};
+use std::{
+    collections::{HashMap, HashSet},
+    future::Future,
+};
 
 use crate::adapters::postgres::global_assets::GlobalAssetRepository;
 use crate::application::balances::catalog::{
@@ -6,7 +9,9 @@ use crate::application::balances::catalog::{
 };
 use crate::application::filters::onchain_window::OnchainWindow;
 use crate::application::filters::transfer_direction::TransferDirection;
-use crate::domain::balance_catalog::{BalanceTargetKind, CatalogResolverError};
+use crate::domain::balance_catalog::{
+    BalanceTargetKind, CatalogIntegrityIssue, CatalogResolverError,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Erc20TransferSearchInput {
@@ -59,11 +64,21 @@ pub(crate) enum Erc20TransferTokenFilterSource {
 pub(crate) struct Erc20TransferSearchResult {
     pub plan: Erc20TransferSearchPlan,
     pub extraction: Erc20TransferExtractionResult,
+    pub token_metadata: Vec<Erc20TransferTokenCatalogMetadata>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Erc20TransferTokenCatalogMetadata {
+    pub contract_address: String,
+    pub asset_slug: String,
+    pub symbol: String,
+    pub decimals: u8,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct Erc20TransferExtractionResult {
     pub rows: Vec<Erc20TransferExtractionRow>,
+    pub truncated: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -134,9 +149,9 @@ pub(crate) async fn search_erc20_transfers<E>(
 where
     E: Erc20TransferExtractor + Sync,
 {
-    let plan = build_search_plan(input, repository, max_token_filters).await?;
+    let plan = build_search_plan(input, repository.clone(), max_token_filters).await?;
 
-    execute_search_plan(plan, extractor).await
+    execute_search_plan(plan, repository, extractor).await
 }
 
 pub(crate) async fn build_search_plan(
@@ -175,7 +190,8 @@ pub(crate) async fn build_search_plan(
 }
 
 pub(crate) async fn execute_search_plan<E>(
-    plan: Erc20TransferSearchPlan,
+    mut plan: Erc20TransferSearchPlan,
+    repository: Option<GlobalAssetRepository>,
     extractor: &E,
 ) -> Result<Erc20TransferSearchResult, Erc20TransferSearchError>
 where
@@ -185,8 +201,105 @@ where
         .search_erc20_transfers(plan.extraction_request.clone())
         .await
         .map_err(Erc20TransferSearchError::from)?;
+    let token_metadata = enrich_token_metadata(&mut plan, &extraction, repository).await?;
 
-    Ok(Erc20TransferSearchResult { plan, extraction })
+    Ok(Erc20TransferSearchResult {
+        plan,
+        extraction,
+        token_metadata,
+    })
+}
+
+async fn enrich_token_metadata(
+    plan: &mut Erc20TransferSearchPlan,
+    extraction: &Erc20TransferExtractionResult,
+    repository: Option<GlobalAssetRepository>,
+) -> Result<Vec<Erc20TransferTokenCatalogMetadata>, Erc20TransferSearchError> {
+    let lookup_addresses = collect_metadata_lookup_addresses(plan, extraction);
+    let mut metadata_by_contract = plan
+        .resolved_token_filters
+        .iter()
+        .filter_map(metadata_from_resolved_filter)
+        .map(|metadata| (metadata.contract_address.clone(), metadata))
+        .collect::<HashMap<_, _>>();
+
+    if let Some(repository) = repository {
+        let rows = repository
+            .load_erc20_token_catalog_rows(&plan.extraction_request.network_slug, &lookup_addresses)
+            .await
+            .map_err(CatalogResolverError::from)?;
+
+        for row in rows {
+            let decimals = row
+                .decimals
+                .and_then(|decimals| u8::try_from(decimals).ok())
+                .ok_or_else(|| {
+                    Erc20TransferSearchError::Catalog(CatalogResolverError::InvalidCatalog {
+                        network_slug: plan.extraction_request.network_slug.clone(),
+                        asset_slug: Some(row.asset_slug.clone()),
+                        issue: CatalogIntegrityIssue::InvalidDecimals,
+                    })
+                })?;
+
+            let metadata = Erc20TransferTokenCatalogMetadata {
+                contract_address: row.contract_address.to_ascii_lowercase(),
+                asset_slug: row.asset_slug,
+                symbol: row.asset_symbol,
+                decimals,
+            };
+            metadata_by_contract.insert(metadata.contract_address.clone(), metadata);
+        }
+    }
+
+    for token_filter in &mut plan.resolved_token_filters {
+        let contract_address = token_filter.contract_address.to_ascii_lowercase();
+        if let Some(metadata) = metadata_by_contract.get(&contract_address) {
+            token_filter.asset_slug = Some(metadata.asset_slug.clone());
+            token_filter.symbol = Some(metadata.symbol.clone());
+            token_filter.decimals = Some(metadata.decimals);
+        }
+    }
+
+    Ok(lookup_addresses
+        .into_iter()
+        .filter_map(|contract_address| metadata_by_contract.get(&contract_address).cloned())
+        .collect())
+}
+
+fn collect_metadata_lookup_addresses(
+    plan: &Erc20TransferSearchPlan,
+    extraction: &Erc20TransferExtractionResult,
+) -> Vec<String> {
+    let mut addresses = Vec::new();
+    let mut seen = HashSet::new();
+
+    for token_filter in &plan.resolved_token_filters {
+        push_unique_address(&mut addresses, &mut seen, &token_filter.contract_address);
+    }
+
+    for row in &extraction.rows {
+        push_unique_address(&mut addresses, &mut seen, &row.token);
+    }
+
+    addresses
+}
+
+fn push_unique_address(addresses: &mut Vec<String>, seen: &mut HashSet<String>, address: &str) {
+    let address = address.to_ascii_lowercase();
+    if seen.insert(address.clone()) {
+        addresses.push(address);
+    }
+}
+
+fn metadata_from_resolved_filter(
+    token_filter: &ResolvedErc20TransferTokenFilter,
+) -> Option<Erc20TransferTokenCatalogMetadata> {
+    Some(Erc20TransferTokenCatalogMetadata {
+        contract_address: token_filter.contract_address.to_ascii_lowercase(),
+        asset_slug: token_filter.asset_slug.clone()?,
+        symbol: token_filter.symbol.clone()?,
+        decimals: token_filter.decimals?,
+    })
 }
 
 async fn resolve_token_filters(

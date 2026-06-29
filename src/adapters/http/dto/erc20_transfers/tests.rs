@@ -111,7 +111,10 @@ fn response_serialization_snapshot_matches_public_shape() {
             },
             direction: TransferDirectionDTO::From,
         }],
-        limits: Erc20TransferSearchLimits { max_rows: 5_000 },
+        limits: Erc20TransferSearchLimits {
+            max_rows: 5_000,
+            truncated: true,
+        },
     };
 
     assert_json_snapshot(
@@ -174,7 +177,8 @@ fn response_serialization_snapshot_matches_public_shape() {
     }
   ],
   "limits": {
-    "max_rows": 5000
+    "max_rows": 5000,
+    "truncated": true
   }
 }"#,
     );
