@@ -6,12 +6,14 @@ use tracing::warn;
 use crate::adapters::bigwig::error::{map_error_response, BigwigClientInitError, BigwigError};
 use crate::adapters::bigwig::{
     balances::{BigwigRequest, BigwigResponse},
+    erc20_transfers::{BigwigErc20TransferRequest, BigwigErc20TransferResponse},
     error::map_reqwest_error,
 };
 use crate::config::Config;
 
 const CLIENT_SERVICE: &str = "mother-api";
 const LATEST_BALANCES_PATH: &str = "/internal/v1/primitives/evm/latest-balances";
+const ERC20_TRANSFERS_PATH: &str = "/internal/v1/extractions/erc20-transfers";
 
 #[derive(Clone)]
 pub struct BigwigClient {
@@ -95,10 +97,53 @@ impl BigwigClient {
         Err(map_error_response(status, &body, retry_after_seconds))
     }
 
+    pub(crate) async fn search_erc20_transfers(
+        &self,
+        request: &BigwigErc20TransferRequest,
+    ) -> Result<BigwigErc20TransferResponse, BigwigError> {
+        let response = self
+            .client
+            .post(self.erc20_transfers_url())
+            .bearer_auth(&self.token)
+            .header("X-Client-Service", CLIENT_SERVICE)
+            .timeout(self.timeout)
+            .json(request)
+            .send()
+            .await
+            .map_err(map_reqwest_error)?;
+
+        let status = response.status();
+        let retry_after_seconds = response
+            .headers()
+            .get(RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse::<u64>().ok());
+        let body = response.bytes().await.map_err(map_reqwest_error)?;
+
+        if status == StatusCode::OK {
+            return serde_json::from_slice(&body)
+                .map_err(|_| BigwigError::MalformedSuccessResponse);
+        }
+
+        if status.is_success() {
+            return Err(BigwigError::UnexpectedSuccessStatus(status.as_u16()));
+        }
+
+        Err(map_error_response(status, &body, retry_after_seconds))
+    }
+
     fn latest_balances_url(&self) -> Url {
+        self.url_for_path(LATEST_BALANCES_PATH)
+    }
+
+    fn erc20_transfers_url(&self) -> Url {
+        self.url_for_path(ERC20_TRANSFERS_PATH)
+    }
+
+    fn url_for_path(&self, path: &str) -> Url {
         let mut url = self.base_url.clone();
         let base_path = url.path().trim_end_matches('/');
-        url.set_path(&format!("{base_path}{LATEST_BALANCES_PATH}"));
+        url.set_path(&format!("{base_path}{path}"));
         url.set_query(None);
         url.set_fragment(None);
         url

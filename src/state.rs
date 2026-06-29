@@ -58,6 +58,23 @@ impl AppState {
             bigwig_client: None,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn with_asset_repository_and_bigwig_client(
+        config: Config,
+        asset_repository: GlobalAssetRepository,
+        bigwig_client: BigwigClient,
+    ) -> Self {
+        Self {
+            config,
+            version: env!("CARGO_PKG_VERSION"),
+            database_pool: None,
+            asset_repository: Some(asset_repository),
+            price_indexer_client: None,
+            dis_client: None,
+            bigwig_client: Some(bigwig_client),
+        }
+    }
 }
 
 #[cfg(test)]

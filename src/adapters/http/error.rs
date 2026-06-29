@@ -280,6 +280,22 @@ impl ApiError {
         }
     }
 
+    pub fn upstream_provider_error() -> Self {
+        Self {
+            status: StatusCode::BAD_GATEWAY,
+            code: "upstream_provider_error",
+            message: "ERC-20 transfer provider failed.".to_string(),
+        }
+    }
+
+    pub fn upstream_provider_timeout() -> Self {
+        Self {
+            status: StatusCode::GATEWAY_TIMEOUT,
+            code: "upstream_provider_timeout",
+            message: "ERC-20 transfer provider timed out.".to_string(),
+        }
+    }
+
     pub fn upstream_auth_failed() -> Self {
         Self {
             status: StatusCode::BAD_GATEWAY,

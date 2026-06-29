@@ -1,11 +1,16 @@
+use std::{
+    io::{Read, Write},
+    net::TcpListener,
+    thread,
+};
+
 use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use tower::ServiceExt;
 
-use crate::config::Config;
 use crate::test_utils::{
     errors::assert_public_error,
     fixtures::{
@@ -13,10 +18,14 @@ use crate::test_utils::{
             erc20_transfers_enabled_config, erc20_transfers_request_with_tokens_body,
             valid_erc20_transfers_request_body,
         },
-        router::{transfers_router, transfers_router_without_repository},
+        router::{
+            transfers_router, transfers_router_with_bigwig_client,
+            transfers_router_without_repository,
+        },
     },
     http::{post_json, post_raw},
 };
+use crate::{adapters::bigwig::BigwigClient, config::Config};
 
 #[tokio::test]
 async fn route_is_absent_when_disabled() {
@@ -54,9 +63,132 @@ async fn route_is_present_when_enabled() {
 }
 
 #[tokio::test]
-async fn valid_request_returns_extraction_unavailable_placeholder() {
+async fn valid_request_without_configured_bigwig_returns_extraction_unavailable() {
     let (status, response) = post_json(
         transfers_router(erc20_transfers_enabled_config()),
+        "/v1/erc20-transfers/search",
+        valid_erc20_transfers_request_body(),
+    )
+    .await;
+
+    assert_public_error(
+        status,
+        &response,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "extraction_unavailable",
+    );
+}
+
+#[tokio::test]
+async fn successful_bigwig_response_returns_minimal_public_response() {
+    let Some((base_url, handle)) = spawn_bigwig_server(StatusCode::OK, bigwig_success_body())
+    else {
+        return;
+    };
+    let client = BigwigClient::new(&base_url, "test-token", 2_000).unwrap();
+
+    let (status, response) = post_json(
+        transfers_router_with_bigwig_client(erc20_transfers_enabled_config(), client),
+        "/v1/erc20-transfers/search",
+        valid_erc20_transfers_request_body(),
+    )
+    .await;
+    let request = handle.join().unwrap();
+    let (headers, body) = split_request(&request);
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(headers.starts_with("POST /internal/v1/extractions/erc20-transfers HTTP/1.1\r\n"));
+    assert_header(headers, "authorization", "Bearer test-token");
+    assert_header(headers, "x-client-service", "mother-api");
+    assert_eq!(
+        serde_json::from_str::<Value>(body).unwrap(),
+        json!({
+            "network_slug": "eth-mainnet",
+            "address": "0xabc0000000000000000000000000000000000000",
+            "direction": "any",
+            "contract_addresses": [
+                "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+                "0x1111111111111111111111111111111111111111"
+            ],
+            "window": {
+                "from_block": 18_600_000,
+                "to_block": 18_600_500
+            }
+        })
+    );
+    let serialized = serde_json::from_str::<Value>(body).unwrap().to_string();
+    assert!(!serialized.contains("asset_slug"));
+    assert!(!serialized.contains("asset_slugs"));
+
+    assert_eq!(response["ok"], true);
+    assert_eq!(response["type"], "erc20_transfer_search");
+    assert_eq!(response["transfers"][0]["amount"]["raw"], "1000000");
+    assert_eq!(response["transfers"][0]["amount"]["decimal"], Value::Null);
+    assert_eq!(response["transfers"][0]["token"]["asset_slug"], Value::Null);
+}
+
+#[tokio::test]
+async fn bigwig_rpc_error_returns_upstream_provider_error() {
+    let Some((base_url, handle)) =
+        spawn_bigwig_server(StatusCode::BAD_GATEWAY, bigwig_error_body("rpc_error"))
+    else {
+        return;
+    };
+    let client = BigwigClient::new(&base_url, "test-token", 2_000).unwrap();
+
+    let (status, response) = post_json(
+        transfers_router_with_bigwig_client(erc20_transfers_enabled_config(), client),
+        "/v1/erc20-transfers/search",
+        valid_erc20_transfers_request_body(),
+    )
+    .await;
+
+    assert_public_error(
+        status,
+        &response,
+        StatusCode::BAD_GATEWAY,
+        "upstream_provider_error",
+    );
+    handle.join().unwrap();
+}
+
+#[tokio::test]
+async fn bigwig_provider_timeout_returns_upstream_provider_timeout() {
+    let Some((base_url, handle)) = spawn_bigwig_server(
+        StatusCode::GATEWAY_TIMEOUT,
+        bigwig_error_body("provider_timeout"),
+    ) else {
+        return;
+    };
+    let client = BigwigClient::new(&base_url, "test-token", 2_000).unwrap();
+
+    let (status, response) = post_json(
+        transfers_router_with_bigwig_client(erc20_transfers_enabled_config(), client),
+        "/v1/erc20-transfers/search",
+        valid_erc20_transfers_request_body(),
+    )
+    .await;
+
+    assert_public_error(
+        status,
+        &response,
+        StatusCode::GATEWAY_TIMEOUT,
+        "upstream_provider_timeout",
+    );
+    handle.join().unwrap();
+}
+
+#[tokio::test]
+async fn bigwig_transport_failure_returns_extraction_unavailable() {
+    let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
+        return;
+    };
+    let closed_url = format!("http://{}", listener.local_addr().unwrap());
+    drop(listener);
+    let client = BigwigClient::new(&closed_url, "test-token", 2_000).unwrap();
+
+    let (status, response) = post_json(
+        transfers_router_with_bigwig_client(erc20_transfers_enabled_config(), client),
         "/v1/erc20-transfers/search",
         valid_erc20_transfers_request_body(),
     )
@@ -622,5 +754,126 @@ async fn too_many_token_filters_uses_configured_public_limit() {
         &response,
         StatusCode::UNPROCESSABLE_ENTITY,
         "too_many_token_filters",
+    );
+}
+
+fn bigwig_success_body() -> Value {
+    json!({
+        "extractor": "evm_erc20_transfers_by_address",
+        "network_slug": "eth-mainnet",
+        "address": "0xabc0000000000000000000000000000000000000",
+        "direction": "any",
+        "window_kind": "block",
+        "from_block": 18_600_000,
+        "to_block": 18_600_500,
+        "latest_block": 18_600_500,
+        "safe_block": 18_600_488,
+        "finality": {
+            "status": "mixed",
+            "safe_block": 18_600_488,
+            "latest_block": 18_600_500,
+            "reorg_risk": true,
+            "policy": "confirmation_lag",
+            "confirmation_lag": 12
+        },
+        "rows_extracted": 1,
+        "results": [{
+            "block_number": 18_600_001,
+            "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "log_index": 12,
+            "token": "0x1111111111111111111111111111111111111111",
+            "from": "0xabc0000000000000000000000000000000000000",
+            "to": "0x2222222222222222222222222222222222222222",
+            "value": "1000000"
+        }]
+    })
+}
+
+fn bigwig_error_body(code: &str) -> Value {
+    json!({
+        "error": {
+            "code": code,
+            "message": "Bigwig-owned message must not leak.",
+            "details": {}
+        }
+    })
+}
+
+fn spawn_bigwig_server(
+    status: StatusCode,
+    body: Value,
+) -> Option<(String, thread::JoinHandle<String>)> {
+    let listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => listener,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
+        Err(error) => panic!("failed to bind HTTP route Bigwig test server: {error}"),
+    };
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let request = read_http_request(&mut stream);
+        write_json_response(&mut stream, status, body);
+        request
+    });
+
+    Some((base_url, handle))
+}
+
+fn read_http_request(stream: &mut impl Read) -> String {
+    let mut request = Vec::new();
+    let mut buffer = [0; 1024];
+
+    loop {
+        let bytes_read = stream.read(&mut buffer).unwrap();
+        if bytes_read == 0 {
+            break;
+        }
+        request.extend_from_slice(&buffer[..bytes_read]);
+
+        let Some(headers_end) = request.windows(4).position(|window| window == b"\r\n\r\n") else {
+            continue;
+        };
+        let headers = String::from_utf8_lossy(&request[..headers_end]);
+        let content_length = headers
+            .lines()
+            .find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("content-length")
+                    .then(|| value.trim().parse::<usize>().ok())
+                    .flatten()
+            })
+            .unwrap_or(0);
+        if request.len() >= headers_end + 4 + content_length {
+            break;
+        }
+    }
+
+    String::from_utf8(request).unwrap()
+}
+
+fn write_json_response(stream: &mut impl Write, status: StatusCode, body: Value) {
+    let body = serde_json::to_string(&body).unwrap();
+    let reason = status.canonical_reason().unwrap_or("Unknown");
+    let response = format!(
+        "HTTP/1.1 {} {}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+        status.as_u16(),
+        reason,
+        body.len(),
+        body
+    );
+    stream.write_all(response.as_bytes()).unwrap();
+}
+
+fn split_request(request: &str) -> (&str, &str) {
+    request.split_once("\r\n\r\n").unwrap()
+}
+
+fn assert_header(headers: &str, name: &str, expected_value: &str) {
+    let expected = format!("{name}: {expected_value}");
+    assert!(
+        headers
+            .lines()
+            .any(|line| line.eq_ignore_ascii_case(&expected)),
+        "missing header {expected}; headers were:\n{headers}"
     );
 }
