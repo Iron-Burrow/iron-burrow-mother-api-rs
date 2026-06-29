@@ -12,6 +12,7 @@ use crate::{
     domain::balance_catalog::BalanceTarget,
 };
 
+#[allow(dead_code)]
 pub(crate) mod examples;
 
 pub type ExtraFields = HashMap<String, Value>;
@@ -154,7 +155,7 @@ pub(crate) enum BalanceResponseStatus {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub(crate) struct SingleBalanceResponse {
+pub struct SingleBalanceResponse {
     ok: bool,
     #[serde(rename = "type")]
     response_type: String,
@@ -169,7 +170,7 @@ pub(crate) struct SingleBalanceResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub(crate) struct BulkBalanceResponse {
+pub struct BulkBalanceResponse {
     ok: bool,
     #[serde(rename = "type")]
     response_type: String,
