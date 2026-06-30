@@ -274,12 +274,14 @@ impl RecordingExtractor {
 }
 
 impl Erc20TransferExtractor for RecordingExtractor {
-    async fn search_erc20_transfers(
+    fn search_erc20_transfers(
         &self,
         request: Erc20TransferExtractionRequest,
-    ) -> Result<Erc20TransferExtractionResult, Erc20TransferExtractionError> {
+    ) -> impl std::future::Future<
+        Output = Result<Erc20TransferExtractionResult, Erc20TransferExtractionError>,
+    > + Send {
         self.requests.lock().unwrap().push(request);
-        self.result.clone()
+        std::future::ready(self.result.clone())
     }
 }
 
