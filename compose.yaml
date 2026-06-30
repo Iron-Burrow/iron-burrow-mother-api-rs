@@ -91,7 +91,7 @@ services:
       context: .
       dockerfile: infra/docker/Dockerfile.mother-api
     container_name: iron-burrow-mother-api-migrate
-    command: ["sqlx", "migrate", "run"]
+    command: ["mother-api", "db", "migrate"]
     restart: "no"
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/ibdb}

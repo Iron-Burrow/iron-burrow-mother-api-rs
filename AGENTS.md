@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-06-25
+last_reviewed: 2026-06-30
 agent_edit_policy: update_when_relevant
 ---
 
@@ -56,6 +56,11 @@ Agents must respect the role of each document in this repo:
 - Public API contracts must use `network_slug` for canonical supported network
   identity. Do not expose or accept a generic `chain` field; keep numeric EVM
   `chain_id` distinct when it truly means an EIP-155 chain ID.
+- Do not add Rust tests that run database migrations from `cargo test`, even
+  behind environment flags. To smoke test embedded migrations, use
+  `make smoke-db-migrate`; that target runs `mother-api db migrate` against a
+  disposable Docker-backed Postgres database. Migration smoke testing belongs
+  in that explicit command, not in the normal Rust test suite.
 - Prefer additive edits to existing documents. When in doubt, add a new
   RFC, spec, or ADR rather than rewriting an existing one.
 - Preserve service boundaries described in [README.md](README.md) ("Not
