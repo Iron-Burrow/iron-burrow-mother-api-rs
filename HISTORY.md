@@ -229,3 +229,12 @@ implementation, and documentation changes.
 - Archived SPEC-004 as historical demo memory. No replacement endpoint is
   currently promised; future prediction or intelligence endpoints require a
   new accepted spec.
+
+## 2026-06-30
+
+- Added the SPEC-009 Slice 1 database lifecycle command scaffold under the
+  `mother-api` executable, including `serve`, `db migrate`,
+  `db apply-reference`, and `db apply`.
+- Kept database lifecycle work explicit: `serve` starts only the HTTP
+  application, while the new `db` commands require `DATABASE_URL` and fail
+  clearly until the later embedded-migration and reference-data slices land.

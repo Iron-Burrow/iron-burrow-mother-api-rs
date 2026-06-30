@@ -45,7 +45,7 @@ services:
       context: .
       dockerfile: infra/docker/Dockerfile.mother-api
     container_name: iron-burrow-mother-api
-    command: ["iron-burrow-mother-api-rs"]
+    command: ["mother-api", "serve"]
     environment:
       APP_ENV: ${APP_ENV:-development}
       HTTP_HOST: 0.0.0.0

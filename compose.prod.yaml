@@ -41,7 +41,7 @@ services:
   iron-burrow-mother-api:
     build: !reset null
     image: ghcr.io/iron-burrow/iron-burrow-mother-api-rs:${IRON_BURROW_MOTHER_API_TAG:?IRON_BURROW_MOTHER_API_TAG is required}
-    command: ["iron-burrow-mother-api-rs"]
+    command: ["mother-api", "serve"]
     restart: unless-stopped
     ports: !reset []
     depends_on: !override
