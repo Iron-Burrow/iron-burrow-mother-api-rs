@@ -280,10 +280,8 @@ impl Erc20TransferExtractor for RecordingExtractor {
     ) -> impl std::future::Future<
         Output = Result<Erc20TransferExtractionResult, Erc20TransferExtractionError>,
     > + Send {
-        async move {
-            self.requests.lock().unwrap().push(request);
-            self.result.clone()
-        }
+        self.requests.lock().unwrap().push(request);
+        std::future::ready(self.result.clone())
     }
 }
 
