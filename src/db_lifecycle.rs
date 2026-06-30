@@ -16,9 +16,9 @@ pub(crate) enum LifecycleError {
     ApplyReferenceNotImplemented,
 }
 
-pub(crate) async fn run(command: DbCommand) -> Result<(), LifecycleError> {
+pub(crate) fn run(command: DbCommand) -> Result<(), LifecycleError> {
     let database_url = database_url_from_env()?;
-    run_with_executor(command, database_url.as_str(), scaffold_step).await
+    run_with_executor(command, database_url.as_str(), scaffold_step)
 }
 
 fn database_url_from_env() -> Result<String, LifecycleError> {
@@ -33,7 +33,7 @@ fn database_url_from_value(value: Option<&str>) -> Result<String, LifecycleError
         .ok_or(LifecycleError::MissingDatabaseUrl)
 }
 
-async fn run_with_executor<F>(
+fn run_with_executor<F>(
     command: DbCommand,
     database_url: &str,
     mut execute_step: F,
@@ -84,15 +84,14 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn populated_database_url_reaches_migrate_scaffold() {
+    #[test]
+    fn populated_database_url_reaches_migrate_scaffold() {
         let mut calls = Vec::new();
 
         let result = run_with_executor(DbCommand::Migrate, DATABASE_URL, |step, database_url| {
             calls.push((step, database_url.to_string()));
             Err(LifecycleError::MigrateNotImplemented)
-        })
-        .await;
+        });
 
         assert_eq!(result.unwrap_err(), LifecycleError::MigrateNotImplemented);
         assert_eq!(
@@ -101,8 +100,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn populated_database_url_reaches_apply_reference_scaffold() {
+    #[test]
+    fn populated_database_url_reaches_apply_reference_scaffold() {
         let mut calls = Vec::new();
 
         let result = run_with_executor(
@@ -112,8 +111,7 @@ mod tests {
                 calls.push((step, database_url.to_string()));
                 Err(LifecycleError::ApplyReferenceNotImplemented)
             },
-        )
-        .await;
+        );
 
         assert_eq!(
             result.unwrap_err(),
@@ -125,15 +123,14 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn db_apply_attempts_migrate_before_apply_reference() {
+    #[test]
+    fn db_apply_attempts_migrate_before_apply_reference() {
         let mut calls = Vec::new();
 
         let result = run_with_executor(DbCommand::Apply, DATABASE_URL, |step, database_url| {
             calls.push((step, database_url.to_string()));
             Ok(())
-        })
-        .await;
+        });
 
         assert_eq!(result, Ok(()));
         assert_eq!(
@@ -145,15 +142,14 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn db_apply_stops_when_migrate_scaffold_fails() {
+    #[test]
+    fn db_apply_stops_when_migrate_scaffold_fails() {
         let mut calls = Vec::new();
 
         let result = run_with_executor(DbCommand::Apply, DATABASE_URL, |step, database_url| {
             calls.push((step, database_url.to_string()));
             Err(LifecycleError::MigrateNotImplemented)
-        })
-        .await;
+        });
 
         assert_eq!(result.unwrap_err(), LifecycleError::MigrateNotImplemented);
         assert_eq!(

@@ -32,6 +32,7 @@ Usage:
   mother-api db migrate
   mother-api db apply-reference
   mother-api db apply
+  mother-api help
   mother-api --help";
 
 pub(crate) fn parse_args<I, S>(args: I) -> Result<Command, ParseError>

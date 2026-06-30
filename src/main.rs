@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Command::Serve => serve().await?,
         Command::Help => println!("{USAGE}"),
         Command::Db(command) => {
-            if let Err(error) = db_lifecycle::run(command).await {
+            if let Err(error) = db_lifecycle::run(command) {
                 eprintln!("{error}");
                 std::process::exit(1);
             }
