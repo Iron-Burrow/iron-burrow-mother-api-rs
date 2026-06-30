@@ -5,7 +5,7 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 
-RUN cargo build --release --locked
+RUN cargo build --release --locked --bin mother-api
 
 FROM debian:bookworm-slim AS runtime
 
@@ -17,7 +17,7 @@ RUN useradd --system --uid 10001 --home /nonexistent --shell /usr/sbin/nologin m
 
 WORKDIR /app
 
-COPY --from=builder /app/target/release/iron-burrow-mother-api-rs /usr/local/bin/iron-burrow-mother-api-rs
+COPY --from=builder /app/target/release/mother-api /usr/local/bin/mother-api
 
 ENV APP_ENV=production
 ENV HTTP_HOST=0.0.0.0
@@ -27,4 +27,4 @@ EXPOSE 3000
 
 USER mother-api
 
-CMD ["iron-burrow-mother-api-rs"]
+CMD ["mother-api", "serve"]

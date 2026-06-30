@@ -1,8 +1,10 @@
 mod adapters;
 mod application;
+mod cli;
 mod common;
 #[allow(dead_code)]
 mod config;
+mod db_lifecycle;
 mod domain;
 mod infra;
 #[allow(dead_code)]
@@ -17,6 +19,7 @@ use tokio::net::TcpListener;
 use tracing::{info, warn};
 
 use crate::adapters::http::router::build_router;
+use crate::cli::{Command, USAGE};
 use crate::config::Config;
 use crate::state::AppState;
 
@@ -24,6 +27,29 @@ use crate::state::AppState;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_tracing();
 
+    let command = match cli::parse_args(std::env::args().skip(1)) {
+        Ok(command) => command,
+        Err(error) => {
+            eprintln!("{error}\n\n{USAGE}");
+            std::process::exit(2);
+        }
+    };
+
+    match command {
+        Command::Serve => serve().await?,
+        Command::Help => println!("{USAGE}"),
+        Command::Db(command) => {
+            if let Err(error) = db_lifecycle::run(command) {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_env()?;
     let address = config.socket_addr()?;
     let state = AppState::try_new(config)?;

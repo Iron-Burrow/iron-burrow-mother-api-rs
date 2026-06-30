@@ -5,7 +5,7 @@ last_reviewed: 2026-06-25
 agent_edit_policy: update_when_relevant
 ---
 
-# SPEC-009 — Public API Beta "v0.2" Surface v1
+# SPEC-010 — Public API Beta "v0.2" Surface v1
 
 - The legacy FIFA endpoints have been removed from the contract and codebase
   for `v0.2.0`.
