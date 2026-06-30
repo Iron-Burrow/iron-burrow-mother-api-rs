@@ -1,13 +1,46 @@
 use sqlx::PgPool;
 
-#[tokio::test]
-async fn global_asset_slug_is_unique_in_database() {
+const IDENTITY_CONSTRAINTS_MIGRATION_SQL: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/migrations/0006_reference_data_identity_constraints.sql"
+));
+
+async fn migrated_pool() -> Option<PgPool> {
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
-        return;
+        return None;
     };
 
     let pool = PgPool::connect(&database_url).await.unwrap();
     sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+
+    Some(pool)
+}
+
+fn assert_database_constraint(error: sqlx::Error, expected_constraint: &str) {
+    let sqlx::Error::Database(database_error) = error else {
+        panic!("expected database error for constraint violation");
+    };
+
+    assert_eq!(database_error.constraint(), Some(expected_constraint));
+}
+
+fn assert_database_message_contains(error: sqlx::Error, expected_message: &str) {
+    let sqlx::Error::Database(database_error) = error else {
+        panic!("expected database error for migration prevalidation failure");
+    };
+
+    assert!(
+        database_error.message().contains(expected_message),
+        "expected database error message to contain {expected_message:?}, got {:?}",
+        database_error.message()
+    );
+}
+
+#[tokio::test]
+async fn global_asset_slug_is_unique_in_database() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
 
     let mut transaction = pool.begin().await.unwrap();
     let slug = format!("slug-unique-test-{}", uuid::Uuid::new_v4());
@@ -53,26 +86,16 @@ async fn global_asset_slug_is_unique_in_database() {
     .await;
 
     let error = duplicate_result.expect_err("duplicate slug should violate constraint");
-    let sqlx::Error::Database(database_error) = error else {
-        panic!("expected database error for duplicate slug");
-    };
-
-    assert_eq!(
-        database_error.constraint(),
-        Some("global_asset_slug_unique")
-    );
+    assert_database_constraint(error, "global_asset_slug_unique");
 
     transaction.rollback().await.unwrap();
 }
 
 #[tokio::test]
 async fn global_asset_slug_is_normalized_in_database() {
-    let Ok(database_url) = std::env::var("DATABASE_URL") else {
+    let Some(pool) = migrated_pool().await else {
         return;
     };
-
-    let pool = PgPool::connect(&database_url).await.unwrap();
-    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
 
     let mut transaction = pool.begin().await.unwrap();
     let insert_result = sqlx::query(
@@ -95,26 +118,16 @@ async fn global_asset_slug_is_normalized_in_database() {
     .await;
 
     let error = insert_result.expect_err("mixed-case slug should violate constraint");
-    let sqlx::Error::Database(database_error) = error else {
-        panic!("expected database error for non-normalized slug");
-    };
-
-    assert_eq!(
-        database_error.constraint(),
-        Some("global_asset_slug_normalized")
-    );
+    assert_database_constraint(error, "global_asset_slug_normalized");
 
     transaction.rollback().await.unwrap();
 }
 
 #[tokio::test]
 async fn full_migration_uses_canonical_evm_network_slugs() {
-    let Ok(database_url) = std::env::var("DATABASE_URL") else {
+    let Some(pool) = migrated_pool().await else {
         return;
     };
-
-    let pool = PgPool::connect(&database_url).await.unwrap();
-    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
 
     let canonical_networks = sqlx::query_as::<_, (String, i64, String)>(
         r#"
@@ -161,12 +174,10 @@ async fn full_migration_uses_canonical_evm_network_slugs() {
 
 #[tokio::test]
 async fn canonical_network_migration_preserves_ids_and_mapping_counts() {
-    let Ok(database_url) = std::env::var("DATABASE_URL") else {
+    let Some(pool) = migrated_pool().await else {
         return;
     };
 
-    let pool = PgPool::connect(&database_url).await.unwrap();
-    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
     let mut transaction = pool.begin().await.unwrap();
 
     let before = sqlx::query_as::<_, (String, String, i64)>(
@@ -250,13 +261,15 @@ async fn canonical_network_migration_preserves_ids_and_mapping_counts() {
 
 #[tokio::test]
 async fn canonical_network_migration_rejects_conflicting_rows() {
-    let Ok(database_url) = std::env::var("DATABASE_URL") else {
+    let Some(pool) = migrated_pool().await else {
         return;
     };
 
-    let pool = PgPool::connect(&database_url).await.unwrap();
-    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
     let mut transaction = pool.begin().await.unwrap();
+    sqlx::query("alter table mother_api.network drop constraint network_slug_unique")
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
 
     sqlx::query(
         r#"
@@ -298,5 +311,319 @@ async fn canonical_network_migration_rejects_conflicting_rows() {
     .await;
 
     assert!(result.is_err());
+    transaction.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn network_slug_is_globally_unique_in_database() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let mut transaction = pool.begin().await.unwrap();
+    let insert_result = sqlx::query(
+        r#"
+        insert into mother_api.network (
+            slug,
+            name,
+            family,
+            chain_id,
+            status
+        )
+        values (
+            'eth-mainnet',
+            'Duplicate Ethereum Mainnet',
+            'evm',
+            1,
+            'inactive'
+        )
+        "#,
+    )
+    .execute(&mut *transaction)
+    .await;
+
+    let error = insert_result.expect_err("duplicate network slug should violate constraint");
+    assert_database_constraint(error, "network_slug_unique");
+
+    transaction.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn network_slug_is_normalized_in_database() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let mut transaction = pool.begin().await.unwrap();
+    let insert_result = sqlx::query(
+        r#"
+        insert into mother_api.network (
+            slug,
+            name,
+            family,
+            chain_id,
+            status
+        )
+        values (
+            'Network-Slug-Normalized-Test',
+            'Network Slug Normalized Test',
+            'evm',
+            999999,
+            'inactive'
+        )
+        "#,
+    )
+    .execute(&mut *transaction)
+    .await;
+
+    let error = insert_result.expect_err("mixed-case network slug should violate constraint");
+    assert_database_constraint(error, "network_slug_normalized");
+
+    transaction.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn asset_chain_map_asset_network_identity_is_unique_in_database() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let mut transaction = pool.begin().await.unwrap();
+    let insert_result = sqlx::query(
+        r#"
+        insert into mother_api.asset_chain_map (
+            asset_id,
+            network_id,
+            status
+        )
+        select
+            asset.id,
+            network.id,
+            'inactive'
+        from mother_api.global_asset asset
+        join mother_api.network network
+            on network.slug = 'eth-mainnet'
+        where asset.slug = 'usdc'
+        "#,
+    )
+    .execute(&mut *transaction)
+    .await;
+
+    let error =
+        insert_result.expect_err("duplicate asset/network mapping should violate constraint");
+    assert_database_constraint(error, "asset_chain_map_asset_network_unique");
+
+    transaction.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn identity_constraint_migration_rejects_existing_duplicate_network_slugs() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let mut transaction = pool.begin().await.unwrap();
+    sqlx::query("alter table mother_api.network drop constraint network_slug_unique")
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    sqlx::query(
+        r#"
+        insert into mother_api.network (
+            slug,
+            name,
+            family,
+            chain_id,
+            status
+        )
+        values (
+            'eth-mainnet',
+            'Duplicate Ethereum Mainnet',
+            'evm',
+            1,
+            'inactive'
+        )
+        "#,
+    )
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+
+    let result = sqlx::raw_sql(IDENTITY_CONSTRAINTS_MIGRATION_SQL)
+        .execute(&mut *transaction)
+        .await;
+
+    let error = result.expect_err("migration should reject preexisting duplicate networks");
+    assert_database_message_contains(error, "network contains duplicate slug identities");
+
+    transaction.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn identity_constraint_migration_rejects_existing_non_normalized_network_slugs() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let mut transaction = pool.begin().await.unwrap();
+    sqlx::query("alter table mother_api.network drop constraint network_slug_normalized")
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    sqlx::query(
+        r#"
+        insert into mother_api.network (
+            slug,
+            name,
+            family,
+            chain_id,
+            status
+        )
+        values (
+            'Network-Slug-Prevalidation-Test',
+            'Network Slug Prevalidation Test',
+            'evm',
+            999998,
+            'inactive'
+        )
+        "#,
+    )
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+
+    let result = sqlx::raw_sql(IDENTITY_CONSTRAINTS_MIGRATION_SQL)
+        .execute(&mut *transaction)
+        .await;
+
+    let error = result.expect_err("migration should reject preexisting non-normalized networks");
+    assert_database_message_contains(error, "network contains non-normalized slug values");
+
+    transaction.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn identity_constraint_migration_rejects_existing_duplicate_asset_network_mappings() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let mut transaction = pool.begin().await.unwrap();
+    sqlx::query(
+        "alter table mother_api.asset_chain_map drop constraint asset_chain_map_asset_network_unique",
+    )
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"
+        insert into mother_api.asset_chain_map (
+            asset_id,
+            network_id,
+            status
+        )
+        select
+            asset.id,
+            network.id,
+            'inactive'
+        from mother_api.global_asset asset
+        join mother_api.network network
+            on network.slug = 'eth-mainnet'
+        where asset.slug = 'usdc'
+        "#,
+    )
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+
+    let result = sqlx::raw_sql(IDENTITY_CONSTRAINTS_MIGRATION_SQL)
+        .execute(&mut *transaction)
+        .await;
+
+    let error = result.expect_err("migration should reject duplicate asset/network mappings");
+    assert_database_message_contains(
+        error,
+        "asset_chain_map contains duplicate asset/network identities",
+    );
+
+    transaction.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn active_native_network_safety_constraint_is_preserved() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let mut transaction = pool.begin().await.unwrap();
+    let insert_result = sqlx::query(
+        r#"
+        insert into mother_api.asset_chain_map (
+            asset_id,
+            network_id,
+            is_native,
+            token_standard,
+            status
+        )
+        select
+            asset.id,
+            network.id,
+            true,
+            'native',
+            'active'
+        from mother_api.global_asset asset
+        join mother_api.network network
+            on network.slug = 'eth-mainnet'
+        where asset.slug = 'bitcoin'
+        "#,
+    )
+    .execute(&mut *transaction)
+    .await;
+
+    let error = insert_result.expect_err("second active native mapping should violate constraint");
+    assert_database_constraint(error, "uq_mother_api_asset_chain_map_active_native_network");
+
+    transaction.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn active_network_address_safety_constraint_is_preserved() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let mut transaction = pool.begin().await.unwrap();
+    let insert_result = sqlx::query(
+        r#"
+        insert into mother_api.asset_chain_map (
+            asset_id,
+            network_id,
+            is_native,
+            deployment_address,
+            token_standard,
+            status
+        )
+        select
+            asset.id,
+            network.id,
+            false,
+            '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+            'erc20',
+            'active'
+        from mother_api.global_asset asset
+        join mother_api.network network
+            on network.slug = 'eth-mainnet'
+        where asset.slug = 'bitcoin'
+        "#,
+    )
+    .execute(&mut *transaction)
+    .await;
+
+    let error = insert_result.expect_err("duplicate active deployment address should violate");
+    assert_database_constraint(
+        error,
+        "uq_mother_api_asset_chain_map_active_network_address",
+    );
+
     transaction.rollback().await.unwrap();
 }
