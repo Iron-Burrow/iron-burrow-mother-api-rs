@@ -73,6 +73,9 @@ export IB_MIGRATION_PROOF_NETWORK="${IB_MIGRATION_PROOF_NETWORK:-mother-api-migr
 export IB_MIGRATION_PROOF_DB="${IB_MIGRATION_PROOF_DB:-mother-api-migration-proof-postgres}"
 export IB_MIGRATION_PROOF_IMAGE="${IB_MIGRATION_PROOF_IMAGE:-mother-api-migration-proof}"
 
+docker rm -f "$IB_MIGRATION_PROOF_DB" >/dev/null 2>&1 || true
+docker network rm "$IB_MIGRATION_PROOF_NETWORK" >/dev/null 2>&1 || true
+
 docker network create "$IB_MIGRATION_PROOF_NETWORK"
 docker run --rm -d --name "$IB_MIGRATION_PROOF_DB" \
   --network "$IB_MIGRATION_PROOF_NETWORK" \

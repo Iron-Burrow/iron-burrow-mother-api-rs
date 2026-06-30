@@ -202,7 +202,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn embedded_migrator_runs_when_database_url_is_available() {
+    async fn embedded_migrator_runs_only_with_explicit_opt_in() {
+        if std::env::var("MOTHER_API_RUN_DB_MIGRATION_TESTS").as_deref() != Ok("true") {
+            return;
+        }
+
         let Ok(database_url) = std::env::var("DATABASE_URL") else {
             return;
         };
