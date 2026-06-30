@@ -63,6 +63,54 @@ echo "Testing Mother API at: $IB_API"
 The watched address is intentionally synthetic. These smoke cases validate the
 contract, filters, and failure behavior without depending on a funded wallet.
 
+## Migration Lifecycle Check
+
+Use throwaway Docker containers to prove the production image can migrate a
+clean database from the Mother API binary, without `sqlx-cli`.
+
+```bash
+export IB_MIGRATION_PROOF_NETWORK="${IB_MIGRATION_PROOF_NETWORK:-mother-api-migration-proof-net}"
+export IB_MIGRATION_PROOF_DB="${IB_MIGRATION_PROOF_DB:-mother-api-migration-proof-postgres}"
+export IB_MIGRATION_PROOF_IMAGE="${IB_MIGRATION_PROOF_IMAGE:-mother-api-migration-proof}"
+
+docker network create "$IB_MIGRATION_PROOF_NETWORK"
+docker run --rm -d --name "$IB_MIGRATION_PROOF_DB" \
+  --network "$IB_MIGRATION_PROOF_NETWORK" \
+  -e POSTGRES_DB=ibdb \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  postgres:17-alpine
+
+until docker run --rm --network "$IB_MIGRATION_PROOF_NETWORK" postgres:17-alpine \
+  pg_isready -h "$IB_MIGRATION_PROOF_DB" -U postgres -d ibdb; do
+  sleep 1
+done
+
+docker build -f infra/docker/Dockerfile.mother-api -t "$IB_MIGRATION_PROOF_IMAGE" .
+
+docker run --rm --network "$IB_MIGRATION_PROOF_NETWORK" \
+  -e DATABASE_URL="postgres://postgres:postgres@${IB_MIGRATION_PROOF_DB}:5432/ibdb" \
+  "$IB_MIGRATION_PROOF_IMAGE" mother-api db migrate
+
+docker run --rm --network "$IB_MIGRATION_PROOF_NETWORK" \
+  -e DATABASE_URL="postgres://postgres:postgres@${IB_MIGRATION_PROOF_DB}:5432/ibdb" \
+  "$IB_MIGRATION_PROOF_IMAGE" mother-api db migrate
+
+docker run --rm --network "$IB_MIGRATION_PROOF_NETWORK" \
+  -e PGPASSWORD=postgres postgres:17-alpine \
+  psql -h "$IB_MIGRATION_PROOF_DB" -U postgres -d ibdb \
+  -c 'select version, description, success from _sqlx_migrations order by version;'
+
+docker run --rm --entrypoint sh "$IB_MIGRATION_PROOF_IMAGE" \
+  -lc 'command -v sqlx && exit 1 || echo "sqlx absent"'
+
+docker stop "$IB_MIGRATION_PROOF_DB"
+docker network rm "$IB_MIGRATION_PROOF_NETWORK"
+```
+
+The migration-history query must show successful entries for migrations `0001`
+through `0005`; the second migration run must also exit successfully.
+
 ## Test Payloads
 
 ```bash

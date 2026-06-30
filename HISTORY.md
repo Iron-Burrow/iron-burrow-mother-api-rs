@@ -238,3 +238,9 @@ implementation, and documentation changes.
 - Kept database lifecycle work explicit: `serve` starts only the HTTP
   application, while the new `db` commands require `DATABASE_URL` and fail
   clearly until the later embedded-migration and reference-data slices land.
+- Completed SPEC-009 Slice 2 by running embedded SQLx migrations from
+  `mother-api db migrate`, keeping historical migrations `0001` through
+  `0005` unchanged.
+- Removed the production image and Compose migration path dependency on
+  `sqlx-cli`; the `db-migrate` service now uses the shared Mother API image
+  with `mother-api db migrate`.
