@@ -1,20 +1,9 @@
-use sqlx::PgPool;
+use crate::test_utils::postgres::migrated_pool;
 
 const IDENTITY_CONSTRAINTS_MIGRATION_SQL: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/migrations/0006_reference_data_identity_constraints.sql"
 ));
-
-async fn migrated_pool() -> Option<PgPool> {
-    let Ok(database_url) = std::env::var("DATABASE_URL") else {
-        return None;
-    };
-
-    let pool = PgPool::connect(&database_url).await.unwrap();
-    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
-
-    Some(pool)
-}
 
 fn assert_database_constraint(error: sqlx::Error, expected_constraint: &str) {
     let sqlx::Error::Database(database_error) = error else {
