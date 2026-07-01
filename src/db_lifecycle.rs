@@ -1,4 +1,5 @@
 use crate::cli::DbCommand;
+use crate::reference_data;
 use sqlx::{migrate::Migrator, postgres::PgPoolOptions};
 
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
@@ -18,18 +19,18 @@ pub(crate) enum LifecycleError {
     DatabaseConnection(String),
     #[error("failed to run embedded SQLx migrations: {0}")]
     Migration(String),
-    #[error("mother-api db apply-reference is not implemented until SPEC-009 Slice 4")]
-    ApplyReferenceNotImplemented,
+    #[error("failed to apply embedded reference data: {0}")]
+    ApplyReference(String),
 }
 
 pub(crate) async fn run(command: DbCommand) -> Result<(), LifecycleError> {
     let database_url = database_url_from_env()?;
     match command {
         DbCommand::Migrate => run_migrations(database_url.as_str()).await,
-        DbCommand::ApplyReference => apply_reference(),
+        DbCommand::ApplyReference => apply_reference(database_url.as_str()).await,
         DbCommand::Apply => {
             run_migrations(database_url.as_str()).await?;
-            apply_reference()
+            apply_reference(database_url.as_str()).await
         }
     }
 }
@@ -46,10 +47,6 @@ fn database_url_from_value(value: Option<&str>) -> Result<String, LifecycleError
         .ok_or(LifecycleError::MissingDatabaseUrl)
 }
 
-fn apply_reference() -> Result<(), LifecycleError> {
-    Err(LifecycleError::ApplyReferenceNotImplemented)
-}
-
 async fn run_migrations(database_url: &str) -> Result<(), LifecycleError> {
     let pool = PgPoolOptions::new()
         .max_connections(1)
@@ -61,6 +58,18 @@ async fn run_migrations(database_url: &str) -> Result<(), LifecycleError> {
         .run(&pool)
         .await
         .map_err(|error| LifecycleError::Migration(error.to_string()))
+}
+
+async fn apply_reference(database_url: &str) -> Result<(), LifecycleError> {
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(database_url)
+        .await
+        .map_err(|error| LifecycleError::DatabaseConnection(error.to_string()))?;
+
+    reference_data::apply_embedded_catalog(&pool)
+        .await
+        .map_err(|error| LifecycleError::ApplyReference(error.to_string()))
 }
 
 #[cfg(test)]
@@ -140,20 +149,10 @@ mod tests {
         let result = run_with_executor(
             DbCommand::ApplyReference,
             DATABASE_URL,
-            |step, database_url| {
-                record_step(
-                    &mut calls,
-                    step,
-                    database_url,
-                    Err(LifecycleError::ApplyReferenceNotImplemented),
-                )
-            },
+            |step, database_url| record_step(&mut calls, step, database_url, Ok(())),
         );
 
-        assert_eq!(
-            result.unwrap_err(),
-            LifecycleError::ApplyReferenceNotImplemented
-        );
+        assert_eq!(result, Ok(()));
         assert_eq!(
             calls,
             vec![(LifecycleStep::ApplyReference, DATABASE_URL.to_string())]
