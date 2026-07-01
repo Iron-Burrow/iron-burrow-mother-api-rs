@@ -1,4 +1,5 @@
 mod adapters;
+mod admin;
 mod application;
 mod cli;
 mod common;
@@ -41,6 +42,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Command::Help => println!("{USAGE}"),
         Command::Db(command) => {
             if let Err(error) = db_lifecycle::run(command).await {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
+        Command::Admin(command) => {
+            if let Err(error) = admin::run(command).await {
                 eprintln!("{error}");
                 std::process::exit(1);
             }

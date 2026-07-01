@@ -1,4 +1,5 @@
-use sqlx::{FromRow, PgPool};
+use serde::Serialize;
+use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use super::errors::RepositoryError;
@@ -47,6 +48,40 @@ impl ApiKeyRepository {
         .map_err(RepositoryError::new)?;
 
         Ok(row.map(Into::into))
+    }
+
+    pub(crate) async fn issue_api_key(
+        &self,
+        input: IssueApiKeyInput,
+    ) -> Result<IssuedApiKey, ApiKeyIssueRepositoryError> {
+        let mut transaction =
+            self.pool.begin().await.map_err(|error| {
+                ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error))
+            })?;
+
+        let consumer = upsert_consumer_for_issue(
+            &mut transaction,
+            &input.consumer_slug,
+            &input.display_name,
+            &input.category,
+        )
+        .await?;
+
+        let api_key = insert_issued_key(&mut transaction, &consumer, &input).await?;
+        insert_policy_for_issue(
+            &mut transaction,
+            api_key.api_key_id,
+            input.requests_per_minute,
+            input.requests_per_day,
+        )
+        .await?;
+
+        transaction
+            .commit()
+            .await
+            .map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?;
+
+        Ok(api_key)
     }
 
     pub(crate) async fn create_policy(
@@ -126,6 +161,69 @@ impl ApiKeyRepository {
         .map_err(RepositoryError::new)?;
 
         Ok(row.map(Into::into))
+    }
+
+    pub(crate) async fn list_for_consumer(
+        &self,
+        consumer_slug: &str,
+    ) -> Result<Vec<ApiKeyListItem>, RepositoryError> {
+        let rows = sqlx::query_as::<_, ApiKeyListItem>(
+            r#"
+            select
+                api_key.key_prefix,
+                api_key.label,
+                api_key.status,
+                api_key.expires_at::text as expires_at,
+                api_key.created_at::text as created_at,
+                api_key.last_used_at::text as last_used_at
+            from mother_api.api_key api_key
+            join mother_api.api_consumer api_consumer
+                on api_consumer.id = api_key.consumer_id
+            where api_consumer.slug = $1
+            order by api_key.created_at desc, api_key.key_prefix asc
+            "#,
+        )
+        .bind(consumer_slug)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(RepositoryError::new)?;
+
+        Ok(rows)
+    }
+
+    pub(crate) async fn usage_for_consumer(
+        &self,
+        consumer_slug: &str,
+        days: u32,
+    ) -> Result<Vec<ApiKeyUsageItem>, RepositoryError> {
+        let rows = sqlx::query_as::<_, ApiKeyUsageItem>(
+            r#"
+            select
+                usage.usage_date::text as usage_date,
+                api_key.key_prefix,
+                usage.accepted_requests,
+                usage.rate_limited_requests,
+                usage.successful_responses,
+                usage.client_error_responses,
+                usage.server_error_responses,
+                usage.last_used_at::text as last_used_at
+            from mother_api.api_key_usage_daily usage
+            join mother_api.api_key api_key
+                on api_key.id = usage.api_key_id
+            join mother_api.api_consumer api_consumer
+                on api_consumer.id = api_key.consumer_id
+            where api_consumer.slug = $1
+                and usage.usage_date >= (now() at time zone 'utc')::date - ($2::integer - 1)
+            order by usage.usage_date desc, api_key.key_prefix asc
+            "#,
+        )
+        .bind(consumer_slug)
+        .bind(i32::try_from(days).unwrap_or(i32::MAX))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(RepositoryError::new)?;
+
+        Ok(rows)
     }
 
     pub(crate) async fn update_last_used(&self, api_key_id: Uuid) -> Result<bool, RepositoryError> {
@@ -249,6 +347,222 @@ impl ApiKeyRepository {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct IssueApiKeyInput {
+    pub(crate) consumer_slug: String,
+    pub(crate) display_name: String,
+    pub(crate) category: String,
+    pub(crate) label: String,
+    pub(crate) key_prefix: String,
+    pub(crate) key_hash: Vec<u8>,
+    pub(crate) requests_per_minute: i32,
+    pub(crate) requests_per_day: i32,
+    pub(crate) expires_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct IssuedApiKey {
+    pub(crate) api_key_id: Uuid,
+    pub(crate) consumer_id: Uuid,
+    pub(crate) consumer_slug: String,
+    pub(crate) consumer_reused: bool,
+    pub(crate) key_prefix: String,
+    pub(crate) label: String,
+    pub(crate) status: String,
+    pub(crate) expires_at: Option<String>,
+    pub(crate) created_at: String,
+    pub(crate) requests_per_minute: i32,
+    pub(crate) requests_per_day: i32,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ApiKeyIssueRepositoryError {
+    #[error("{0}")]
+    Repository(#[from] RepositoryError),
+    #[error("generated API key collided with an existing key")]
+    GeneratedKeyCollision,
+    #[error("{0}")]
+    ConsumerConflict(String),
+}
+
+#[derive(FromRow)]
+struct IssueConsumerRow {
+    consumer_id: Uuid,
+    consumer_slug: String,
+    display_name: String,
+    category: String,
+    consumer_reused: bool,
+}
+
+#[derive(FromRow)]
+struct IssuedApiKeyRow {
+    api_key_id: Uuid,
+    key_prefix: String,
+    label: String,
+    status: String,
+    expires_at: Option<String>,
+    created_at: String,
+}
+
+async fn upsert_consumer_for_issue(
+    transaction: &mut Transaction<'_, Postgres>,
+    consumer_slug: &str,
+    display_name: &str,
+    category: &str,
+) -> Result<IssueConsumerRow, ApiKeyIssueRepositoryError> {
+    let inserted = sqlx::query_as::<_, IssueConsumerRow>(
+        r#"
+        insert into mother_api.api_consumer (
+            slug,
+            display_name,
+            category,
+            status
+        )
+        values ($1, $2, $3, 'active')
+        on conflict (slug) do nothing
+        returning
+            id as consumer_id,
+            slug as consumer_slug,
+            display_name,
+            category,
+            false as consumer_reused
+        "#,
+    )
+    .bind(consumer_slug)
+    .bind(display_name)
+    .bind(category)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?;
+
+    if let Some(consumer) = inserted {
+        return Ok(consumer);
+    }
+
+    let existing = sqlx::query_as::<_, IssueConsumerRow>(
+        r#"
+        select
+            id as consumer_id,
+            slug as consumer_slug,
+            display_name,
+            category,
+            true as consumer_reused
+        from mother_api.api_consumer
+        where slug = $1
+        for update
+        "#,
+    )
+    .bind(consumer_slug)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?
+    .ok_or_else(|| {
+        ApiKeyIssueRepositoryError::Repository(RepositoryError::protocol(format!(
+            "API consumer {consumer_slug:?} conflicted during issue but could not be reloaded"
+        )))
+    })?;
+
+    if existing.display_name != display_name {
+        return Err(ApiKeyIssueRepositoryError::ConsumerConflict(format!(
+            "existing API consumer {consumer_slug:?} has a different display name"
+        )));
+    }
+    if existing.category != category {
+        return Err(ApiKeyIssueRepositoryError::ConsumerConflict(format!(
+            "existing API consumer {consumer_slug:?} has a different category"
+        )));
+    }
+
+    Ok(existing)
+}
+
+async fn insert_issued_key(
+    transaction: &mut Transaction<'_, Postgres>,
+    consumer: &IssueConsumerRow,
+    input: &IssueApiKeyInput,
+) -> Result<IssuedApiKey, ApiKeyIssueRepositoryError> {
+    let row = sqlx::query_as::<_, IssuedApiKeyRow>(
+        r#"
+        insert into mother_api.api_key (
+            consumer_id,
+            label,
+            key_prefix,
+            key_hash,
+            expires_at
+        )
+        values ($1, $2, $3, $4, $5::timestamptz)
+        returning
+            id as api_key_id,
+            key_prefix,
+            label,
+            status,
+            expires_at::text as expires_at,
+            created_at::text as created_at
+        "#,
+    )
+    .bind(consumer.consumer_id)
+    .bind(&input.label)
+    .bind(&input.key_prefix)
+    .bind(&input.key_hash)
+    .bind(&input.expires_at)
+    .fetch_one(&mut **transaction)
+    .await
+    .map_err(map_issue_insert_error)?;
+
+    Ok(IssuedApiKey {
+        api_key_id: row.api_key_id,
+        consumer_id: consumer.consumer_id,
+        consumer_slug: consumer.consumer_slug.clone(),
+        consumer_reused: consumer.consumer_reused,
+        key_prefix: row.key_prefix,
+        label: row.label,
+        status: row.status,
+        expires_at: row.expires_at,
+        created_at: row.created_at,
+        requests_per_minute: input.requests_per_minute,
+        requests_per_day: input.requests_per_day,
+    })
+}
+
+async fn insert_policy_for_issue(
+    transaction: &mut Transaction<'_, Postgres>,
+    api_key_id: Uuid,
+    requests_per_minute: i32,
+    requests_per_day: i32,
+) -> Result<(), ApiKeyIssueRepositoryError> {
+    sqlx::query(
+        r#"
+        insert into mother_api.api_key_policy (
+            api_key_id,
+            requests_per_minute,
+            requests_per_day
+        )
+        values ($1, $2, $3)
+        "#,
+    )
+    .bind(api_key_id)
+    .bind(requests_per_minute)
+    .bind(requests_per_day)
+    .execute(&mut **transaction)
+    .await
+    .map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?;
+
+    Ok(())
+}
+
+fn map_issue_insert_error(error: sqlx::Error) -> ApiKeyIssueRepositoryError {
+    if let sqlx::Error::Database(database_error) = &error {
+        if matches!(
+            database_error.constraint(),
+            Some("api_key_key_prefix_unique" | "api_key_key_hash_unique")
+        ) {
+            return ApiKeyIssueRepositoryError::GeneratedKeyCollision;
+        }
+    }
+
+    ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ApiKeyLookup {
     pub(crate) api_key_id: Uuid,
     pub(crate) consumer_id: Uuid,
@@ -294,6 +608,28 @@ impl From<ApiKeyLookupRow> for ApiKeyLookup {
             is_expired: row.is_expired,
         }
     }
+}
+
+#[derive(Clone, Debug, Eq, FromRow, PartialEq, Serialize)]
+pub(crate) struct ApiKeyListItem {
+    pub(crate) key_prefix: String,
+    pub(crate) label: String,
+    pub(crate) status: String,
+    pub(crate) expires_at: Option<String>,
+    pub(crate) created_at: String,
+    pub(crate) last_used_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, FromRow, PartialEq, Serialize)]
+pub(crate) struct ApiKeyUsageItem {
+    pub(crate) usage_date: String,
+    pub(crate) key_prefix: String,
+    pub(crate) accepted_requests: i64,
+    pub(crate) rate_limited_requests: i64,
+    pub(crate) successful_responses: i64,
+    pub(crate) client_error_responses: i64,
+    pub(crate) server_error_responses: i64,
+    pub(crate) last_used_at: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, FromRow, PartialEq)]
