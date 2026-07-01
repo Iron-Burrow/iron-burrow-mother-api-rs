@@ -409,6 +409,35 @@ async fn upsert_consumer_for_issue(
     display_name: &str,
     category: &str,
 ) -> Result<IssueConsumerRow, ApiKeyIssueRepositoryError> {
+    let inserted = sqlx::query_as::<_, IssueConsumerRow>(
+        r#"
+        insert into mother_api.api_consumer (
+            slug,
+            display_name,
+            category,
+            status
+        )
+        values ($1, $2, $3, 'active')
+        on conflict (slug) do nothing
+        returning
+            id as consumer_id,
+            slug as consumer_slug,
+            display_name,
+            category,
+            false as consumer_reused
+        "#,
+    )
+    .bind(consumer_slug)
+    .bind(display_name)
+    .bind(category)
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?;
+
+    if let Some(consumer) = inserted {
+        return Ok(consumer);
+    }
+
     let existing = sqlx::query_as::<_, IssueConsumerRow>(
         r#"
         select
@@ -425,46 +454,25 @@ async fn upsert_consumer_for_issue(
     .bind(consumer_slug)
     .fetch_optional(&mut **transaction)
     .await
-    .map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?;
+    .map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?
+    .ok_or_else(|| {
+        ApiKeyIssueRepositoryError::Repository(RepositoryError::protocol(format!(
+            "API consumer {consumer_slug:?} conflicted during issue but could not be reloaded"
+        )))
+    })?;
 
-    if let Some(consumer) = existing {
-        if consumer.display_name != display_name {
-            return Err(ApiKeyIssueRepositoryError::ConsumerConflict(format!(
-                "existing API consumer {consumer_slug:?} has a different display name"
-            )));
-        }
-        if consumer.category != category {
-            return Err(ApiKeyIssueRepositoryError::ConsumerConflict(format!(
-                "existing API consumer {consumer_slug:?} has a different category"
-            )));
-        }
-
-        return Ok(consumer);
+    if existing.display_name != display_name {
+        return Err(ApiKeyIssueRepositoryError::ConsumerConflict(format!(
+            "existing API consumer {consumer_slug:?} has a different display name"
+        )));
+    }
+    if existing.category != category {
+        return Err(ApiKeyIssueRepositoryError::ConsumerConflict(format!(
+            "existing API consumer {consumer_slug:?} has a different category"
+        )));
     }
 
-    sqlx::query_as::<_, IssueConsumerRow>(
-        r#"
-        insert into mother_api.api_consumer (
-            slug,
-            display_name,
-            category,
-            status
-        )
-        values ($1, $2, $3, 'active')
-        returning
-            id as consumer_id,
-            slug as consumer_slug,
-            display_name,
-            category,
-            false as consumer_reused
-        "#,
-    )
-    .bind(consumer_slug)
-    .bind(display_name)
-    .bind(category)
-    .fetch_one(&mut **transaction)
-    .await
-    .map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))
+    Ok(existing)
 }
 
 async fn insert_issued_key(

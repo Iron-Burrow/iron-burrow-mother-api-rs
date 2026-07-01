@@ -628,6 +628,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn concurrent_issue_commands_reuse_the_same_new_consumer() {
+        let Some(pool) = migrated_pool().await else {
+            return;
+        };
+
+        let repository = ApiKeyRepository::database(pool.clone());
+        let consumer_slug = format!("admin-concurrent-{}", Uuid::new_v4().simple());
+        delete_test_consumer(&pool, &consumer_slug).await;
+
+        let (first, second) = tokio::join!(
+            execute(
+                issue_command(&consumer_slug, "Concurrent Consumer", "partner"),
+                &repository
+            ),
+            execute(
+                issue_command(&consumer_slug, "Concurrent Consumer", "partner"),
+                &repository
+            )
+        );
+        let first = first.unwrap();
+        let second = second.unwrap();
+        let AdminPayload::Issued(first_issue) = first.payload else {
+            panic!("expected issue output");
+        };
+        let AdminPayload::Issued(second_issue) = second.payload else {
+            panic!("expected issue output");
+        };
+
+        let mut reused_flags = vec![
+            first_issue.issued.consumer_reused,
+            second_issue.issued.consumer_reused,
+        ];
+        reused_flags.sort();
+        assert_eq!(reused_flags, vec![false, true]);
+        assert_eq!(
+            first_issue.issued.consumer_id,
+            second_issue.issued.consumer_id
+        );
+
+        let counts = sqlx::query_as::<_, (i64, i64, i64)>(
+            r#"
+            select
+                count(distinct consumer.id) as consumer_count,
+                count(distinct api_key.id) as key_count,
+                count(distinct policy.api_key_id) as policy_count
+            from mother_api.api_consumer consumer
+            left join mother_api.api_key api_key
+                on api_key.consumer_id = consumer.id
+            left join mother_api.api_key_policy policy
+                on policy.api_key_id = api_key.id
+            where consumer.slug = $1
+            "#,
+        )
+        .bind(&consumer_slug)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(counts, (1, 2, 2));
+
+        delete_test_consumer(&pool, &consumer_slug).await;
+    }
+
+    #[tokio::test]
     async fn issue_command_rejects_consumer_conflicts_without_partial_key() {
         let Some(pool) = migrated_pool().await else {
             return;
