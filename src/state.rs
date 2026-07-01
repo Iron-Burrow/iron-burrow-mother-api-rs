@@ -2,6 +2,7 @@ use sqlx::PgPool;
 
 use crate::adapters::bigwig::{client::create_bigwig_client, BigwigClient};
 use crate::adapters::dis::{client::create_dis_client, DisClient};
+use crate::adapters::http::rate_limit::ApiKeyMinuteLimiter;
 use crate::adapters::postgres::{ApiKeyRepository, GlobalAssetRepository};
 use crate::adapters::price_indexer::{client::create_price_indexer_client, PriceIndexerClient};
 use crate::config::Config;
@@ -13,6 +14,7 @@ pub(crate) struct AppState {
     pub(crate) version: &'static str,
     pub(crate) database_pool: Option<PgPool>,
     pub(crate) api_key_repository: Option<ApiKeyRepository>,
+    pub(crate) api_key_minute_limiter: ApiKeyMinuteLimiter,
     pub(crate) asset_repository: Option<GlobalAssetRepository>,
     pub(crate) price_indexer_client: Option<PriceIndexerClient>,
     pub(crate) dis_client: Option<DisClient>,
@@ -39,6 +41,7 @@ impl AppState {
             version: env!("CARGO_PKG_VERSION"),
             database_pool,
             api_key_repository,
+            api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
             asset_repository,
             price_indexer_client,
             dis_client,
@@ -56,6 +59,7 @@ impl AppState {
             version: env!("CARGO_PKG_VERSION"),
             database_pool: None,
             api_key_repository: None,
+            api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
             asset_repository: Some(asset_repository),
             price_indexer_client: None,
             dis_client: None,
@@ -74,6 +78,7 @@ impl AppState {
             version: env!("CARGO_PKG_VERSION"),
             database_pool: None,
             api_key_repository: None,
+            api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
             asset_repository: Some(asset_repository),
             price_indexer_client: None,
             dis_client: None,

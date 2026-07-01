@@ -2001,20 +2001,28 @@ async fn api_key_repository_increments_daily_accepted_with_limit() {
         DailyAcceptedOutcome::LimitExceeded
     );
 
-    let accepted_requests = sqlx::query_scalar::<_, i64>(
-        r#"
-        select accepted_requests
-        from mother_api.api_key_usage_daily
-        where api_key_id = $1
-            and usage_date = (now() at time zone 'utc')::date
+    let (accepted_requests, key_last_used_updated, daily_last_used_updated) =
+        sqlx::query_as::<_, (i64, bool, bool)>(
+            r#"
+        select
+            usage.accepted_requests,
+            api_key.last_used_at is not null,
+            usage.last_used_at is not null
+        from mother_api.api_key_usage_daily usage
+        join mother_api.api_key api_key
+            on api_key.id = usage.api_key_id
+        where usage.api_key_id = $1
+            and usage.usage_date = (now() at time zone 'utc')::date
         "#,
-    )
-    .bind(key_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+        )
+        .bind(key_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
 
     assert_eq!(accepted_requests, 2);
+    assert!(key_last_used_updated);
+    assert!(daily_last_used_updated);
 
     delete_api_consumer_test_rows(&pool, &consumer_slug).await;
 }
