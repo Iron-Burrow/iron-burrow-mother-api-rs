@@ -69,7 +69,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      db-migrate:
+      db-apply:
         condition: service_completed_successfully
     networks:
       iron-burrow-net:
@@ -86,12 +86,12 @@ services:
       timeout: 5s
       retries: 5
 
-  db-migrate:
+  db-apply:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.mother-api
-    container_name: iron-burrow-mother-api-migrate
-    command: ["mother-api", "db", "migrate"]
+    container_name: iron-burrow-mother-api-db-apply
+    command: ["mother-api", "db", "apply"]
     restart: "no"
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/ibdb}

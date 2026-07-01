@@ -612,6 +612,14 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_network_slugs_fail_validation() {
+        let mut catalog = minimal_catalog("duplicate-network-slugs");
+        catalog.networks.push(catalog.networks[0].clone());
+
+        assert_invalid(catalog, "duplicate network slug");
+    }
+
+    #[test]
     fn unresolved_mapping_asset_fails_validation() {
         let mut catalog = minimal_catalog("unresolved-asset");
         catalog.asset_chain_maps[0].asset_slug = "missing-asset".to_string();
@@ -650,6 +658,23 @@ mod tests {
         catalog.asset_chain_maps[0].deployment_address = Some("0xnot-an-address".to_string());
 
         assert_invalid(catalog, "invalid deployment_address");
+    }
+
+    #[test]
+    fn native_mapping_with_deployment_address_fails_validation() {
+        let mut catalog = minimal_catalog("native-with-address");
+        catalog.asset_chain_maps[0].is_native = true;
+        catalog.asset_chain_maps[0].token_standard = "native".to_string();
+
+        assert_invalid(catalog, "must not declare deployment_address");
+    }
+
+    #[test]
+    fn deployed_mapping_without_deployment_address_fails_validation() {
+        let mut catalog = minimal_catalog("deployed-without-address");
+        catalog.asset_chain_maps[0].deployment_address = None;
+
+        assert_invalid(catalog, "requires deployment_address");
     }
 
     #[test]

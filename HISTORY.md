@@ -250,3 +250,14 @@ implementation, and documentation changes.
 - Added the SPEC-009 Slice 5 schema-only API-key foundation with constrained
   `api_consumer` and `api_key` tables, while keeping real key issuance,
   inbound auth enforcement, and API-key reference data out of migrations.
+
+## 2026-07-01
+
+- Completed SPEC-009 Slice 6 deployment and CI hardening: Compose now uses a
+  shared `db-apply` lifecycle command, the production image build embeds
+  reference data, and PR CI runs Rust, Postgres-backed, and production-image
+  lifecycle checks.
+- Replaced the migration-only Docker smoke proof with `make
+  smoke-db-lifecycle`, which runs `mother-api db apply` twice, verifies no-op
+  reference-data audit rows, starts `serve` from the same image, and confirms
+  the app image does not contain `sqlx` or `psql`.

@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Run Rust tests
+        run: cargo test --locked
+
+      - name: Run Postgres-backed regression tests
+        run: make test-db-postgres
+
+      - name: Run production image database lifecycle smoke test
+        run: make smoke-db-lifecycle
