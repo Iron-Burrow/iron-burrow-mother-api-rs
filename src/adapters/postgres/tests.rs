@@ -844,6 +844,24 @@ async fn api_consumer_category_status_and_metadata_are_constrained() {
         return;
     };
 
+    let mut display_name_transaction = pool.begin().await.unwrap();
+    let display_name_result = sqlx::query(
+        r#"
+        insert into mother_api.api_consumer (
+            slug,
+            display_name,
+            category,
+            status
+        )
+        values ('blank-display-name-consumer', '   ', 'friend', 'active')
+        "#,
+    )
+    .execute(&mut *display_name_transaction)
+    .await;
+    let error = display_name_result.expect_err("blank consumer display_name should fail");
+    assert_database_constraint(error, "api_consumer_display_name_non_empty");
+    display_name_transaction.rollback().await.unwrap();
+
     let mut category_transaction = pool.begin().await.unwrap();
     let category_result = sqlx::query(
         r#"
@@ -899,6 +917,33 @@ async fn api_consumer_category_status_and_metadata_are_constrained() {
     let error = metadata_result.expect_err("non-object consumer metadata should fail");
     assert_database_constraint(error, "api_consumer_metadata_object");
     metadata_transaction.rollback().await.unwrap();
+
+    let mut timestamp_transaction = pool.begin().await.unwrap();
+    let timestamp_result = sqlx::query(
+        r#"
+        insert into mother_api.api_consumer (
+            slug,
+            display_name,
+            category,
+            status,
+            created_at,
+            updated_at
+        )
+        values (
+            'bad-consumer-timestamps',
+            'Bad Consumer Timestamps',
+            'friend',
+            'active',
+            '2026-01-01T00:00:00Z',
+            '2025-12-31T00:00:00Z'
+        )
+        "#,
+    )
+    .execute(&mut *timestamp_transaction)
+    .await;
+    let error = timestamp_result.expect_err("consumer updated_at before created_at should fail");
+    assert_database_constraint(error, "api_consumer_timestamps_sane");
+    timestamp_transaction.rollback().await.unwrap();
 }
 
 #[tokio::test]
@@ -1017,6 +1062,27 @@ async fn api_key_hash_algorithm_length_and_metadata_are_constrained() {
     let Some(pool) = migrated_pool().await else {
         return;
     };
+
+    let mut label_transaction = pool.begin().await.unwrap();
+    let consumer_id = insert_api_consumer(&mut label_transaction, "blank-key-label-consumer").await;
+    let label_result = sqlx::query(
+        r#"
+        insert into mother_api.api_key (
+            consumer_id,
+            label,
+            key_prefix,
+            key_hash
+        )
+        values ($1, '   ', 'blank_label_prefix', $2)
+        "#,
+    )
+    .bind(consumer_id)
+    .bind(vec![14_u8; 32])
+    .execute(&mut *label_transaction)
+    .await;
+    let error = label_result.expect_err("blank key label should fail");
+    assert_database_constraint(error, "api_key_label_non_empty");
+    label_transaction.rollback().await.unwrap();
 
     let mut algorithm_transaction = pool.begin().await.unwrap();
     let consumer_id =
@@ -1241,4 +1307,35 @@ async fn api_key_timestamp_sanity_is_enforced() {
     let error = last_used_result.expect_err("last_used_at before created_at should fail");
     assert_database_constraint(error, "api_key_timestamps_sane");
     last_used_transaction.rollback().await.unwrap();
+
+    let mut updated_transaction = pool.begin().await.unwrap();
+    let consumer_id =
+        insert_api_consumer(&mut updated_transaction, "bad-key-updated-at-consumer").await;
+    let updated_result = sqlx::query(
+        r#"
+        insert into mother_api.api_key (
+            consumer_id,
+            label,
+            key_prefix,
+            key_hash,
+            created_at,
+            updated_at
+        )
+        values (
+            $1,
+            'Bad Updated At Key',
+            'bad_updated_at_prefix',
+            $2,
+            '2026-01-01T00:00:00Z',
+            '2025-12-31T00:00:00Z'
+        )
+        "#,
+    )
+    .bind(consumer_id)
+    .bind(vec![15_u8; 32])
+    .execute(&mut *updated_transaction)
+    .await;
+    let error = updated_result.expect_err("key updated_at before created_at should fail");
+    assert_database_constraint(error, "api_key_timestamps_sane");
+    updated_transaction.rollback().await.unwrap();
 }
