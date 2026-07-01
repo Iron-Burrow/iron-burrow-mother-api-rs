@@ -2,7 +2,7 @@ use sqlx::PgPool;
 
 use crate::adapters::bigwig::{client::create_bigwig_client, BigwigClient};
 use crate::adapters::dis::{client::create_dis_client, DisClient};
-use crate::adapters::postgres::GlobalAssetRepository;
+use crate::adapters::postgres::{ApiKeyRepository, GlobalAssetRepository};
 use crate::adapters::price_indexer::{client::create_price_indexer_client, PriceIndexerClient};
 use crate::config::Config;
 use crate::infra::db;
@@ -12,6 +12,7 @@ pub(crate) struct AppState {
     pub(crate) config: Config,
     pub(crate) version: &'static str,
     pub(crate) database_pool: Option<PgPool>,
+    pub(crate) api_key_repository: Option<ApiKeyRepository>,
     pub(crate) asset_repository: Option<GlobalAssetRepository>,
     pub(crate) price_indexer_client: Option<PriceIndexerClient>,
     pub(crate) dis_client: Option<DisClient>,
@@ -27,6 +28,7 @@ impl AppState {
 
     pub(crate) fn try_new(config: Config) -> Result<Self, sqlx::Error> {
         let database_pool = db::create_pool(config.database_url.as_deref())?;
+        let api_key_repository = database_pool.clone().map(ApiKeyRepository::database);
         let asset_repository = database_pool.clone().map(GlobalAssetRepository::database);
         let price_indexer_client = create_price_indexer_client(&config);
         let dis_client = create_dis_client(&config);
@@ -36,6 +38,7 @@ impl AppState {
             config,
             version: env!("CARGO_PKG_VERSION"),
             database_pool,
+            api_key_repository,
             asset_repository,
             price_indexer_client,
             dis_client,
@@ -52,6 +55,7 @@ impl AppState {
             config,
             version: env!("CARGO_PKG_VERSION"),
             database_pool: None,
+            api_key_repository: None,
             asset_repository: Some(asset_repository),
             price_indexer_client: None,
             dis_client: None,
@@ -69,6 +73,7 @@ impl AppState {
             config,
             version: env!("CARGO_PKG_VERSION"),
             database_pool: None,
+            api_key_repository: None,
             asset_repository: Some(asset_repository),
             price_indexer_client: None,
             dis_client: None,

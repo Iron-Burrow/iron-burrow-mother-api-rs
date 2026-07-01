@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use serde::Serialize;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -5,13 +7,58 @@ use uuid::Uuid;
 use super::errors::RepositoryError;
 
 #[derive(Clone, Debug)]
-pub(crate) struct ApiKeyRepository {
-    pool: PgPool,
+pub(crate) enum ApiKeyRepository {
+    Database(PgPool),
+    #[cfg(test)]
+    InMemory(Arc<InMemoryApiKeys>),
+    #[cfg(test)]
+    Unavailable,
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug)]
+pub(crate) struct InMemoryApiKeys {
+    keys: Vec<InMemoryApiKey>,
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug)]
+struct InMemoryApiKey {
+    key_prefix: String,
+    key_hash: Vec<u8>,
+    lookup: ApiKeyLookup,
 }
 
 impl ApiKeyRepository {
     pub(crate) fn database(pool: PgPool) -> Self {
-        Self { pool }
+        Self::Database(pool)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn in_memory(keys: Vec<(String, Vec<u8>, ApiKeyLookup)>) -> Self {
+        Self::InMemory(Arc::new(InMemoryApiKeys {
+            keys: keys
+                .into_iter()
+                .map(|(key_prefix, key_hash, lookup)| InMemoryApiKey {
+                    key_prefix,
+                    key_hash,
+                    lookup,
+                })
+                .collect(),
+        }))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn unavailable() -> Self {
+        Self::Unavailable
+    }
+
+    fn database_pool(&self) -> Result<&PgPool, RepositoryError> {
+        match self {
+            Self::Database(pool) => Ok(pool),
+            #[cfg(test)]
+            Self::InMemory(_) | Self::Unavailable => Err(RepositoryError::test()),
+        }
     }
 
     pub(crate) async fn find_key_by_prefix_and_hash(
@@ -19,6 +66,21 @@ impl ApiKeyRepository {
         key_prefix: &str,
         key_hash: &[u8],
     ) -> Result<Option<ApiKeyLookup>, RepositoryError> {
+        #[cfg(test)]
+        if let Self::InMemory(keys) = self {
+            return Ok(keys
+                .keys
+                .iter()
+                .find(|key| key.key_prefix == key_prefix && key.key_hash == key_hash)
+                .map(|key| key.lookup.clone()));
+        }
+
+        #[cfg(test)]
+        if matches!(self, Self::Unavailable) {
+            return Err(RepositoryError::test());
+        }
+
+        let pool = self.database_pool()?;
         let row = sqlx::query_as::<_, ApiKeyLookupRow>(
             r#"
             select
@@ -43,7 +105,7 @@ impl ApiKeyRepository {
         )
         .bind(key_prefix)
         .bind(key_hash)
-        .fetch_optional(&self.pool)
+        .fetch_optional(pool)
         .await
         .map_err(RepositoryError::new)?;
 
@@ -54,10 +116,13 @@ impl ApiKeyRepository {
         &self,
         input: IssueApiKeyInput,
     ) -> Result<IssuedApiKey, ApiKeyIssueRepositoryError> {
-        let mut transaction =
-            self.pool.begin().await.map_err(|error| {
-                ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error))
-            })?;
+        let pool = self
+            .database_pool()
+            .map_err(ApiKeyIssueRepositoryError::Repository)?;
+        let mut transaction = pool
+            .begin()
+            .await
+            .map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?;
 
         let consumer = upsert_consumer_for_issue(
             &mut transaction,
@@ -90,6 +155,7 @@ impl ApiKeyRepository {
         requests_per_minute: i32,
         requests_per_day: i32,
     ) -> Result<ApiKeyPolicy, RepositoryError> {
+        let pool = self.database_pool()?;
         let row = sqlx::query_as::<_, ApiKeyPolicy>(
             r#"
             insert into mother_api.api_key_policy (
@@ -107,7 +173,7 @@ impl ApiKeyRepository {
         .bind(api_key_id)
         .bind(requests_per_minute)
         .bind(requests_per_day)
-        .fetch_one(&self.pool)
+        .fetch_one(pool)
         .await
         .map_err(RepositoryError::new)?;
 
@@ -118,6 +184,7 @@ impl ApiKeyRepository {
         &self,
         api_key_id: Uuid,
     ) -> Result<Option<ApiKeyPolicy>, RepositoryError> {
+        let pool = self.database_pool()?;
         let row = sqlx::query_as::<_, ApiKeyPolicy>(
             r#"
             select
@@ -129,7 +196,7 @@ impl ApiKeyRepository {
             "#,
         )
         .bind(api_key_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(pool)
         .await
         .map_err(RepositoryError::new)?;
 
@@ -140,6 +207,7 @@ impl ApiKeyRepository {
         &self,
         key_prefix: &str,
     ) -> Result<Option<ApiKeyRevocation>, RepositoryError> {
+        let pool = self.database_pool()?;
         let row = sqlx::query_as::<_, ApiKeyRevocationRow>(
             r#"
             update mother_api.api_key
@@ -156,7 +224,7 @@ impl ApiKeyRepository {
             "#,
         )
         .bind(key_prefix)
-        .fetch_optional(&self.pool)
+        .fetch_optional(pool)
         .await
         .map_err(RepositoryError::new)?;
 
@@ -167,6 +235,7 @@ impl ApiKeyRepository {
         &self,
         consumer_slug: &str,
     ) -> Result<Vec<ApiKeyListItem>, RepositoryError> {
+        let pool = self.database_pool()?;
         let rows = sqlx::query_as::<_, ApiKeyListItem>(
             r#"
             select
@@ -184,7 +253,7 @@ impl ApiKeyRepository {
             "#,
         )
         .bind(consumer_slug)
-        .fetch_all(&self.pool)
+        .fetch_all(pool)
         .await
         .map_err(RepositoryError::new)?;
 
@@ -196,6 +265,7 @@ impl ApiKeyRepository {
         consumer_slug: &str,
         days: u32,
     ) -> Result<Vec<ApiKeyUsageItem>, RepositoryError> {
+        let pool = self.database_pool()?;
         let rows = sqlx::query_as::<_, ApiKeyUsageItem>(
             r#"
             select
@@ -219,7 +289,7 @@ impl ApiKeyRepository {
         )
         .bind(consumer_slug)
         .bind(i32::try_from(days).unwrap_or(i32::MAX))
-        .fetch_all(&self.pool)
+        .fetch_all(pool)
         .await
         .map_err(RepositoryError::new)?;
 
@@ -227,6 +297,7 @@ impl ApiKeyRepository {
     }
 
     pub(crate) async fn update_last_used(&self, api_key_id: Uuid) -> Result<bool, RepositoryError> {
+        let pool = self.database_pool()?;
         let updated = sqlx::query_scalar::<_, bool>(
             r#"
             update mother_api.api_key
@@ -238,7 +309,7 @@ impl ApiKeyRepository {
             "#,
         )
         .bind(api_key_id)
-        .fetch_optional(&self.pool)
+        .fetch_optional(pool)
         .await
         .map_err(RepositoryError::new)?;
 
@@ -249,6 +320,7 @@ impl ApiKeyRepository {
         &self,
         api_key_id: Uuid,
     ) -> Result<DailyAcceptedOutcome, RepositoryError> {
+        let pool = self.database_pool()?;
         let outcome = sqlx::query_scalar::<_, String>(
             r#"
             with policy as (
@@ -288,7 +360,7 @@ impl ApiKeyRepository {
             "#,
         )
         .bind(api_key_id)
-        .fetch_one(&self.pool)
+        .fetch_one(pool)
         .await
         .map_err(RepositoryError::new)?;
 
@@ -299,6 +371,7 @@ impl ApiKeyRepository {
         &self,
         api_key_id: Uuid,
     ) -> Result<(), RepositoryError> {
+        let pool = self.database_pool()?;
         sqlx::query(
             r#"
             insert into mother_api.api_key_usage_daily (
@@ -317,7 +390,7 @@ impl ApiKeyRepository {
             "#,
         )
         .bind(api_key_id)
-        .execute(&self.pool)
+        .execute(pool)
         .await
         .map_err(RepositoryError::new)?;
 
@@ -329,18 +402,16 @@ impl ApiKeyRepository {
         api_key_id: Uuid,
         response_class: UsageResponseClass,
     ) -> Result<(), RepositoryError> {
+        let pool = self.database_pool()?;
         match response_class {
             UsageResponseClass::Successful => {
-                increment_response_counter(&self.pool, api_key_id, ResponseCounter::Successful)
-                    .await
+                increment_response_counter(pool, api_key_id, ResponseCounter::Successful).await
             }
             UsageResponseClass::ClientError => {
-                increment_response_counter(&self.pool, api_key_id, ResponseCounter::ClientError)
-                    .await
+                increment_response_counter(pool, api_key_id, ResponseCounter::ClientError).await
             }
             UsageResponseClass::ServerError => {
-                increment_response_counter(&self.pool, api_key_id, ResponseCounter::ServerError)
-                    .await
+                increment_response_counter(pool, api_key_id, ResponseCounter::ServerError).await
             }
         }
     }

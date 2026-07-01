@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-06-29
+last_reviewed: 2026-07-01
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -63,6 +63,14 @@ Mother API supports an explicit runtime route-surface mode through
   `POST /v1/balances/bulk`, and `POST /v1/erc20-transfers/search` when
   `ERC20_TRANSFERS_ENABLED=true`.
 
+In `beta` mode, `/health` remains public. The beta `/v1/*` routes listed
+above require `Authorization: Bearer <api_key>`. Missing, malformed,
+unsupported, unknown, disabled, revoked, expired, or disabled-consumer
+credentials return the same `401 Unauthorized` envelope with
+`error.code="unauthorized"`. If Postgres is unavailable while Mother API is
+checking a valid-format API key, the request returns `503 Service Unavailable`
+with `error.code="database_unavailable"`.
+
 In `beta` mode, known Alpha-only endpoints return `403 Forbidden` with
 `error.code="endpoint_disabled"`. Truly unknown routes remain normal
 unmatched-route `404 Not Found` responses.
@@ -94,8 +102,9 @@ unmatched-route `404 Not Found` responses.
 | `POST` | `/v1/erc20-transfers/search`            | None | Feature-gated by `ERC20_TRANSFERS_ENABLED`; searches bounded ERC-20 Transfer logs for one EVM address. |
 | `GET`  | `/v1/search-engine`                     | None | Resolves a search query against global assets.     |
 
-Mother API does not currently authenticate callers. API keys, rate
-limiting, billing, and x402 are explicitly out of scope.
+Production Alpha 1 endpoints do not currently authenticate callers. Inbound
+API-key authentication is currently limited to the private Beta route surface;
+rate limiting, billing, and x402 remain out of scope.
 
 ---
 
@@ -1878,6 +1887,7 @@ Fields:
 
 | HTTP | `error.code`            | Trigger                                                                |
 | ---- | ----------------------- | ---------------------------------------------------------------------- |
+| 401  | `unauthorized`          | A Beta protected route request lacks a valid active API key.            |
 | 403  | `endpoint_disabled`     | A known Alpha-only endpoint is intentionally disabled by the Beta route surface. |
 | 400  | `invalid_request`       | A JSON body is malformed/missing required fields, includes a reserved balance network alias field, or non-balance public parameters are invalid or incompatible. |
 | 400  | `invalid_account`       | A balance account address is not `0x` plus 40 ASCII hexadecimal characters. |
@@ -1911,7 +1921,7 @@ Fields:
 | 502  | `price_indexer_error`   | Price-indexer failed while handling a valid signal request.            |
 | 502  | `upstream_invalid_response` | Price-indexer returned malformed or unexpected JSON.               |
 | 502  | `upstream_provider_error` | Bigwig's upstream RPC provider failed during transfer extraction.    |
-| 503  | `database_unavailable`  | `DATABASE_URL` is unset or Postgres is unreachable.                    |
+| 503  | `database_unavailable`  | `DATABASE_URL` is unset, Postgres is unreachable, or API-key authentication cannot check a valid-format Beta credential. |
 | 503  | `asset_network_map_unavailable` | The balance catalog is unconfigured or temporarily unavailable. |
 | 503  | `asset_contract_mapping_unavailable` | Transfer asset contract mapping is unconfigured or temporarily unavailable. |
 | 503  | `extraction_unavailable` | Bigwig ERC-20 transfer extraction is disabled, unconfigured, unreachable, or unavailable after the Mother route gate is enabled. |
@@ -1935,8 +1945,8 @@ not be assumed to exist or behave consistently if encountered:
   `/v1/prices/*`).
 - Event, holder, or network indexing endpoints.
 - Admin, explorer, account, or tracked-token routes.
-- API keys, bearer auth, billing, x402, or rate limiting on inbound
-  requests.
+- Public API-key management routes, billing, x402, or rate limiting on
+  inbound requests.
 - In-process response caching headers (e.g., custom `X-Cache-*`).
 - Read-model asset sync feeds. A sync surface for
   `iron-burrow-read-model` requires an accepted proposal, implementation,

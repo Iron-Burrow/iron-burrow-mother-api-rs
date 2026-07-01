@@ -48,6 +48,14 @@ impl ApiError {
         }
     }
 
+    pub fn unauthorized() -> Self {
+        Self {
+            status: StatusCode::UNAUTHORIZED,
+            code: "unauthorized",
+            message: "The request lacks a valid active API key.".to_string(),
+        }
+    }
+
     pub fn query_too_long() -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
@@ -277,6 +285,14 @@ impl ApiError {
             status: StatusCode::SERVICE_UNAVAILABLE,
             code: "database_unavailable",
             message: "Asset resolution is temporarily unavailable.".to_string(),
+        }
+    }
+
+    pub fn database_unavailable_for_auth() -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: "database_unavailable",
+            message: "API-key authentication is temporarily unavailable.".to_string(),
         }
     }
 

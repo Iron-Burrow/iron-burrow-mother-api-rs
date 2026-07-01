@@ -267,3 +267,9 @@ implementation, and documentation changes.
 - Kept raw API keys print-once at issuance, persisted only key prefixes and
   hashes, and added parser plus Postgres-backed command coverage. Public HTTP
   route authentication remains unimplemented for this slice.
+- Added SPEC-010 PR 3 beta API-key authentication middleware for protected
+  `/v1/*` beta routes, while keeping `/health` public and Alpha routes
+  unauthenticated.
+- Attached `ApiKeyPrincipal` to authenticated request extensions and added
+  route coverage for missing, malformed, unsupported, unknown, inactive,
+  expired, disabled-consumer, database-unavailable, and valid-key cases.

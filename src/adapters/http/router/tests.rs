@@ -5,20 +5,28 @@ use std::{
 
 use axum::{
     body::Body,
-    http::{Request, StatusCode},
+    http::{header::AUTHORIZATION, Request, StatusCode},
     Router,
 };
 use serde_json::Value;
 use tower::ServiceExt;
+use uuid::Uuid;
 
 use super::*;
 use crate::test_utils::fixtures::global_assets::sample_assets;
 use crate::{
-    adapters::postgres::global_assets::GlobalAssetRepository,
+    adapters::postgres::{
+        api_keys::ApiKeyLookup, global_assets::GlobalAssetRepository, ApiKeyRepository,
+    },
     adapters::price_indexer::PriceIndexerClient,
     config::{Config, PublicApiSurface},
+    domain::api_keys::hash_presented_api_key,
 };
 use crate::{domain::global_assets::GlobalAsset, state::AppState};
+
+const TEST_API_KEY: &str =
+    "ib_live_0123456789abcdef.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const TEST_API_KEY_PREFIX: &str = "ib_live_0123456789abcdef";
 
 fn test_app() -> Router {
     build_router(AppState::with_asset_repository(
@@ -34,6 +42,27 @@ fn beta_config() -> Config {
     }
 }
 
+fn beta_app_with_api_key_repository(api_key_repository: Option<ApiKeyRepository>) -> Router {
+    build_router(AppState {
+        config: beta_config(),
+        version: env!("CARGO_PKG_VERSION"),
+        database_pool: None,
+        api_key_repository,
+        asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
+        price_indexer_client: None,
+        dis_client: None,
+        bigwig_client: None,
+    })
+}
+
+fn beta_app_with_lookup(lookup: ApiKeyLookup) -> Router {
+    beta_app_with_api_key_repository(Some(ApiKeyRepository::in_memory(vec![(
+        TEST_API_KEY_PREFIX.to_string(),
+        hash_presented_api_key(TEST_API_KEY).to_vec(),
+        lookup,
+    )])))
+}
+
 fn test_app_with_price_indexer(price_indexer_url: &str, timeout_ms: u64) -> Router {
     let price_indexer_client =
         PriceIndexerClient::new(price_indexer_url, "test-token", timeout_ms).unwrap();
@@ -42,6 +71,7 @@ fn test_app_with_price_indexer(price_indexer_url: &str, timeout_ms: u64) -> Rout
         config: Config::default(),
         version: env!("CARGO_PKG_VERSION"),
         database_pool: None,
+        api_key_repository: None,
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
         price_indexer_client: Some(price_indexer_client),
         dis_client: None,
@@ -129,7 +159,7 @@ async fn beta_surface_keeps_balance_and_health_routes_active() {
             .await
             .unwrap();
 
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{uri}");
+        assert_public_auth_error(response, StatusCode::UNAUTHORIZED, "unauthorized").await;
     }
 
     let response = app
@@ -178,7 +208,156 @@ async fn beta_surface_keeps_transfer_search_feature_gated() {
     .await
     .unwrap();
 
-    assert_eq!(enabled_response.status(), StatusCode::BAD_REQUEST);
+    assert_public_auth_error(enabled_response, StatusCode::UNAUTHORIZED, "unauthorized").await;
+}
+
+#[tokio::test]
+async fn beta_protected_routes_require_api_key_authentication() {
+    let app = beta_app_with_api_key_repository(None);
+
+    for uri in ["/v1/balances", "/v1/balances/bulk"] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(uri)
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_public_auth_error(response, StatusCode::UNAUTHORIZED, "unauthorized").await;
+    }
+}
+
+#[tokio::test]
+async fn beta_auth_rejects_malformed_unsupported_and_unknown_keys() {
+    for (_name, api_key_repository, header) in [
+        (
+            "malformed",
+            Some(ApiKeyRepository::in_memory(Vec::new())),
+            format!("Bearer not-a-key"),
+        ),
+        (
+            "unsupported",
+            Some(ApiKeyRepository::in_memory(Vec::new())),
+            format!("Basic {TEST_API_KEY}"),
+        ),
+        (
+            "unknown",
+            Some(ApiKeyRepository::in_memory(Vec::new())),
+            format!("Bearer {TEST_API_KEY}"),
+        ),
+    ] {
+        let response = beta_app_with_api_key_repository(api_key_repository)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/balances")
+                    .header("content-type", "application/json")
+                    .header(AUTHORIZATION, header)
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_public_auth_error(response, StatusCode::UNAUTHORIZED, "unauthorized").await;
+    }
+}
+
+#[tokio::test]
+async fn beta_auth_rejects_inactive_or_expired_credentials_without_enumerating() {
+    for (_name, lookup) in [
+        (
+            "disabled",
+            ApiKeyLookup {
+                key_status: "disabled".to_string(),
+                ..active_api_key_lookup()
+            },
+        ),
+        (
+            "revoked",
+            ApiKeyLookup {
+                key_status: "revoked".to_string(),
+                ..active_api_key_lookup()
+            },
+        ),
+        (
+            "expired",
+            ApiKeyLookup {
+                expires_at: Some("2026-01-01T00:00:00Z".to_string()),
+                is_expired: true,
+                ..active_api_key_lookup()
+            },
+        ),
+        (
+            "disabled-consumer",
+            ApiKeyLookup {
+                consumer_status: "disabled".to_string(),
+                ..active_api_key_lookup()
+            },
+        ),
+    ] {
+        let response = beta_app_with_lookup(lookup)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/balances")
+                    .header("content-type", "application/json")
+                    .header(AUTHORIZATION, format!("Bearer {TEST_API_KEY}"))
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_public_auth_error(response, StatusCode::UNAUTHORIZED, "unauthorized").await;
+    }
+}
+
+#[tokio::test]
+async fn beta_auth_reports_database_unavailable_for_valid_key_when_repository_fails() {
+    let response = beta_app_with_api_key_repository(Some(ApiKeyRepository::unavailable()))
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/balances")
+                .header("content-type", "application/json")
+                .header(AUTHORIZATION, format!("Bearer {TEST_API_KEY}"))
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_public_auth_error(
+        response,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "database_unavailable",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn beta_auth_allows_valid_key_to_reach_protected_route_handler() {
+    let response = beta_app_with_lookup(active_api_key_lookup())
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/balances")
+                .header("content-type", "application/json")
+                .header(AUTHORIZATION, format!("Bearer {TEST_API_KEY}"))
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -407,6 +586,7 @@ async fn assets_list_requests_batch_price_enrichment_by_slug() {
         config: Config::default(),
         version: env!("CARGO_PKG_VERSION"),
         database_pool: None,
+        api_key_repository: None,
         asset_repository: Some(repository),
         price_indexer_client: Some(price_indexer_client),
         dis_client: None,
@@ -573,6 +753,7 @@ async fn asset_detail_requests_price_enrichment_by_slug() {
         config: Config::default(),
         version: env!("CARGO_PKG_VERSION"),
         database_pool: None,
+        api_key_repository: None,
         asset_repository: Some(repository),
         price_indexer_client: Some(price_indexer_client),
         dis_client: None,
@@ -1442,6 +1623,38 @@ async fn app_json(app: Router, uri: &str) -> (StatusCode, Value) {
     let json = serde_json::from_slice(&body).unwrap();
 
     (status, json)
+}
+
+async fn assert_public_auth_error(
+    response: axum::response::Response,
+    expected_status: StatusCode,
+    expected_code: &str,
+) {
+    assert_eq!(response.status(), expected_status);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(json["ok"], false);
+    assert_eq!(json["error"]["code"], expected_code);
+}
+
+fn active_api_key_lookup() -> ApiKeyLookup {
+    ApiKeyLookup {
+        api_key_id: Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
+        consumer_id: Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap(),
+        consumer_slug: "first-customer".to_string(),
+        consumer_category: "partner".to_string(),
+        consumer_status: "active".to_string(),
+        key_prefix: TEST_API_KEY_PREFIX.to_string(),
+        key_label: "beta access key".to_string(),
+        key_status: "active".to_string(),
+        hash_algorithm: "sha256".to_string(),
+        expires_at: None,
+        is_expired: false,
+    }
 }
 
 fn spawn_price_indexer() -> Option<(String, tokio::task::JoinHandle<String>)> {
