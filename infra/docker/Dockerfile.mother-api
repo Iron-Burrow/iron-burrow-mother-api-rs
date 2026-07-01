@@ -5,6 +5,7 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY migrations ./migrations
+COPY reference-data ./reference-data
 
 RUN cargo build --release --locked --bin mother-api
 

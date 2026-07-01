@@ -77,10 +77,10 @@ services:
           - mother-api
       infra-client: {}
 
-  db-migrate:
+  db-apply:
     build: !reset null
     image: ghcr.io/iron-burrow/iron-burrow-mother-api-rs:${IRON_BURROW_MOTHER_API_TAG:?IRON_BURROW_MOTHER_API_TAG is required}
-    command: ["mother-api", "db", "migrate"]
+    command: ["mother-api", "db", "apply"]
     restart: "no"
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}

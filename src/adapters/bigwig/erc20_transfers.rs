@@ -434,6 +434,10 @@ mod tests {
             map_bigwig_transfer_error(BigwigError::InvalidExtractionRequest),
             Erc20TransferExtractionError::InternalError
         );
+        assert_eq!(
+            map_bigwig_transfer_error(BigwigError::MalformedSuccessResponse),
+            Erc20TransferExtractionError::InternalError
+        );
     }
 
     #[tokio::test]
@@ -450,9 +454,9 @@ mod tests {
             extraction_request(block_window(), Vec::new()),
         )
         .await
-        .expect_err("malformed success response should be unavailable in PR4");
+        .expect_err("malformed success response should be an internal error");
 
-        assert_eq!(error, Erc20TransferExtractionError::ExtractionUnavailable);
+        assert_eq!(error, Erc20TransferExtractionError::InternalError);
         handle.join().unwrap();
     }
 
