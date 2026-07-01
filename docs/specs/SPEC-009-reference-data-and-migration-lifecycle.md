@@ -1,7 +1,7 @@
 ---
-status: draft
+status: accepted
 owner: iron-burrow
-last_reviewed: 2026-06-30
+last_reviewed: 2026-07-01
 agent_edit_policy: update_when_relevant
 ---
 
