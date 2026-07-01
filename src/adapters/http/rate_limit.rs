@@ -57,6 +57,7 @@ impl ApiKeyMinuteLimiter {
         }
 
         let mut windows = self.windows.lock().expect("minute limiter mutex poisoned");
+        windows.retain(|_, window| now.saturating_duration_since(window.started_at) < WINDOW);
         let window = windows.entry(api_key_id).or_insert(MinuteWindow {
             started_at: now,
             used: 0,
@@ -131,5 +132,24 @@ mod tests {
         limiter.release(reservation);
 
         assert!(limiter.reserve_at(key(), 1, now).is_some());
+    }
+
+    #[test]
+    fn evicts_expired_windows_when_reserving() {
+        let limiter = ApiKeyMinuteLimiter::default();
+        let now = Instant::now();
+        let next_key = Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap();
+
+        assert!(limiter.reserve_at(key(), 1, now).is_some());
+        assert!(limiter
+            .reserve_at(next_key, 1, now + Duration::from_secs(60))
+            .is_some());
+
+        let windows = limiter
+            .windows
+            .lock()
+            .expect("minute limiter mutex poisoned");
+        assert_eq!(windows.len(), 1);
+        assert!(windows.contains_key(&next_key));
     }
 }

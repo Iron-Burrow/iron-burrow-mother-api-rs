@@ -1954,8 +1954,8 @@ not be assumed to exist or behave consistently if encountered:
   `/v1/prices/*`).
 - Event, holder, or network indexing endpoints.
 - Admin, explorer, account, or tracked-token routes.
-- Public API-key management routes, billing, x402, or rate limiting on
-  inbound requests.
+- Public API-key management routes, billing, x402, or inbound rate limiting
+  outside the documented private-Beta protected routes.
 - In-process response caching headers (e.g., custom `X-Cache-*`).
 - Read-model asset sync feeds. A sync surface for
   `iron-burrow-read-model` requires an accepted proposal, implementation,
