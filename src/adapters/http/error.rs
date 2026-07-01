@@ -56,6 +56,14 @@ impl ApiError {
         }
     }
 
+    pub fn rate_limited() -> Self {
+        Self {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            code: "rate_limited",
+            message: "The valid API key exceeded a request limit.".to_string(),
+        }
+    }
+
     pub fn query_too_long() -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,

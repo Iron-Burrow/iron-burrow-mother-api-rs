@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 owner: iron-burrow
 last_reviewed: 2026-07-01
 agent_edit_policy: update_when_relevant
@@ -7,14 +7,17 @@ agent_edit_policy: update_when_relevant
 
 # SPEC-010 - Beta API-Key Access Service
 
-Draft implementation specification for adding the smallest runtime API-key
+Accepted implementation specification for adding the smallest runtime API-key
 access layer needed by the private Beta Mother API surface.
 
-This specification is not current runtime truth. [CONTRACTS.md](../../CONTRACTS.md)
-currently says inbound API keys, bearer authentication, and rate limiting are
-out of scope. If this spec is accepted and implemented, the same change that
-protects public routes must update `CONTRACTS.md`, OpenAPI, examples, smoke
-checks, and `HISTORY.md`.
+This specification records the private-Beta access-control slice implemented
+for `PUBLIC_API_SURFACE=beta`. [CONTRACTS.md](../../CONTRACTS.md) remains
+authoritative for runtime public behavior, including protected Beta routes,
+public error envelopes, and the single-instance per-minute limiter assumption.
+
+This spec does not authorize a general identity platform, public API-key
+management routes, billing, x402 boundaries, or broader gateway-style auth and
+rate limiting.
 
 ## Summary
 
@@ -26,7 +29,7 @@ Mother API already has schema foundations for API consumers and API keys:
 Those tables were introduced as schema-only groundwork. Migrations and
 reference data still create no real customer records and no real API keys.
 
-This spec proposes the next beta access-control slice:
+This spec defines the beta access-control slice:
 
 - issue real API keys through an operator-only CLI;
 - authenticate beta public routes with `Authorization: Bearer <api_key>`;
@@ -41,12 +44,12 @@ identity platform.
 
 ## Authoritative Context
 
-- `CONTRACTS.md` is authoritative for implemented public behavior and currently
-  documents no inbound authentication.
+- `CONTRACTS.md` is authoritative for implemented public behavior and documents
+  the private-Beta API-key authentication and limit contract.
 - Accepted [SPEC-008](SPEC-008-balance-endpoint-beta-contract-hardening.md)
-  keeps the Beta public route surface small and defers API-key protection to a
-  later auth-specific spec.
-- Draft [SPEC-009](SPEC-009-reference-data-and-migration-lifecycle.md) defines
+  keeps the Beta public route surface small and deferred API-key protection to
+  this auth-specific spec.
+- Accepted [SPEC-009](SPEC-009-reference-data-and-migration-lifecycle.md) defines
   the database lifecycle boundary: schema migrations may create API-key tables,
   but migrations and reference data must not create real issued keys.
 - Migration `0007_api_key_adoption.sql` already creates constrained
@@ -585,7 +588,7 @@ Required smoke verification after implementation:
    `401` shape.
 8. Inspect usage with the admin CLI and confirm raw keys and hashes are absent.
 
-## Open Questions Before Acceptance
+## Follow-up Questions
 
 - What are the first beta default limits for `friend`, `partner`, `public`, and
   `internal` consumers, or should all issued keys start with explicit operator
@@ -601,7 +604,7 @@ Required smoke verification after implementation:
 
 ## Acceptance Criteria
 
-This spec is complete when:
+This accepted beta slice is complete when:
 
 - A real partner/customer API key can be issued from the CLI.
 - The raw key is shown once and never stored.
@@ -617,6 +620,3 @@ This spec is complete when:
 - `CONTRACTS.md`, OpenAPI, smoke docs, and `HISTORY.md` are updated in the same
   change as the runtime auth behavior.
 - `cargo test`, `make test-db-postgres`, and `git diff --check` pass.
-
-Until these criteria are met and the contract is updated, API-key
-authentication is proposed behavior only.

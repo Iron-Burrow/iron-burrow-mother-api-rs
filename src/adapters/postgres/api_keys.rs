@@ -1,5 +1,8 @@
 #[cfg(test)]
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use serde::Serialize;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
@@ -11,7 +14,7 @@ use super::errors::RepositoryError;
 pub(crate) enum ApiKeyRepository {
     Database(PgPool),
     #[cfg(test)]
-    InMemory(Arc<InMemoryApiKeys>),
+    InMemory(Arc<Mutex<InMemoryApiKeys>>),
     #[cfg(test)]
     Unavailable,
 }
@@ -20,6 +23,8 @@ pub(crate) enum ApiKeyRepository {
 #[derive(Clone, Debug)]
 pub(crate) struct InMemoryApiKeys {
     keys: Vec<InMemoryApiKey>,
+    policies: HashMap<Uuid, ApiKeyPolicy>,
+    usage: HashMap<Uuid, InMemoryApiKeyUsage>,
 }
 
 #[cfg(test)]
@@ -30,6 +35,45 @@ struct InMemoryApiKey {
     lookup: ApiKeyLookup,
 }
 
+#[cfg(test)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct InMemoryApiKeyUsageSnapshot {
+    pub(crate) accepted_requests: i64,
+    pub(crate) rate_limited_requests: i64,
+    pub(crate) successful_responses: i64,
+    pub(crate) client_error_responses: i64,
+    pub(crate) server_error_responses: i64,
+    pub(crate) api_key_last_used_updated: bool,
+    pub(crate) daily_last_used_updated: bool,
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug, Default)]
+struct InMemoryApiKeyUsage {
+    accepted_requests: i64,
+    rate_limited_requests: i64,
+    successful_responses: i64,
+    client_error_responses: i64,
+    server_error_responses: i64,
+    api_key_last_used_updated: bool,
+    daily_last_used_updated: bool,
+}
+
+#[cfg(test)]
+impl From<&InMemoryApiKeyUsage> for InMemoryApiKeyUsageSnapshot {
+    fn from(usage: &InMemoryApiKeyUsage) -> Self {
+        Self {
+            accepted_requests: usage.accepted_requests,
+            rate_limited_requests: usage.rate_limited_requests,
+            successful_responses: usage.successful_responses,
+            client_error_responses: usage.client_error_responses,
+            server_error_responses: usage.server_error_responses,
+            api_key_last_used_updated: usage.api_key_last_used_updated,
+            daily_last_used_updated: usage.daily_last_used_updated,
+        }
+    }
+}
+
 impl ApiKeyRepository {
     pub(crate) fn database(pool: PgPool) -> Self {
         Self::Database(pool)
@@ -37,16 +81,52 @@ impl ApiKeyRepository {
 
     #[cfg(test)]
     pub(crate) fn in_memory(keys: Vec<(String, Vec<u8>, ApiKeyLookup)>) -> Self {
-        Self::InMemory(Arc::new(InMemoryApiKeys {
-            keys: keys
-                .into_iter()
-                .map(|(key_prefix, key_hash, lookup)| InMemoryApiKey {
+        Self::in_memory_with_policies(keys, HashMap::new())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn in_memory_with_policies(
+        keys: Vec<(String, Vec<u8>, ApiKeyLookup)>,
+        policies: HashMap<Uuid, ApiKeyPolicy>,
+    ) -> Self {
+        let mut defaulted_policies = policies;
+        let keys = keys
+            .into_iter()
+            .map(|(key_prefix, key_hash, lookup)| {
+                defaulted_policies
+                    .entry(lookup.api_key_id)
+                    .or_insert(ApiKeyPolicy {
+                        api_key_id: lookup.api_key_id,
+                        requests_per_minute: 60,
+                        requests_per_day: 5000,
+                    });
+
+                InMemoryApiKey {
                     key_prefix,
                     key_hash,
                     lookup,
-                })
-                .collect(),
-        }))
+                }
+            })
+            .collect();
+
+        Self::InMemory(Arc::new(Mutex::new(InMemoryApiKeys {
+            keys,
+            policies: defaulted_policies,
+            usage: HashMap::new(),
+        })))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn in_memory_usage(&self, api_key_id: Uuid) -> InMemoryApiKeyUsageSnapshot {
+        let Self::InMemory(keys) = self else {
+            return InMemoryApiKeyUsageSnapshot::default();
+        };
+        keys.lock()
+            .expect("in-memory API-key repository mutex poisoned")
+            .usage
+            .get(&api_key_id)
+            .map(InMemoryApiKeyUsageSnapshot::from)
+            .unwrap_or_default()
     }
 
     #[cfg(test)]
@@ -69,6 +149,9 @@ impl ApiKeyRepository {
     ) -> Result<Option<ApiKeyLookup>, RepositoryError> {
         #[cfg(test)]
         if let Self::InMemory(keys) = self {
+            let keys = keys
+                .lock()
+                .expect("in-memory API-key repository mutex poisoned");
             return Ok(keys
                 .keys
                 .iter()
@@ -156,6 +239,25 @@ impl ApiKeyRepository {
         requests_per_minute: i32,
         requests_per_day: i32,
     ) -> Result<ApiKeyPolicy, RepositoryError> {
+        #[cfg(test)]
+        if let Self::InMemory(keys) = self {
+            let policy = ApiKeyPolicy {
+                api_key_id,
+                requests_per_minute,
+                requests_per_day,
+            };
+            keys.lock()
+                .expect("in-memory API-key repository mutex poisoned")
+                .policies
+                .insert(api_key_id, policy.clone());
+            return Ok(policy);
+        }
+
+        #[cfg(test)]
+        if matches!(self, Self::Unavailable) {
+            return Err(RepositoryError::test());
+        }
+
         let pool = self.database_pool()?;
         let row = sqlx::query_as::<_, ApiKeyPolicy>(
             r#"
@@ -185,6 +287,21 @@ impl ApiKeyRepository {
         &self,
         api_key_id: Uuid,
     ) -> Result<Option<ApiKeyPolicy>, RepositoryError> {
+        #[cfg(test)]
+        if let Self::InMemory(keys) = self {
+            return Ok(keys
+                .lock()
+                .expect("in-memory API-key repository mutex poisoned")
+                .policies
+                .get(&api_key_id)
+                .cloned());
+        }
+
+        #[cfg(test)]
+        if matches!(self, Self::Unavailable) {
+            return Err(RepositoryError::test());
+        }
+
         let pool = self.database_pool()?;
         let row = sqlx::query_as::<_, ApiKeyPolicy>(
             r#"
@@ -298,6 +415,29 @@ impl ApiKeyRepository {
     }
 
     pub(crate) async fn update_last_used(&self, api_key_id: Uuid) -> Result<bool, RepositoryError> {
+        #[cfg(test)]
+        if let Self::InMemory(keys) = self {
+            let mut keys = keys
+                .lock()
+                .expect("in-memory API-key repository mutex poisoned");
+            let exists = keys
+                .keys
+                .iter()
+                .any(|key| key.lookup.api_key_id == api_key_id);
+            if exists {
+                keys.usage
+                    .entry(api_key_id)
+                    .or_default()
+                    .api_key_last_used_updated = true;
+            }
+            return Ok(exists);
+        }
+
+        #[cfg(test)]
+        if matches!(self, Self::Unavailable) {
+            return Err(RepositoryError::test());
+        }
+
         let pool = self.database_pool()?;
         let updated = sqlx::query_scalar::<_, bool>(
             r#"
@@ -321,6 +461,31 @@ impl ApiKeyRepository {
         &self,
         api_key_id: Uuid,
     ) -> Result<DailyAcceptedOutcome, RepositoryError> {
+        #[cfg(test)]
+        if let Self::InMemory(keys) = self {
+            let mut keys = keys
+                .lock()
+                .expect("in-memory API-key repository mutex poisoned");
+            let Some(policy) = keys.policies.get(&api_key_id) else {
+                return Ok(DailyAcceptedOutcome::MissingPolicy);
+            };
+            let limit = policy.requests_per_day;
+            let usage = keys.usage.entry(api_key_id).or_default();
+            if limit <= 0 || usage.accepted_requests >= i64::from(limit) {
+                return Ok(DailyAcceptedOutcome::LimitExceeded);
+            }
+
+            usage.accepted_requests += 1;
+            usage.api_key_last_used_updated = true;
+            usage.daily_last_used_updated = true;
+            return Ok(DailyAcceptedOutcome::Accepted);
+        }
+
+        #[cfg(test)]
+        if matches!(self, Self::Unavailable) {
+            return Err(RepositoryError::test());
+        }
+
         let pool = self.database_pool()?;
         let outcome = sqlx::query_scalar::<_, String>(
             r#"
@@ -352,10 +517,20 @@ impl ApiKeyRepository {
                 where mother_api.api_key_usage_daily.accepted_requests
                     < (select requests_per_day from policy)
                 returning accepted_requests
+            ),
+            key_update as (
+                update mother_api.api_key
+                set
+                    last_used_at = now(),
+                    updated_at = now()
+                where id = $1
+                    and exists (select 1 from accepted_update)
+                returning true
             )
             select case
                 when not exists (select 1 from policy) then 'missing_policy'
-                when exists (select 1 from accepted_update) then 'accepted'
+                when exists (select 1 from accepted_update)
+                    and exists (select 1 from key_update) then 'accepted'
                 else 'limit_exceeded'
             end
             "#,
@@ -372,6 +547,22 @@ impl ApiKeyRepository {
         &self,
         api_key_id: Uuid,
     ) -> Result<(), RepositoryError> {
+        #[cfg(test)]
+        if let Self::InMemory(keys) = self {
+            let mut keys = keys
+                .lock()
+                .expect("in-memory API-key repository mutex poisoned");
+            let usage = keys.usage.entry(api_key_id).or_default();
+            usage.rate_limited_requests += 1;
+            usage.daily_last_used_updated = true;
+            return Ok(());
+        }
+
+        #[cfg(test)]
+        if matches!(self, Self::Unavailable) {
+            return Err(RepositoryError::test());
+        }
+
         let pool = self.database_pool()?;
         sqlx::query(
             r#"
@@ -403,6 +594,26 @@ impl ApiKeyRepository {
         api_key_id: Uuid,
         response_class: UsageResponseClass,
     ) -> Result<(), RepositoryError> {
+        #[cfg(test)]
+        if let Self::InMemory(keys) = self {
+            let mut keys = keys
+                .lock()
+                .expect("in-memory API-key repository mutex poisoned");
+            let usage = keys.usage.entry(api_key_id).or_default();
+            match response_class {
+                UsageResponseClass::Successful => usage.successful_responses += 1,
+                UsageResponseClass::ClientError => usage.client_error_responses += 1,
+                UsageResponseClass::ServerError => usage.server_error_responses += 1,
+            }
+            usage.daily_last_used_updated = true;
+            return Ok(());
+        }
+
+        #[cfg(test)]
+        if matches!(self, Self::Unavailable) {
+            return Err(RepositoryError::test());
+        }
+
         let pool = self.database_pool()?;
         match response_class {
             UsageResponseClass::Successful => {

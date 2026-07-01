@@ -71,6 +71,14 @@ credentials return the same `401 Unauthorized` envelope with
 checking a valid-format API key, the request returns `503 Service Unavailable`
 with `error.code="database_unavailable"`.
 
+Protected beta route requests are subject to per-key request limits. When a
+valid API key exceeds a configured limit, Mother API returns `429 Too Many
+Requests` with `error.code="rate_limited"` and does not call the protected
+route handler. Rate-limit values are not exposed through public response
+headers in this release. The per-minute limiter is in-memory and assumes a
+single running Mother API instance for the private beta; distributed rate
+limiting is not part of this contract.
+
 In `beta` mode, known Alpha-only endpoints return `403 Forbidden` with
 `error.code="endpoint_disabled"`. Truly unknown routes remain normal
 unmatched-route `404 Not Found` responses.
@@ -1888,6 +1896,7 @@ Fields:
 | HTTP | `error.code`            | Trigger                                                                |
 | ---- | ----------------------- | ---------------------------------------------------------------------- |
 | 401  | `unauthorized`          | A Beta protected route request lacks a valid active API key.            |
+| 429  | `rate_limited`          | A valid Beta API key exceeded a configured request limit.               |
 | 403  | `endpoint_disabled`     | A known Alpha-only endpoint is intentionally disabled by the Beta route surface. |
 | 400  | `invalid_request`       | A JSON body is malformed/missing required fields, includes a reserved balance network alias field, or non-balance public parameters are invalid or incompatible. |
 | 400  | `invalid_account`       | A balance account address is not `0x` plus 40 ASCII hexadecimal characters. |
@@ -1945,8 +1954,8 @@ not be assumed to exist or behave consistently if encountered:
   `/v1/prices/*`).
 - Event, holder, or network indexing endpoints.
 - Admin, explorer, account, or tracked-token routes.
-- Public API-key management routes, billing, x402, or rate limiting on
-  inbound requests.
+- Public API-key management routes, billing, x402, or inbound rate limiting
+  outside the documented private-Beta protected routes.
 - In-process response caching headers (e.g., custom `X-Cache-*`).
 - Read-model asset sync feeds. A sync surface for
   `iron-burrow-read-model` requires an accepted proposal, implementation,

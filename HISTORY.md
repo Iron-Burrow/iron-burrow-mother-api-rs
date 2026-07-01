@@ -273,3 +273,8 @@ implementation, and documentation changes.
 - Attached `ApiKeyPrincipal` to authenticated request extensions and added
   route coverage for missing, malformed, unsupported, unknown, inactive,
   expired, disabled-consumer, database-unavailable, and valid-key cases.
+- Added SPEC-010 PR 4 beta API-key limits and usage tracking: in-memory
+  per-minute enforcement, atomic Postgres daily accepted limits, rate-limited
+  counters, response-class counters, and last-used updates.
+- Documented the private-beta single-instance assumption for the in-memory
+  per-minute limiter and the `429 rate_limited` public error shape.

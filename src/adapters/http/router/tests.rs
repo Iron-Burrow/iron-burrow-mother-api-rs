@@ -15,6 +15,7 @@ use uuid::Uuid;
 use super::*;
 use crate::test_utils::fixtures::global_assets::sample_assets;
 use crate::{
+    adapters::http::rate_limit::ApiKeyMinuteLimiter,
     adapters::postgres::{
         api_keys::ApiKeyLookup, global_assets::GlobalAssetRepository, ApiKeyRepository,
     },
@@ -48,6 +49,7 @@ fn beta_app_with_api_key_repository(api_key_repository: Option<ApiKeyRepository>
         version: env!("CARGO_PKG_VERSION"),
         database_pool: None,
         api_key_repository,
+        api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
         price_indexer_client: None,
         dis_client: None,
@@ -72,6 +74,7 @@ fn test_app_with_price_indexer(price_indexer_url: &str, timeout_ms: u64) -> Rout
         version: env!("CARGO_PKG_VERSION"),
         database_pool: None,
         api_key_repository: None,
+        api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
         price_indexer_client: Some(price_indexer_client),
         dis_client: None,
@@ -587,6 +590,7 @@ async fn assets_list_requests_batch_price_enrichment_by_slug() {
         version: env!("CARGO_PKG_VERSION"),
         database_pool: None,
         api_key_repository: None,
+        api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(repository),
         price_indexer_client: Some(price_indexer_client),
         dis_client: None,
@@ -754,6 +758,7 @@ async fn asset_detail_requests_price_enrichment_by_slug() {
         version: env!("CARGO_PKG_VERSION"),
         database_pool: None,
         api_key_repository: None,
+        api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(repository),
         price_indexer_client: Some(price_indexer_client),
         dis_client: None,

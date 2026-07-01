@@ -1,298 +1,210 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-06-25
+last_reviewed: 2026-07-01
 agent_edit_policy: update_when_relevant
 ---
 
 # Iron Burrow Mother API
 
-Public API boundary for **Iron Burrow**.
+Public Beta v0.2 API boundary for **Iron Burrow**.
 
-Iron Burrow is a source-aware blockchain intelligence system built to make crypto data easier for humans, applications, and AI agents to inspect. The **Mother API** is the public interface of the burrow: the stable HTTP surface that exposes selected assets, price signals, network mappings, and health information.
+Iron Burrow is a source-aware blockchain intelligence system built to make
+on-chain data easier for humans, applications, and agents to inspect without
+guessing.
 
-The internal burrow has more tunnels than this README needs to reveal. This repository documents the public door: what a judge, builder, frontend, or agent can call today.
+The **Mother API** is the public HTTP surface of the burrow. In private Beta
+mode, it exposes a deliberately small API surface:
 
-Production API:
+1. latest balance lookups;
+2. bounded ERC-20 transfer search, when explicitly enabled.
 
-```bash
-export IB_API="https://api.ironburrow.com"
-```
+Everything else is intentionally out of scope for this README. No hackathon
+demo routes, no FIFA routes, no prediction endpoints, no broad public catalog
+explorer, and no experimental public sprawl.
 
----
+Small surface. Real data. API-key protected.
 
-## ETHMEX 🇲🇽 Hackathon Context
-
-This repository is part of the **Ethereum México x Bitso Hybrid Hackathon — AI, Blockchain & Payments: Build Today, Play Global**.
-
-The hackathon brings together builders working at the intersection of:
-
-* AI
-* blockchain
-* stablecoins
-* payments
-* financial apps
-* institutional use cases
-
-For this hackathon, Iron Burrow Mother API acts as the public data boundary between the burrow and the outside world.
-
-In practical terms, this means:
-
-* a frontend can ask Mother API for supported assets and price context;
-* an AI agent can call deterministic endpoints instead of inventing answers;
-* judges can inspect live public endpoints with `curl`;
-* the system can expose blockchain and market signals without leaking every internal service, resolver, worker, or database tunnel.
-
-The goal is not to show a giant API surface. The goal is to show a small, working, public, source-aware interface that an AI or financial application could safely build on top of.
-
----
-
-## Quick Start
-
-Install `jq` if you want readable JSON output.
+## Production API
 
 ```bash
 export IB_API="https://api.ironburrow.com"
+export IB_API_KEY="replace-with-issued-beta-key"
 ```
 
-Check that the Mother API is alive:
+Private Beta `/v1/*` endpoints require an issued API key:
+
+```bash
+-H "Authorization: Bearer $IB_API_KEY"
+```
+
+Beta API keys are private credentials. Do not expose them in frontend code,
+public repositories, logs, screenshots, or client-side agents.
+
+The production Beta deployment should run with `PUBLIC_API_SURFACE=beta`.
+Alpha compatibility mode still exists for the broader Production Alpha 1 route
+surface and is not the private Beta v0.2 customer surface.
+
+## Public Health Check
+
+The health endpoint is public and does not require an API key.
 
 ```bash
 curl -sS "$IB_API/health" | jq
 ```
 
-You should see a small response confirming the service is alive, including the service name, mascot, and a happy systems message.
+Use this endpoint only to confirm that the Mother API process is reachable. A
+healthy response means the HTTP service is alive; it does not imply that every
+internal data dependency is fully available.
 
-For raw HTTP headers:
+## Beta API Surface
 
-```bash
-curl -i "$IB_API/health"
+| Method | Path                         | Auth    | Purpose |
+| ------ | ---------------------------- | ------- | ------- |
+| `GET`  | `/health`                    | Public  | Lightweight process liveness check. |
+| `POST` | `/v1/balances`               | API key | Read latest balances for one supported account. |
+| `POST` | `/v1/balances/bulk`          | API key | Read latest balances for supported accounts, networks, and assets. |
+| `POST` | `/v1/erc20-transfers/search` | API key | Search bounded ERC-20 transfers when `ERC20_TRANSFERS_ENABLED=true`. |
+
+In Beta mode, known Alpha-only routes return `403 endpoint_disabled`. Truly
+unknown routes remain normal `404` responses.
+
+`CONTRACTS.md` and the generated OpenAPI document are the sources of truth for
+exact request bodies, response bodies, validation rules, limits, and error
+shapes.
+
+## Balance Lookup
+
+Single-account endpoint:
+
+```http
+POST /v1/balances
 ```
 
----
+Bulk endpoint:
 
-## Public Endpoints
-
-These examples are intentionally judge-friendly. They are not a replacement for strict contract documentation. They are here so you can poke the live burrow and understand what the response means.
-
----
-
-### 1. Health
-
-```bash
-curl -sS "$IB_API/health" | jq
+```http
+POST /v1/balances/bulk
 ```
 
-Use this to confirm the public API process is running.
-
-Expected interpretation:
-
-* `ok: true` means the Mother API process is alive.
-* This endpoint is lightweight and does not require every internal dependency to be healthy.
-
----
-
-### 2. Status / Dependency Picture
+Example bulk request:
 
 ```bash
-curl -sS "$IB_API/v1/status" | jq
+curl -sS "$IB_API/v1/balances/bulk" \
+  -H "Authorization: Bearer $IB_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "as_of": {
+      "kind": "latest"
+    },
+    "accounts": [
+      {
+        "network_slug": "eth-mainnet",
+        "address": "0x1234567890abcdef1234567890abcdef1234beef",
+        "client_ref": "treasury-main"
+      },
+      {
+        "network_slug": "base-mainnet",
+        "address": "0x2222222222222222222222222222222222222222",
+        "client_ref": "treasury-base"
+      }
+    ],
+    "quote_currency": "USD",
+    "assets": [
+      {
+        "asset_slug": "ethereum"
+      },
+      {
+        "asset_slug": "usdc"
+      }
+    ]
+  }' | jq
 ```
 
-Use this to get a public readiness picture of the burrow.
+Use balance endpoints when a caller needs deterministic, structured balance
+results for explicitly supported networks and assets. Responses are data
+results, not natural-language answers; applications and agents should inspect
+fields, timestamps, evidence, skipped items, and error states before presenting
+conclusions to users.
 
-Important:
+## ERC-20 Transfer Search
 
-`/v1/status` can return `200 OK` even when one dependency is degraded. Do not only inspect the HTTP status code. Look at:
+Endpoint:
 
-* `ok`
-* `checks`
-* individual dependency states
+```http
+POST /v1/erc20-transfers/search
+```
 
-This endpoint is meant to help an operator, judge, frontend, or agent understand whether the public API is alive and whether its connected services are behaving.
+This endpoint is registered only when `ERC20_TRANSFERS_ENABLED=true`.
 
----
-
-### 3. Asset List
+Example:
 
 ```bash
-curl -sS "$IB_API/v1/assets" | jq
+curl -sS "$IB_API/v1/erc20-transfers/search" \
+  -H "Authorization: Bearer $IB_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "network_slug": "eth-mainnet",
+    "address": "0xabc0000000000000000000000000000000000000",
+    "direction": "any",
+    "tokens": {
+      "asset_slugs": [
+        "usdc"
+      ],
+      "contract_addresses": []
+    },
+    "window": {
+      "from_block": 18600000,
+      "to_block": 18600500
+    }
+  }' | jq
 ```
 
-With an explicit limit:
+Use this endpoint when a caller needs bounded ERC-20 transfer activity for one
+Ethereum mainnet address. It does not index transfers, infer native transfers,
+or enrich transfer rows with prices.
 
-```bash
-curl -sS "$IB_API/v1/assets?limit=10" | jq
-```
+## Authentication Behavior
 
-Compact view:
+Protected Beta endpoints require a valid API key. Missing, malformed,
+unsupported, unknown, disabled, revoked, expired, or disabled-consumer
+credentials return `401 unauthorized`.
 
-```bash
-curl -sS "$IB_API/v1/assets?limit=20" \
-  | jq '.assets[] | {asset_id, symbol, name, price: .price.status}'
-```
+If authentication storage is temporarily unavailable while Mother API checks a
+valid-format key, the request returns `503 database_unavailable`. If a valid
+key exceeds its configured request limits, the request returns
+`429 rate_limited`.
 
-Expected interpretation:
+## What This Repository Is
 
-This endpoint returns the active asset catalog known by Mother API. Each asset can include a price state.
+This repository contains the Mother API service: the public HTTP boundary for
+selected Iron Burrow capabilities.
 
-A price state may be:
+The Mother API is responsible for:
 
-* `available` — the burrow has a usable price signal;
-* `unavailable` — the asset still exists, but price enrichment is missing or temporarily unavailable.
+- accepting private Beta requests;
+- validating public request contracts;
+- enforcing API-key access on Beta `/v1/*` routes;
+- returning structured JSON responses;
+- hiding internal service topology from external consumers.
 
-The asset list is useful for frontends, agents, and demos that need to know what the burrow can currently talk about.
+The Mother API is not the whole Iron Burrow system. It is the public door.
 
----
+## What This Repository Is Not
 
-### 4. Single Asset Detail
+This repository is not:
 
-Try known asset slugs:
+- a hackathon demo app;
+- a FIFA prediction service;
+- a betting or prediction-market API;
+- a frontend;
+- a wallet;
+- a custody system;
+- an execution or trading service;
+- the price indexer, event indexer, holder indexer, or read-model scheduler;
+- the full internal burrow topology.
 
-```bash
-curl -sS "$IB_API/v1/assets/bitcoin" | jq
-```
-
-```bash
-curl -sS "$IB_API/v1/assets/ethereum" | jq
-```
-
-```bash
-curl -sS "$IB_API/v1/assets/usdc" | jq
-```
-
-```bash
-curl -sS "$IB_API/v1/assets/bitso-mxn" | jq
-```
-
-Use MXN as the quote currency:
-
-```bash
-curl -sS "$IB_API/v1/assets/bitso-mxn?quoteCurrency=MXN" | jq
-```
-
-Compact view:
-
-```bash
-curl -sS "$IB_API/v1/assets/ethereum" \
-  | jq '{ok, asset, price, asset_network_maps}'
-```
-
-Expected interpretation:
-
-This endpoint returns one asset, its latest price state, and the network mappings Mother API knows about.
-
-For example, `ethereum` can be represented as a native asset on Ethereum Mainnet, while `usdc` can have token addresses across multiple networks.
-
-This is useful when an AI agent or frontend needs to answer questions like:
-
-> “What is this asset, what networks does it live on, and does the burrow currently have a price for it?”
-
----
-
-### 5. Asset Detail With Price Enrichments
-
-USD example:
-
-```bash
-curl -sS \
-  "$IB_API/v1/assets/ethereum?include=priceStats,priceTrend,priceSeries&quoteCurrency=USD&window=24h&granularity=1h" \
-  | jq
-```
-
-MXN example:
-
-```bash
-curl -sS \
-  "$IB_API/v1/assets/ethereum?include=priceStats,priceTrend,priceSeries&quoteCurrency=MXN&window=24h&granularity=1h" \
-  | jq
-```
-
-Expected interpretation:
-
-This is the richer asset detail path. It can include:
-
-* latest price;
-* recent price statistics;
-* trend information;
-* time series data;
-* network mappings.
-
-This endpoint is useful for a frontend or AI assistant that wants one compact asset response instead of calling several endpoints separately.
-
-If one enrichment is unavailable, the base asset response should still be useful.
-
----
-
-### 6. Strict Price Stats
-
-```bash
-curl -sS \
-  "$IB_API/v1/assets/ethereum/signal/price-stats?quoteCurrency=USD&window=24h&granularity=1h" \
-  | jq
-```
-
-Expected interpretation:
-
-This endpoint focuses only on price statistics for the requested asset, quote currency, time window, and granularity.
-
-Use this when you want a strict stats response instead of a full asset detail payload.
-
----
-
-### 7. Strict Price Trend
-
-```bash
-curl -sS \
-  "$IB_API/v1/assets/ethereum/signal/price-trend?quoteCurrency=USD&window=24h&granularity=1h" \
-  | jq
-```
-
-Expected interpretation:
-
-This endpoint focuses only on the trend signal for the requested asset.
-
-Use this when an agent or application wants to reason about recent price direction without parsing the full asset detail response.
-
----
-
-### 8. Asset Search / Resolve
-
-```bash
-curl -sS "$IB_API/v1/assets/resolve?q=usdc" | jq
-```
-
-```bash
-curl -sS "$IB_API/v1/assets/resolve?q=oro%20de%20ley" | jq
-```
-
-```bash
-curl -sS "$IB_API/v1/assets/resolve?q=some%20unknown%20thing" | jq
-```
-
-Expected interpretation:
-
-This endpoint helps resolve broad search queries into known Mother API resources.
-
-If the query is known, the response can point to a canonical asset path.
-
-If the query is unknown, the response should still be structured instead of forcing the caller into a blind failure.
-
-This is especially useful for AI and frontend flows where users may search by symbol, name, alias, or natural language.
-
-## Why This Matters For AI Agents
-
-AI agents are powerful, but they should not hallucinate financial, market, or blockchain facts.
-
-Iron Burrow Mother API gives agents a smaller and safer job:
-
-1. call a public endpoint;
-2. inspect structured JSON;
-3. explain the result to the user;
-4. cite the source and timestamp when available.
-
-Mother API is not trying to be the whole burrow. It is the public mouth of the burrow.
-
----
+Historical demo surfaces should remain removed from the active Beta API.
 
 ## Development
 
@@ -302,12 +214,10 @@ Run locally:
 cargo run
 ```
 
-Basic local checks:
+Basic local check:
 
 ```bash
 curl -i http://localhost:3000/health
-curl -i 'http://localhost:3000/v1/assets?limit=20'
-curl -i 'http://localhost:3000/v1/assets/resolve?q=usdc'
 ```
 
 Development checks:
@@ -318,22 +228,45 @@ cargo check
 cargo test
 ```
 
----
+Postgres-backed regression tests intentionally require a disposable test
+database:
 
-## Closing Remarks
+```bash
+make test-db-postgres
+```
 
-Iron Burrow is built around a simple belief:
+Production-style migration smoke checks run through the Mother API binary and
+Docker image:
 
-> AI should be able to interact with blockchain systems through deterministic, source-aware, boringly reliable interfaces.
+```bash
+make smoke-db-migrate
+```
 
-For ETHMEX, this repository is the public API checkpoint of that idea.
+## API Contract
 
-Small surface. Real endpoints. Live data. No need to reveal every tunnel in the burrow.
+The README is intentionally high level. It explains the Beta story and gives
+human-readable examples.
 
----
+For the binding public contract, use `CONTRACTS.md`. For machine-readable
+schemas and examples, use the generated OpenAPI document.
+
+## Beta Release Principle
+
+Beta v0.2 favors a small, reliable, protected surface over a large exploratory
+API. The goal is to give early customers useful on-chain data without exposing
+unstable internal routes or old demo concepts.
+
+For this release, the Mother API should be boring in the best possible way:
+
+- authenticated;
+- narrow;
+- deterministic;
+- source-aware;
+- easy to smoke test;
+- safe for early customer access.
 
 ## License
 
 MIT License.
 
-See [`LICENCE`](LICENSE).
+See [`LICENSE`](LICENSE).

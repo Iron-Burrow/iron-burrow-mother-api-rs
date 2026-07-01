@@ -2,6 +2,7 @@ pub mod auth;
 pub mod dto;
 pub mod error;
 pub mod json_body;
+pub mod rate_limit;
 pub mod router;
 pub mod routes;
 pub mod types;

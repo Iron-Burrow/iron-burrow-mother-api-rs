@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-06-30
+last_reviewed: 2026-07-01
 agent_edit_policy: update_when_relevant
 ---
 
@@ -78,19 +78,22 @@ Agents must respect the role of each document in this repo:
     API consumes DIS internal endpoints and must not reimplement protocol
     math, Bigwig archive calls, or reserve lookup.
   - `iron-burrow-read-model` owns refresh scheduling and hot caches.
-  - Mother API does not own price indexing, event or holder indexing, auth,
-    API keys, billing, x402 boundaries, admin/explorer/account/tracking
-    routes, or in-process response caching.
+  - Mother API owns the documented private-Beta API-key access layer and
+    per-key request limits for protected Beta `/v1/*` routes. It does not own
+    price indexing, event or holder indexing, a general identity platform,
+    public key-management API, billing, x402 boundaries,
+    admin/explorer/account/tracking routes, or in-process response caching.
 
 ## Scope guard
 
 Mother API is in Production Alpha 1. Agents may make small, focused changes
 consistent with the documented `/v1/*` contract in [README.md](README.md).
 
-Do not reintroduce the old TypeScript gateway sprawl: no admin, explorer,
-account, tracked-token, or price routes; no API-key context middleware; no
-rate limiting; no in-process response caching; no auth, billing, or x402
-boundaries.
+Do not reintroduce the old TypeScript gateway sprawl: no public admin,
+explorer, account, tracked-token, or price routes; no general API-key context
+middleware beyond the documented private-Beta protected-route principal; no
+rate limiting beyond the documented per-key private-Beta limits; no in-process
+response caching; no public auth platform, billing, or x402 boundaries.
 
 New external dependencies, new public endpoints, or behavior changes that
 expand Mother API's responsibilities require an accepted RFC or spec under
