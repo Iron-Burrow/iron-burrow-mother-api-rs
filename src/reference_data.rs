@@ -297,17 +297,17 @@ fn validate_mapping(mapping: &AssetChainMapDeclaration) -> Result<(), ReferenceD
         ));
     };
 
+    if address != address.to_ascii_lowercase() {
+        return invalid(format!(
+            "mapping ({:?}, {:?}) requires lowercase deployment_address",
+            mapping.asset_slug, mapping.network_slug
+        ));
+    }
+
     if mapping.token_standard == "erc20" && !is_evm_address(address) {
         return invalid(format!(
             "erc20 mapping ({:?}, {:?}) has invalid deployment_address {:?}",
             mapping.asset_slug, mapping.network_slug, address
-        ));
-    }
-
-    if mapping.token_standard == "erc20" && address != address.to_ascii_lowercase() {
-        return invalid(format!(
-            "erc20 mapping ({:?}, {:?}) requires lowercase deployment_address",
-            mapping.asset_slug, mapping.network_slug
         ));
     }
 
@@ -650,6 +650,19 @@ mod tests {
         catalog.asset_chain_maps[0].deployment_address = Some("0xnot-an-address".to_string());
 
         assert_invalid(catalog, "invalid deployment_address");
+    }
+
+    #[test]
+    fn mixed_case_non_erc20_address_fails_validation() {
+        let mut catalog = minimal_catalog("mixed-case-nep141");
+        catalog.networks[0].family = "near".to_string();
+        catalog.networks[0].chain_id = None;
+        catalog.networks[0].caip2 = Some("near:mainnet".to_string());
+        catalog.asset_chain_maps[0].deployment_address = Some("Token.NEAR".to_string());
+        catalog.asset_chain_maps[0].deployment_block = None;
+        catalog.asset_chain_maps[0].token_standard = "nep141".to_string();
+
+        assert_invalid(catalog, "requires lowercase deployment_address");
     }
 
     #[test]
