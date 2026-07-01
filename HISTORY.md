@@ -247,3 +247,6 @@ implementation, and documentation changes.
 - Completed SPEC-009 Slice 3 by adding deterministic full-table identity
   constraints for reference-data assets, networks, and asset/network mappings
   while preserving the existing active-representation safety indexes.
+- Added the SPEC-009 Slice 5 schema-only API-key foundation with constrained
+  `api_consumer` and `api_key` tables, while keeping real key issuance,
+  inbound auth enforcement, and API-key reference data out of migrations.
