@@ -194,7 +194,7 @@ impl ApiKeyRepository {
         .await
         .map_err(RepositoryError::new)?;
 
-        Ok(DailyAcceptedOutcome::from_database_value(&outcome))
+        DailyAcceptedOutcome::from_database_value(&outcome)
     }
 
     pub(crate) async fn increment_daily_rate_limited(
@@ -206,13 +206,15 @@ impl ApiKeyRepository {
             insert into mother_api.api_key_usage_daily (
                 api_key_id,
                 usage_date,
-                rate_limited_requests
+                rate_limited_requests,
+                last_used_at
             )
-            values ($1, (now() at time zone 'utc')::date, 1)
+            values ($1, (now() at time zone 'utc')::date, 1, now())
             on conflict (api_key_id, usage_date) do update
             set
                 rate_limited_requests =
                     mother_api.api_key_usage_daily.rate_limited_requests + 1,
+                last_used_at = now(),
                 updated_at = now()
             "#,
         )
@@ -336,12 +338,14 @@ pub(crate) enum DailyAcceptedOutcome {
 }
 
 impl DailyAcceptedOutcome {
-    fn from_database_value(value: &str) -> Self {
+    fn from_database_value(value: &str) -> Result<Self, RepositoryError> {
         match value {
-            "accepted" => Self::Accepted,
-            "limit_exceeded" => Self::LimitExceeded,
-            "missing_policy" => Self::MissingPolicy,
-            unexpected => panic!("unexpected daily accepted outcome {unexpected:?}"),
+            "accepted" => Ok(Self::Accepted),
+            "limit_exceeded" => Ok(Self::LimitExceeded),
+            "missing_policy" => Ok(Self::MissingPolicy),
+            unexpected => Err(RepositoryError::protocol(format!(
+                "unexpected daily accepted outcome {unexpected:?}"
+            ))),
         }
     }
 }
@@ -372,13 +376,15 @@ async fn increment_response_counter(
                 insert into mother_api.api_key_usage_daily (
                     api_key_id,
                     usage_date,
-                    successful_responses
+                    successful_responses,
+                    last_used_at
                 )
-                values ($1, (now() at time zone 'utc')::date, 1)
+                values ($1, (now() at time zone 'utc')::date, 1, now())
                 on conflict (api_key_id, usage_date) do update
                 set
                     successful_responses =
                         mother_api.api_key_usage_daily.successful_responses + 1,
+                    last_used_at = now(),
                     updated_at = now()
                 "#,
             )
@@ -393,13 +399,15 @@ async fn increment_response_counter(
                 insert into mother_api.api_key_usage_daily (
                     api_key_id,
                     usage_date,
-                    client_error_responses
+                    client_error_responses,
+                    last_used_at
                 )
-                values ($1, (now() at time zone 'utc')::date, 1)
+                values ($1, (now() at time zone 'utc')::date, 1, now())
                 on conflict (api_key_id, usage_date) do update
                 set
                     client_error_responses =
                         mother_api.api_key_usage_daily.client_error_responses + 1,
+                    last_used_at = now(),
                     updated_at = now()
                 "#,
             )
@@ -414,13 +422,15 @@ async fn increment_response_counter(
                 insert into mother_api.api_key_usage_daily (
                     api_key_id,
                     usage_date,
-                    server_error_responses
+                    server_error_responses,
+                    last_used_at
                 )
-                values ($1, (now() at time zone 'utc')::date, 1)
+                values ($1, (now() at time zone 'utc')::date, 1, now())
                 on conflict (api_key_id, usage_date) do update
                 set
                     server_error_responses =
                         mother_api.api_key_usage_daily.server_error_responses + 1,
+                    last_used_at = now(),
                     updated_at = now()
                 "#,
             )
@@ -432,4 +442,18 @@ async fn increment_response_counter(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn daily_accepted_outcome_rejects_unexpected_database_values() {
+        let error = DailyAcceptedOutcome::from_database_value("surprise").unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("unexpected daily accepted outcome"));
+    }
 }

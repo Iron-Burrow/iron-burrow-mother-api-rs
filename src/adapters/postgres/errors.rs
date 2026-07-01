@@ -8,6 +8,12 @@ impl RepositoryError {
         Self { source }
     }
 
+    pub(super) fn protocol(message: impl Into<String>) -> Self {
+        Self {
+            source: sqlx::Error::Protocol(message.into()),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn test() -> Self {
         Self {

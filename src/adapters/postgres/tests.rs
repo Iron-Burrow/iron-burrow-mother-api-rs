@@ -2115,6 +2115,22 @@ async fn api_key_repository_increments_rate_limited_and_response_counters() {
         .increment_daily_rate_limited(key_id)
         .await
         .unwrap();
+
+    let rate_limited_last_used_exists = sqlx::query_scalar::<_, bool>(
+        r#"
+        select last_used_at is not null
+        from mother_api.api_key_usage_daily
+        where api_key_id = $1
+            and usage_date = (now() at time zone 'utc')::date
+        "#,
+    )
+    .bind(key_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert!(rate_limited_last_used_exists);
+
     repository
         .increment_daily_response(key_id, UsageResponseClass::Successful)
         .await
@@ -2147,6 +2163,42 @@ async fn api_key_repository_increments_rate_limited_and_response_counters() {
     .unwrap();
 
     assert_eq!(counters, (0, 1, 1, 1, 1));
+
+    delete_api_consumer_test_rows(&pool, &consumer_slug).await;
+}
+
+#[tokio::test]
+async fn api_key_repository_response_counter_sets_daily_last_used() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let (consumer_slug, _key_prefix, _consumer_id, key_id) =
+        insert_repository_test_key(&pool, &suffix, vec![33_u8; 32]).await;
+    let repository = ApiKeyRepository::database(pool.clone());
+
+    repository
+        .increment_daily_response(key_id, UsageResponseClass::Successful)
+        .await
+        .unwrap();
+
+    let row = sqlx::query_as::<_, (i64, bool)>(
+        r#"
+        select
+            successful_responses,
+            last_used_at is not null
+        from mother_api.api_key_usage_daily
+        where api_key_id = $1
+            and usage_date = (now() at time zone 'utc')::date
+        "#,
+    )
+    .bind(key_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(row, (1, true));
 
     delete_api_consumer_test_rows(&pool, &consumer_slug).await;
 }
