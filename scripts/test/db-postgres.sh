@@ -66,4 +66,7 @@ echo "Running Rust Postgres-backed regression tests..."
 MOTHER_API_POSTGRES_TEST_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:${host_port}/${TEST_DB_NAME}" \
 	cargo test adapters::postgres::tests -- --test-threads=1
 
+MOTHER_API_POSTGRES_TEST_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:${host_port}/${TEST_DB_NAME}" \
+	cargo test reference_data::tests -- --test-threads=1
+
 echo "Rust Postgres-backed regression tests passed against disposable Docker Postgres."
