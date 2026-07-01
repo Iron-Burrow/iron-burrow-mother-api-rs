@@ -1,6 +1,7 @@
 use axum::{
     extract::State,
     http::{header::USER_AGENT, HeaderMap, Method, StatusCode, Uri},
+    middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
     Router,
@@ -10,6 +11,7 @@ use tracing::{debug, warn};
 
 use crate::{
     adapters::http::{
+        auth::require_api_key,
         error::ApiError,
         routes::{
             assets::{get_asset, get_price_stats_signal, get_price_trend_signal, list_assets},
@@ -25,12 +27,35 @@ use crate::{
 };
 
 pub fn build_router(state: AppState) -> Router {
+    let beta_auth_enabled = state.config.public_api_surface == PublicApiSurface::Beta;
+    let mut single_balance_route = post(resolve_single_balance);
+    let mut bulk_balance_route = post(resolve_bulk_balances);
+
+    if beta_auth_enabled {
+        single_balance_route = single_balance_route.route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_api_key,
+        ));
+        bulk_balance_route = bulk_balance_route.route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_api_key,
+        ));
+    }
+
     let mut v1_routes = Router::new()
-        .route("/balances", post(resolve_single_balance))
-        .route("/balances/bulk", post(resolve_bulk_balances));
+        .route("/balances", single_balance_route)
+        .route("/balances/bulk", bulk_balance_route);
 
     if state.config.erc20_transfers_enabled {
-        v1_routes = v1_routes.route("/erc20-transfers/search", post(search_erc20_transfers));
+        let mut transfer_search_route = post(search_erc20_transfers);
+
+        if beta_auth_enabled {
+            transfer_search_route = transfer_search_route.route_layer(
+                middleware::from_fn_with_state(state.clone(), require_api_key),
+            );
+        }
+
+        v1_routes = v1_routes.route("/erc20-transfers/search", transfer_search_route);
     }
 
     if state.config.public_api_surface == PublicApiSurface::Alpha {

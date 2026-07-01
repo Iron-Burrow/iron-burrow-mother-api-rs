@@ -985,6 +985,7 @@ mod tests {
             config: Config::default(),
             version: env!("CARGO_PKG_VERSION"),
             database_pool: None,
+            api_key_repository: None,
             asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
             price_indexer_client,
             dis_client: None,

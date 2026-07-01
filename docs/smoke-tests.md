@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-06-29
+last_reviewed: 2026-07-01
 agent_edit_policy: update_when_relevant
 ---
 
@@ -15,8 +15,9 @@ the optional ERC-20 transfer search release gate from
 Run these from the production repository root. Requires `curl`, `jq`, `grep`,
 `sed`, `awk`, and `seq`.
 
-Mother API has no inbound authentication. Do not add bearer-token or API-key
-headers to public smoke requests.
+Beta `/v1/*` routes require inbound API-key authentication. The authenticated
+smoke workflow is completed by the SPEC-010 documentation slice; until then,
+keep smoke requests aligned with the deployed release's issued beta key.
 
 ## Release Gate
 
