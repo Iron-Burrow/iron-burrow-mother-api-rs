@@ -4,11 +4,12 @@ set -eu
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
 
-SMOKE_NETWORK="mother-api-smoke-db-lifecycle-net"
-SMOKE_DB_CONTAINER="mother-api-smoke-db-lifecycle-postgres"
-SMOKE_API_CONTAINER="mother-api-smoke-db-lifecycle-api"
-SMOKE_IMAGE="mother-api-smoke-db-lifecycle"
-SMOKE_DB_NAME="mother_api_smoke_lifecycle_test"
+SMOKE_RUN_ID="${SMOKE_RUN_ID:-$$}"
+SMOKE_NETWORK="mother-api-smoke-db-lifecycle-net-${SMOKE_RUN_ID}"
+SMOKE_DB_CONTAINER="mother-api-smoke-db-lifecycle-postgres-${SMOKE_RUN_ID}"
+SMOKE_API_CONTAINER="mother-api-smoke-db-lifecycle-api-${SMOKE_RUN_ID}"
+SMOKE_IMAGE="mother-api-smoke-db-lifecycle:${SMOKE_RUN_ID}"
+SMOKE_DB_NAME="mother_api_smoke_lifecycle_test_${SMOKE_RUN_ID}"
 SMOKE_DATABASE_URL="postgres://postgres:postgres@${SMOKE_DB_CONTAINER}:5432/${SMOKE_DB_NAME}"
 
 cleanup() {
