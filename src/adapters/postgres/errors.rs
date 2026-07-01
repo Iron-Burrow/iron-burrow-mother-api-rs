@@ -18,7 +18,7 @@ impl RepositoryError {
 
 impl std::fmt::Display for RepositoryError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "global asset repository error: {}", self.source)
+        write!(formatter, "postgres repository error: {}", self.source)
     }
 }
 

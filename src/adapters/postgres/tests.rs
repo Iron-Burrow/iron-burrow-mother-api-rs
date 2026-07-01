@@ -1,5 +1,8 @@
+use crate::adapters::postgres::api_keys::{DailyAcceptedOutcome, UsageResponseClass};
+use crate::adapters::postgres::ApiKeyRepository;
 use crate::test_utils::postgres::migrated_pool;
 use serde_json::json;
+use sqlx::PgPool;
 use sqlx::{Postgres, Transaction};
 
 const IDENTITY_CONSTRAINTS_MIGRATION_SQL: &str = include_str!(concat!(
@@ -73,6 +76,89 @@ async fn insert_api_key(
     .fetch_one(&mut **transaction)
     .await
     .unwrap()
+}
+
+async fn insert_api_consumer_with_pool(pool: &PgPool, slug: &str) -> uuid::Uuid {
+    sqlx::query_scalar::<_, uuid::Uuid>(
+        r#"
+        insert into mother_api.api_consumer (
+            slug,
+            display_name,
+            category,
+            status
+        )
+        values ($1, 'Repository Test Consumer', 'partner', 'active')
+        returning id
+        "#,
+    )
+    .bind(slug)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn insert_api_key_with_pool(
+    pool: &PgPool,
+    consumer_id: uuid::Uuid,
+    key_prefix: &str,
+    key_hash: Vec<u8>,
+) -> uuid::Uuid {
+    sqlx::query_scalar::<_, uuid::Uuid>(
+        r#"
+        insert into mother_api.api_key (
+            consumer_id,
+            label,
+            key_prefix,
+            key_hash
+        )
+        values ($1, 'Repository Test Key', $2, $3)
+        returning id
+        "#,
+    )
+    .bind(consumer_id)
+    .bind(key_prefix)
+    .bind(key_hash)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn delete_api_consumer_test_rows(pool: &PgPool, consumer_slug: &str) {
+    sqlx::query(
+        r#"
+        delete from mother_api.api_key
+        where consumer_id in (
+            select id
+            from mother_api.api_consumer
+            where slug = $1
+        )
+        "#,
+    )
+    .bind(consumer_slug)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    sqlx::query("delete from mother_api.api_consumer where slug = $1")
+        .bind(consumer_slug)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+async fn insert_repository_test_key(
+    pool: &PgPool,
+    suffix: &str,
+    key_hash: Vec<u8>,
+) -> (String, String, uuid::Uuid, uuid::Uuid) {
+    let consumer_slug = format!("repository-{suffix}");
+    let key_prefix = format!("repository_{suffix}");
+
+    delete_api_consumer_test_rows(pool, &consumer_slug).await;
+    let consumer_id = insert_api_consumer_with_pool(pool, &consumer_slug).await;
+    let key_id = insert_api_key_with_pool(pool, consumer_id, &key_prefix, key_hash).await;
+
+    (consumer_slug, key_prefix, consumer_id, key_id)
 }
 
 #[tokio::test]
@@ -753,6 +839,86 @@ async fn api_key_adoption_tables_exist_after_migration() {
 }
 
 #[tokio::test]
+async fn api_key_policy_usage_tables_exist_after_migration() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let tables = sqlx::query_scalar::<_, String>(
+        r#"
+        select table_name
+        from information_schema.tables
+        where table_schema = 'mother_api'
+            and table_name in ('api_key_policy', 'api_key_usage_daily')
+        order by table_name
+        "#,
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    let constraints = sqlx::query_scalar::<_, String>(
+        r#"
+        select constraint_record.conname
+        from pg_constraint constraint_record
+        join pg_class relation_record
+            on relation_record.oid = constraint_record.conrelid
+        join pg_namespace namespace_record
+            on namespace_record.oid = relation_record.relnamespace
+        where namespace_record.nspname = 'mother_api'
+            and relation_record.relname in ('api_key_policy', 'api_key_usage_daily')
+            and constraint_record.conname in (
+                'api_key_policy_pkey',
+                'api_key_policy_api_key_id_fkey',
+                'api_key_policy_requests_per_minute_non_negative',
+                'api_key_policy_requests_per_day_non_negative',
+                'api_key_policy_timestamps_sane',
+                'api_key_usage_daily_pkey',
+                'api_key_usage_daily_api_key_id_fkey',
+                'api_key_usage_daily_counts_non_negative',
+                'api_key_usage_daily_timestamps_sane'
+            )
+        order by constraint_record.conname
+        "#,
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    let indexes = sqlx::query_scalar::<_, String>(
+        r#"
+        select indexname
+        from pg_indexes
+        where schemaname = 'mother_api'
+            and indexname in (
+                'api_key_policy_pkey',
+                'api_key_usage_daily_pkey'
+            )
+        order by indexname
+        "#,
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(
+        tables,
+        vec![
+            "api_key_policy".to_string(),
+            "api_key_usage_daily".to_string()
+        ]
+    );
+    assert_eq!(constraints.len(), 9);
+    assert_eq!(
+        indexes,
+        vec![
+            "api_key_policy_pkey".to_string(),
+            "api_key_usage_daily_pkey".to_string()
+        ]
+    );
+}
+
+#[tokio::test]
 async fn api_key_adoption_migrations_and_reference_data_create_no_real_keys() {
     let Some(pool) = migrated_pool().await else {
         return;
@@ -771,9 +937,21 @@ async fn api_key_adoption_migrations_and_reference_data_create_no_real_keys() {
         .fetch_one(&pool)
         .await
         .unwrap();
+    let policy_count =
+        sqlx::query_scalar::<_, i64>("select count(*) from mother_api.api_key_policy")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let usage_count =
+        sqlx::query_scalar::<_, i64>("select count(*) from mother_api.api_key_usage_daily")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
 
     assert_eq!(consumer_count, 0);
     assert_eq!(key_count, 0);
+    assert_eq!(policy_count, 0);
+    assert_eq!(usage_count, 0);
 }
 
 #[tokio::test]
@@ -785,6 +963,33 @@ async fn valid_placeholder_api_consumer_and_key_can_be_inserted() {
     let mut transaction = pool.begin().await.unwrap();
     let consumer_id = insert_api_consumer(&mut transaction, "test-consumer").await;
     let key_id = insert_api_key(&mut transaction, consumer_id, "test_prefix", vec![1_u8; 32]).await;
+    sqlx::query(
+        r#"
+        insert into mother_api.api_key_policy (
+            api_key_id,
+            requests_per_minute,
+            requests_per_day
+        )
+        values ($1, 0, 0)
+        "#,
+    )
+    .bind(key_id)
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"
+        insert into mother_api.api_key_usage_daily (
+            api_key_id,
+            usage_date
+        )
+        values ($1, (now() at time zone 'utc')::date)
+        "#,
+    )
+    .bind(key_id)
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
 
     assert_ne!(consumer_id, uuid::Uuid::nil());
     assert_ne!(key_id, uuid::Uuid::nil());
@@ -1338,4 +1543,610 @@ async fn api_key_timestamp_sanity_is_enforced() {
     let error = updated_result.expect_err("key updated_at before created_at should fail");
     assert_database_constraint(error, "api_key_timestamps_sane");
     updated_transaction.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn api_key_policy_limits_and_timestamps_are_constrained() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let mut zero_limit_transaction = pool.begin().await.unwrap();
+    let consumer_id =
+        insert_api_consumer(&mut zero_limit_transaction, "zero-policy-consumer").await;
+    let key_id = insert_api_key(
+        &mut zero_limit_transaction,
+        consumer_id,
+        "zero_policy_prefix",
+        vec![16_u8; 32],
+    )
+    .await;
+    sqlx::query(
+        r#"
+        insert into mother_api.api_key_policy (
+            api_key_id,
+            requests_per_minute,
+            requests_per_day
+        )
+        values ($1, 0, 0)
+        "#,
+    )
+    .bind(key_id)
+    .execute(&mut *zero_limit_transaction)
+    .await
+    .unwrap();
+    zero_limit_transaction.rollback().await.unwrap();
+
+    let mut minute_transaction = pool.begin().await.unwrap();
+    let consumer_id =
+        insert_api_consumer(&mut minute_transaction, "negative-minute-consumer").await;
+    let key_id = insert_api_key(
+        &mut minute_transaction,
+        consumer_id,
+        "negative_minute_prefix",
+        vec![17_u8; 32],
+    )
+    .await;
+    let minute_result = sqlx::query(
+        r#"
+        insert into mother_api.api_key_policy (
+            api_key_id,
+            requests_per_minute,
+            requests_per_day
+        )
+        values ($1, -1, 5000)
+        "#,
+    )
+    .bind(key_id)
+    .execute(&mut *minute_transaction)
+    .await;
+    let error = minute_result.expect_err("negative minute policy should fail");
+    assert_database_constraint(error, "api_key_policy_requests_per_minute_non_negative");
+    minute_transaction.rollback().await.unwrap();
+
+    let mut day_transaction = pool.begin().await.unwrap();
+    let consumer_id = insert_api_consumer(&mut day_transaction, "negative-day-consumer").await;
+    let key_id = insert_api_key(
+        &mut day_transaction,
+        consumer_id,
+        "negative_day_prefix",
+        vec![18_u8; 32],
+    )
+    .await;
+    let day_result = sqlx::query(
+        r#"
+        insert into mother_api.api_key_policy (
+            api_key_id,
+            requests_per_minute,
+            requests_per_day
+        )
+        values ($1, 60, -1)
+        "#,
+    )
+    .bind(key_id)
+    .execute(&mut *day_transaction)
+    .await;
+    let error = day_result.expect_err("negative day policy should fail");
+    assert_database_constraint(error, "api_key_policy_requests_per_day_non_negative");
+    day_transaction.rollback().await.unwrap();
+
+    let mut timestamp_transaction = pool.begin().await.unwrap();
+    let consumer_id =
+        insert_api_consumer(&mut timestamp_transaction, "bad-policy-timestamp-consumer").await;
+    let key_id = insert_api_key(
+        &mut timestamp_transaction,
+        consumer_id,
+        "bad_policy_timestamp_prefix",
+        vec![19_u8; 32],
+    )
+    .await;
+    let timestamp_result = sqlx::query(
+        r#"
+        insert into mother_api.api_key_policy (
+            api_key_id,
+            created_at,
+            updated_at
+        )
+        values (
+            $1,
+            '2026-01-01T00:00:00Z',
+            '2025-12-31T00:00:00Z'
+        )
+        "#,
+    )
+    .bind(key_id)
+    .execute(&mut *timestamp_transaction)
+    .await;
+    let error = timestamp_result.expect_err("policy updated_at before created_at should fail");
+    assert_database_constraint(error, "api_key_policy_timestamps_sane");
+    timestamp_transaction.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn api_key_usage_daily_counts_dates_and_timestamps_are_constrained() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let mut duplicate_transaction = pool.begin().await.unwrap();
+    let consumer_id =
+        insert_api_consumer(&mut duplicate_transaction, "duplicate-usage-consumer").await;
+    let key_id = insert_api_key(
+        &mut duplicate_transaction,
+        consumer_id,
+        "duplicate_usage_prefix",
+        vec![20_u8; 32],
+    )
+    .await;
+    sqlx::query(
+        r#"
+        insert into mother_api.api_key_usage_daily (
+            api_key_id,
+            usage_date
+        )
+        values ($1, '2026-07-01')
+        "#,
+    )
+    .bind(key_id)
+    .execute(&mut *duplicate_transaction)
+    .await
+    .unwrap();
+    let duplicate_result = sqlx::query(
+        r#"
+        insert into mother_api.api_key_usage_daily (
+            api_key_id,
+            usage_date
+        )
+        values ($1, '2026-07-01')
+        "#,
+    )
+    .bind(key_id)
+    .execute(&mut *duplicate_transaction)
+    .await;
+    let error = duplicate_result.expect_err("duplicate daily usage row should fail");
+    assert_database_constraint(error, "api_key_usage_daily_pkey");
+    duplicate_transaction.rollback().await.unwrap();
+
+    let mut count_transaction = pool.begin().await.unwrap();
+    let consumer_id = insert_api_consumer(&mut count_transaction, "negative-usage-consumer").await;
+    let key_id = insert_api_key(
+        &mut count_transaction,
+        consumer_id,
+        "negative_usage_prefix",
+        vec![21_u8; 32],
+    )
+    .await;
+    let count_result = sqlx::query(
+        r#"
+        insert into mother_api.api_key_usage_daily (
+            api_key_id,
+            usage_date,
+            accepted_requests
+        )
+        values ($1, '2026-07-01', -1)
+        "#,
+    )
+    .bind(key_id)
+    .execute(&mut *count_transaction)
+    .await;
+    let error = count_result.expect_err("negative usage counter should fail");
+    assert_database_constraint(error, "api_key_usage_daily_counts_non_negative");
+    count_transaction.rollback().await.unwrap();
+
+    let mut timestamp_transaction = pool.begin().await.unwrap();
+    let consumer_id =
+        insert_api_consumer(&mut timestamp_transaction, "bad-usage-timestamp-consumer").await;
+    let key_id = insert_api_key(
+        &mut timestamp_transaction,
+        consumer_id,
+        "bad_usage_timestamp_prefix",
+        vec![22_u8; 32],
+    )
+    .await;
+    let timestamp_result = sqlx::query(
+        r#"
+        insert into mother_api.api_key_usage_daily (
+            api_key_id,
+            usage_date,
+            created_at,
+            updated_at,
+            last_used_at
+        )
+        values (
+            $1,
+            '2026-07-01',
+            '2026-01-01T00:00:00Z',
+            '2025-12-31T00:00:00Z',
+            '2025-12-31T00:00:00Z'
+        )
+        "#,
+    )
+    .bind(key_id)
+    .execute(&mut *timestamp_transaction)
+    .await;
+    let error = timestamp_result.expect_err("invalid usage timestamps should fail");
+    assert_database_constraint(error, "api_key_usage_daily_timestamps_sane");
+    timestamp_transaction.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn api_key_delete_cascades_policy_and_usage_rows() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let mut transaction = pool.begin().await.unwrap();
+    let consumer_id = insert_api_consumer(&mut transaction, "api-key-cascade-consumer").await;
+    let key_id = insert_api_key(
+        &mut transaction,
+        consumer_id,
+        "api_key_cascade_prefix",
+        vec![23_u8; 32],
+    )
+    .await;
+
+    sqlx::query("insert into mother_api.api_key_policy (api_key_id) values ($1)")
+        .bind(key_id)
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    sqlx::query(
+        r#"
+        insert into mother_api.api_key_usage_daily (
+            api_key_id,
+            usage_date,
+            accepted_requests
+        )
+        values ($1, (now() at time zone 'utc')::date, 1)
+        "#,
+    )
+    .bind(key_id)
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+
+    sqlx::query("delete from mother_api.api_key where id = $1")
+        .bind(key_id)
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+
+    let policy_count = sqlx::query_scalar::<_, i64>(
+        "select count(*) from mother_api.api_key_policy where api_key_id = $1",
+    )
+    .bind(key_id)
+    .fetch_one(&mut *transaction)
+    .await
+    .unwrap();
+    let usage_count = sqlx::query_scalar::<_, i64>(
+        "select count(*) from mother_api.api_key_usage_daily where api_key_id = $1",
+    )
+    .bind(key_id)
+    .fetch_one(&mut *transaction)
+    .await
+    .unwrap();
+
+    assert_eq!(policy_count, 0);
+    assert_eq!(usage_count, 0);
+
+    transaction.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn api_key_repository_finds_key_by_exact_prefix_and_hash() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let key_hash = vec![24_u8; 32];
+    let (consumer_slug, key_prefix, consumer_id, key_id) =
+        insert_repository_test_key(&pool, &suffix, key_hash.clone()).await;
+    let repository = ApiKeyRepository::database(pool.clone());
+
+    let lookup = repository
+        .find_key_by_prefix_and_hash(&key_prefix, &key_hash)
+        .await
+        .unwrap()
+        .expect("exact prefix and hash should find key");
+    let wrong_hash = repository
+        .find_key_by_prefix_and_hash(&key_prefix, &[25_u8; 32])
+        .await
+        .unwrap();
+    let wrong_prefix = repository
+        .find_key_by_prefix_and_hash("missing_prefix", &key_hash)
+        .await
+        .unwrap();
+
+    assert_eq!(lookup.api_key_id, key_id);
+    assert_eq!(lookup.consumer_id, consumer_id);
+    assert_eq!(lookup.consumer_slug, consumer_slug);
+    assert_eq!(lookup.consumer_category, "partner");
+    assert_eq!(lookup.consumer_status, "active");
+    assert_eq!(lookup.key_prefix, key_prefix);
+    assert_eq!(lookup.key_label, "Repository Test Key");
+    assert_eq!(lookup.key_status, "active");
+    assert_eq!(lookup.hash_algorithm, "sha256");
+    assert_eq!(lookup.expires_at, None);
+    assert!(!lookup.is_expired);
+    assert_eq!(wrong_hash, None);
+    assert_eq!(wrong_prefix, None);
+
+    delete_api_consumer_test_rows(&pool, &consumer_slug).await;
+}
+
+#[tokio::test]
+async fn api_key_repository_creates_and_finds_policy() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let (consumer_slug, _key_prefix, _consumer_id, key_id) =
+        insert_repository_test_key(&pool, &suffix, vec![26_u8; 32]).await;
+    let repository = ApiKeyRepository::database(pool.clone());
+
+    let created = repository.create_policy(key_id, 12, 345).await.unwrap();
+    let found = repository
+        .find_policy(key_id)
+        .await
+        .unwrap()
+        .expect("created policy should be found");
+
+    assert_eq!(created.api_key_id, key_id);
+    assert_eq!(created.requests_per_minute, 12);
+    assert_eq!(created.requests_per_day, 345);
+    assert_eq!(found, created);
+    assert_eq!(
+        repository.find_policy(uuid::Uuid::new_v4()).await.unwrap(),
+        None
+    );
+
+    delete_api_consumer_test_rows(&pool, &consumer_slug).await;
+}
+
+#[tokio::test]
+async fn api_key_repository_revokes_by_prefix_idempotently() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let (consumer_slug, key_prefix, _consumer_id, key_id) =
+        insert_repository_test_key(&pool, &suffix, vec![27_u8; 32]).await;
+    let repository = ApiKeyRepository::database(pool.clone());
+
+    let first = repository
+        .revoke_by_prefix(&key_prefix)
+        .await
+        .unwrap()
+        .expect("key should be revoked");
+    let second = repository
+        .revoke_by_prefix(&key_prefix)
+        .await
+        .unwrap()
+        .expect("already revoked key should still be returned");
+    let missing = repository
+        .revoke_by_prefix("missing_revocation_prefix")
+        .await
+        .unwrap();
+
+    assert_eq!(first.api_key_id, key_id);
+    assert_eq!(first.key_prefix, key_prefix);
+    assert_eq!(first.status, "revoked");
+    assert_eq!(first.revoked_at, second.revoked_at);
+    assert_eq!(missing, None);
+
+    delete_api_consumer_test_rows(&pool, &consumer_slug).await;
+}
+
+#[tokio::test]
+async fn api_key_repository_updates_last_used() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let (consumer_slug, _key_prefix, _consumer_id, key_id) =
+        insert_repository_test_key(&pool, &suffix, vec![28_u8; 32]).await;
+    let repository = ApiKeyRepository::database(pool.clone());
+
+    assert!(repository.update_last_used(key_id).await.unwrap());
+    assert!(!repository
+        .update_last_used(uuid::Uuid::new_v4())
+        .await
+        .unwrap());
+
+    let last_used_exists = sqlx::query_scalar::<_, bool>(
+        "select last_used_at is not null from mother_api.api_key where id = $1",
+    )
+    .bind(key_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert!(last_used_exists);
+
+    delete_api_consumer_test_rows(&pool, &consumer_slug).await;
+}
+
+#[tokio::test]
+async fn api_key_repository_increments_daily_accepted_with_limit() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let (consumer_slug, _key_prefix, _consumer_id, key_id) =
+        insert_repository_test_key(&pool, &suffix, vec![29_u8; 32]).await;
+    let repository = ApiKeyRepository::database(pool.clone());
+
+    assert_eq!(
+        repository.increment_daily_accepted(key_id).await.unwrap(),
+        DailyAcceptedOutcome::MissingPolicy
+    );
+
+    repository.create_policy(key_id, 60, 2).await.unwrap();
+
+    assert_eq!(
+        repository.increment_daily_accepted(key_id).await.unwrap(),
+        DailyAcceptedOutcome::Accepted
+    );
+    assert_eq!(
+        repository.increment_daily_accepted(key_id).await.unwrap(),
+        DailyAcceptedOutcome::Accepted
+    );
+    assert_eq!(
+        repository.increment_daily_accepted(key_id).await.unwrap(),
+        DailyAcceptedOutcome::LimitExceeded
+    );
+
+    let accepted_requests = sqlx::query_scalar::<_, i64>(
+        r#"
+        select accepted_requests
+        from mother_api.api_key_usage_daily
+        where api_key_id = $1
+            and usage_date = (now() at time zone 'utc')::date
+        "#,
+    )
+    .bind(key_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(accepted_requests, 2);
+
+    delete_api_consumer_test_rows(&pool, &consumer_slug).await;
+}
+
+#[tokio::test]
+async fn api_key_repository_allows_only_one_concurrent_daily_accept_at_limit_one() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let (consumer_slug, _key_prefix, _consumer_id, key_id) =
+        insert_repository_test_key(&pool, &suffix, vec![30_u8; 32]).await;
+    let repository = ApiKeyRepository::database(pool.clone());
+    repository.create_policy(key_id, 60, 1).await.unwrap();
+
+    let repository_a = repository.clone();
+    let repository_b = repository.clone();
+    let (first, second) = tokio::join!(
+        async move { repository_a.increment_daily_accepted(key_id).await.unwrap() },
+        async move { repository_b.increment_daily_accepted(key_id).await.unwrap() }
+    );
+    let mut outcomes = vec![first, second];
+    outcomes.sort_by_key(|outcome| match outcome {
+        DailyAcceptedOutcome::Accepted => 0,
+        DailyAcceptedOutcome::LimitExceeded => 1,
+        DailyAcceptedOutcome::MissingPolicy => 2,
+    });
+
+    assert_eq!(
+        outcomes,
+        vec![
+            DailyAcceptedOutcome::Accepted,
+            DailyAcceptedOutcome::LimitExceeded
+        ]
+    );
+
+    let accepted_requests = sqlx::query_scalar::<_, i64>(
+        r#"
+        select accepted_requests
+        from mother_api.api_key_usage_daily
+        where api_key_id = $1
+            and usage_date = (now() at time zone 'utc')::date
+        "#,
+    )
+    .bind(key_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(accepted_requests, 1);
+
+    delete_api_consumer_test_rows(&pool, &consumer_slug).await;
+}
+
+#[tokio::test]
+async fn api_key_repository_daily_limit_zero_accepts_no_requests() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let (consumer_slug, _key_prefix, _consumer_id, key_id) =
+        insert_repository_test_key(&pool, &suffix, vec![31_u8; 32]).await;
+    let repository = ApiKeyRepository::database(pool.clone());
+    repository.create_policy(key_id, 60, 0).await.unwrap();
+
+    assert_eq!(
+        repository.increment_daily_accepted(key_id).await.unwrap(),
+        DailyAcceptedOutcome::LimitExceeded
+    );
+
+    let usage_count = sqlx::query_scalar::<_, i64>(
+        "select count(*) from mother_api.api_key_usage_daily where api_key_id = $1",
+    )
+    .bind(key_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(usage_count, 0);
+
+    delete_api_consumer_test_rows(&pool, &consumer_slug).await;
+}
+
+#[tokio::test]
+async fn api_key_repository_increments_rate_limited_and_response_counters() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let (consumer_slug, _key_prefix, _consumer_id, key_id) =
+        insert_repository_test_key(&pool, &suffix, vec![32_u8; 32]).await;
+    let repository = ApiKeyRepository::database(pool.clone());
+
+    repository
+        .increment_daily_rate_limited(key_id)
+        .await
+        .unwrap();
+    repository
+        .increment_daily_response(key_id, UsageResponseClass::Successful)
+        .await
+        .unwrap();
+    repository
+        .increment_daily_response(key_id, UsageResponseClass::ClientError)
+        .await
+        .unwrap();
+    repository
+        .increment_daily_response(key_id, UsageResponseClass::ServerError)
+        .await
+        .unwrap();
+
+    let counters = sqlx::query_as::<_, (i64, i64, i64, i64, i64)>(
+        r#"
+        select
+            accepted_requests,
+            rate_limited_requests,
+            successful_responses,
+            client_error_responses,
+            server_error_responses
+        from mother_api.api_key_usage_daily
+        where api_key_id = $1
+            and usage_date = (now() at time zone 'utc')::date
+        "#,
+    )
+    .bind(key_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(counters, (0, 1, 1, 1, 1));
+
+    delete_api_consumer_test_rows(&pool, &consumer_slug).await;
 }
