@@ -261,3 +261,9 @@ implementation, and documentation changes.
   smoke-db-lifecycle`, which runs `mother-api db apply` twice, verifies no-op
   reference-data audit rows, starts `serve` from the same image, and confirms
   the app image does not contain `sqlx` or `psql`.
+- Added SPEC-010 PR 2 operator API-key CLI support: high-entropy key
+  generation, SHA-256 hashing, strict prefix parsing, and `mother-api admin
+  api-key issue|revoke|list|usage` commands with human and JSON output.
+- Kept raw API keys print-once at issuance, persisted only key prefixes and
+  hashes, and added parser plus Postgres-backed command coverage. Public HTTP
+  route authentication remains unimplemented for this slice.
