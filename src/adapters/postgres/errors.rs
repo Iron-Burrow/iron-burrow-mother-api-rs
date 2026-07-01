@@ -8,6 +8,12 @@ impl RepositoryError {
         Self { source }
     }
 
+    pub(super) fn protocol(message: impl Into<String>) -> Self {
+        Self {
+            source: sqlx::Error::Protocol(message.into()),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn test() -> Self {
         Self {
@@ -18,7 +24,7 @@ impl RepositoryError {
 
 impl std::fmt::Display for RepositoryError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "global asset repository error: {}", self.source)
+        write!(formatter, "postgres repository error: {}", self.source)
     }
 }
 
