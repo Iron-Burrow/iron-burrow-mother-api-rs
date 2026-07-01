@@ -244,3 +244,6 @@ implementation, and documentation changes.
 - Removed the production image and Compose migration path dependency on
   `sqlx-cli`; the `db-migrate` service now uses the shared Mother API image
   with `mother-api db migrate`.
+- Completed SPEC-009 Slice 3 by adding deterministic full-table identity
+  constraints for reference-data assets, networks, and asset/network mappings
+  while preserving the existing active-representation safety indexes.

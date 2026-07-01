@@ -56,11 +56,14 @@ Agents must respect the role of each document in this repo:
 - Public API contracts must use `network_slug` for canonical supported network
   identity. Do not expose or accept a generic `chain` field; keep numeric EVM
   `chain_id` distinct when it truly means an EIP-155 chain ID.
-- Do not add Rust tests that run database migrations from `cargo test`, even
-  behind environment flags. To smoke test embedded migrations, use
-  `make smoke-db-migrate`; that target runs `mother-api db migrate` against a
-  disposable Docker-backed Postgres database. Migration smoke testing belongs
-  in that explicit command, not in the normal Rust test suite.
+- Do not rely on plain `cargo test` for Postgres-backed tests; those tests
+  intentionally skip unless `MOTHER_API_POSTGRES_TEST_DATABASE_URL` is set to a
+  validated local disposable test database. Use `make test-db-postgres` to run
+  Rust Postgres-backed regression tests against a disposable Docker Postgres
+  database. Use `make smoke-db-migrate` to smoke test embedded migrations
+  through the Mother API CLI / Docker image. Do not make DB-backed Rust tests
+  depend on generic `DATABASE_URL`, and do not add tests that make plain
+  `cargo test` run migrations or mutate arbitrary database targets.
 - Prefer additive edits to existing documents. When in doubt, add a new
   RFC, spec, or ADR rather than rewriting an existing one.
 - Preserve service boundaries described in [README.md](README.md) ("Not

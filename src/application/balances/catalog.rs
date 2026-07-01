@@ -406,12 +406,9 @@ mod tests {
 
     #[tokio::test]
     async fn database_resolver_reads_canonical_targets_and_inactive_entries_as_unsupported() {
-        let Ok(database_url) = std::env::var("DATABASE_URL") else {
+        let Some(pool) = crate::test_utils::postgres::migrated_pool().await else {
             return;
         };
-
-        let pool = sqlx::PgPool::connect(&database_url).await.unwrap();
-        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
         let resolver =
             CatalogBalanceTargetResolver::new(GlobalAssetRepository::database(pool.clone()));
 
