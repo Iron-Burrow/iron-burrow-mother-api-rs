@@ -15,9 +15,9 @@ the optional ERC-20 transfer search release gate from
 Run these from the production repository root. Requires `curl`, `jq`, `grep`,
 `sed`, `awk`, and `seq`.
 
-Beta `/v1/*` routes require inbound API-key authentication. The authenticated
-smoke workflow is completed by the SPEC-010 documentation slice; until then,
-keep smoke requests aligned with the deployed release's issued beta key.
+Beta `/v1/*` routes require inbound API-key authentication. Use an existing
+issued Beta key through `IB_API_KEY`, or issue a throwaway smoke key with the
+operator CLI before running protected-route checks.
 
 ## Release Gate
 
@@ -50,6 +50,7 @@ set +a
 
 export IB_API="${IB_API:-https://${CADDY_DOMAIN:-api.ironburrow.com}}"
 export JSON_HEADER='Content-Type: application/json'
+export IB_API_KEY="${IB_API_KEY:-}"
 
 export WATCHED_ADDRESS="${WATCHED_ADDRESS:-0xabc0000000000000000000000000000000000000}"
 export BALANCE_ACCOUNT_A="${BALANCE_ACCOUNT_A:-0x1234567890abcdef1234567890abcdef1234beef}"
@@ -80,6 +81,43 @@ verifies selected reference-data audit rows are unchanged on the second run,
 starts `mother-api serve` from the same image, checks `/health`, and confirms
 the application image does not contain `sqlx` or `psql`. The test harness may
 use Postgres utility containers for readiness and database inspection.
+
+For a disposable local proof of the SPEC-010 auth contract, run:
+
+```bash
+make smoke-beta-auth
+```
+
+That script starts a throwaway local Postgres database and local Mother API,
+issues and revokes a throwaway key, verifies protected-route `401` and `429`
+behavior, and inspects usage without touching production state.
+
+## API-Key Setup
+
+Use an existing issued Beta key, or issue a throwaway smoke key from an
+operator shell with `DATABASE_URL` pointed at the target database.
+
+```bash
+if [ -z "$IB_API_KEY" ]; then
+  issue_output="$(cargo run --quiet --bin mother-api -- admin api-key issue \
+    --consumer-slug beta-smoke \
+    --display-name "Beta Smoke" \
+    --category internal \
+    --label "production smoke key" \
+    --requests-per-minute 60 \
+    --requests-per-day 5000 \
+    --format json)"
+
+  export IB_API_KEY="$(printf '%s\n' "$issue_output" | jq -r '.api_key')"
+  export IB_API_KEY_PREFIX="$(printf '%s\n' "$issue_output" | jq -r '.key_prefix')"
+fi
+
+test -n "$IB_API_KEY"
+export AUTH_HEADER="Authorization: Bearer $IB_API_KEY"
+```
+
+The full API key is printed only by the issue command. Do not store it in the
+repo, shell history, screenshots, logs, or shared chat transcripts.
 
 ## Test Payloads
 
@@ -198,6 +236,85 @@ echo "GET /v1/not-a-real-route -> HTTP $status"
 test "$status" = "404"
 ```
 
+### B1A. Auth, Limits, Revocation, And Usage
+
+Expected: protected routes reject missing credentials with `401`, a valid
+throwaway key reaches protected-route validation, the tiny daily limit returns
+`429`, revocation returns the key to `401`, and usage output never includes raw
+keys or key hashes.
+
+```bash
+status="$(curl -sS -o /tmp/mother-balance-no-key.out.json -w '%{http_code}' \
+  -X POST "$IB_API/v1/balances" \
+  -H "$JSON_HEADER" \
+  -d @/tmp/mother-balance-single.json)"
+echo "no key -> HTTP $status"
+test "$status" = "401"
+jq -e '.ok == false and .error.code == "unauthorized"' \
+  /tmp/mother-balance-no-key.out.json
+
+limited_issue_output="$(cargo run --quiet --bin mother-api -- admin api-key issue \
+  --consumer-slug beta-smoke-limited \
+  --display-name "Beta Smoke Limited" \
+  --category internal \
+  --label "limited smoke key" \
+  --requests-per-minute 60 \
+  --requests-per-day 1 \
+  --format json)"
+
+limited_key="$(printf '%s\n' "$limited_issue_output" | jq -r '.api_key')"
+limited_prefix="$(printf '%s\n' "$limited_issue_output" | jq -r '.key_prefix')"
+limited_auth_header="Authorization: Bearer $limited_key"
+
+jq '.account.chain = "eth-mainnet"' \
+  /tmp/mother-balance-single.json > /tmp/mother-balance-auth-validation.json
+
+status="$(curl -sS -o /tmp/mother-balance-auth-validation.out.json -w '%{http_code}' \
+  -X POST "$IB_API/v1/balances" \
+  -H "$JSON_HEADER" \
+  -H "$limited_auth_header" \
+  -d @/tmp/mother-balance-auth-validation.json)"
+echo "valid limited key -> HTTP $status"
+test "$status" = "400"
+jq -e '.ok == false and .error.code == "invalid_request"' \
+  /tmp/mother-balance-auth-validation.out.json
+
+status="$(curl -sS -o /tmp/mother-balance-limited.out.json -w '%{http_code}' \
+  -X POST "$IB_API/v1/balances" \
+  -H "$JSON_HEADER" \
+  -H "$limited_auth_header" \
+  -d @/tmp/mother-balance-auth-validation.json)"
+echo "limited key second request -> HTTP $status"
+test "$status" = "429"
+jq -e '.ok == false and .error.code == "rate_limited"' \
+  /tmp/mother-balance-limited.out.json
+
+revoke_output="$(cargo run --quiet --bin mother-api -- admin api-key revoke \
+  --key-prefix "$limited_prefix" \
+  --format json)"
+printf '%s\n' "$revoke_output" | jq -e '.ok == true and .status == "revoked"'
+! printf '%s\n' "$revoke_output" | grep -F "$limited_key"
+! printf '%s\n' "$revoke_output" | grep -F "key_hash"
+
+status="$(curl -sS -o /tmp/mother-balance-revoked.out.json -w '%{http_code}' \
+  -X POST "$IB_API/v1/balances" \
+  -H "$JSON_HEADER" \
+  -H "$limited_auth_header" \
+  -d @/tmp/mother-balance-auth-validation.json)"
+echo "revoked key -> HTTP $status"
+test "$status" = "401"
+jq -e '.ok == false and .error.code == "unauthorized"' \
+  /tmp/mother-balance-revoked.out.json
+
+usage_output="$(cargo run --quiet --bin mother-api -- admin api-key usage \
+  --consumer-slug beta-smoke-limited \
+  --days 1 \
+  --format json)"
+printf '%s\n' "$usage_output" | jq -e '.ok == true and .count >= 1'
+! printf '%s\n' "$usage_output" | grep -F "$limited_key"
+! printf '%s\n' "$usage_output" | grep -F "key_hash"
+```
+
 ### B2. Single Balance
 
 Expected: HTTP `200`, `ok: true`, single-balance response shape, canonical
@@ -207,6 +324,7 @@ Expected: HTTP `200`, `ok: true`, single-balance response shape, canonical
 status="$(curl -sS -o /tmp/mother-balance-single.out.json -w '%{http_code}' \
   -X POST "$IB_API/v1/balances" \
   -H "$JSON_HEADER" \
+  -H "$AUTH_HEADER" \
   -d @/tmp/mother-balance-single.json)"
 echo "HTTP $status"
 test "$status" = "200"
@@ -223,6 +341,7 @@ and per-account result arrays.
 status="$(curl -sS -o /tmp/mother-balance-bulk.out.json -w '%{http_code}' \
   -X POST "$IB_API/v1/balances/bulk" \
   -H "$JSON_HEADER" \
+  -H "$AUTH_HEADER" \
   -d @/tmp/mother-balance-bulk.json)"
 echo "HTTP $status"
 test "$status" = "200"
@@ -242,6 +361,7 @@ jq '.unexpected = true' \
 status="$(curl -sS -o /tmp/mother-balance-unknown-field.out.json -w '%{http_code}' \
   -X POST "$IB_API/v1/balances" \
   -H "$JSON_HEADER" \
+  -H "$AUTH_HEADER" \
   -d @/tmp/mother-balance-unknown-field.json)"
 echo "unknown field -> HTTP $status"
 test "$status" = "400"
@@ -254,6 +374,7 @@ jq '.account.chain = "eth-mainnet"' \
 status="$(curl -sS -o /tmp/mother-balance-reserved-alias.out.json -w '%{http_code}' \
   -X POST "$IB_API/v1/balances" \
   -H "$JSON_HEADER" \
+  -H "$AUTH_HEADER" \
   -d @/tmp/mother-balance-reserved-alias.json)"
 echo "reserved alias -> HTTP $status"
 test "$status" = "400"
@@ -287,6 +408,7 @@ Expected: HTTP `200`, `ok: true`, and `limits.truncated` is a boolean.
 status="$(curl -sS -o /tmp/mother-erc20-unfiltered.out.json -w '%{http_code}' \
   -X POST "$IB_API/v1/erc20-transfers/search" \
   -H "$JSON_HEADER" \
+  -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-unfiltered.json)"
 echo "HTTP $status"
 jq -e '.ok == true and .type == "erc20_transfer_search" and .network_slug == "eth-mainnet" and (.transfers | type) == "array" and .limits.max_rows == 5000 and (.limits.truncated | type) == "boolean"' \
@@ -301,6 +423,7 @@ Expected: USDC resolves to its Ethereum mainnet ERC-20 contract.
 status="$(curl -sS -o /tmp/mother-erc20-usdc-slug.out.json -w '%{http_code}' \
   -X POST "$IB_API/v1/erc20-transfers/search" \
   -H "$JSON_HEADER" \
+  -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-usdc-slug.json)"
 echo "HTTP $status"
 jq -e '.ok == true and .token_filters.requested.asset_slugs == ["usdc"] and any(.token_filters.resolved_contract_addresses[]; .asset_slug == "usdc" and .contract_address == "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")' \
@@ -315,6 +438,7 @@ Expected: the explicit contract is accepted and normalized.
 status="$(curl -sS -o /tmp/mother-erc20-usdc-contract.out.json -w '%{http_code}' \
   -X POST "$IB_API/v1/erc20-transfers/search" \
   -H "$JSON_HEADER" \
+  -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-usdc-contract.json)"
 echo "HTTP $status"
 jq -e '.ok == true and any(.token_filters.resolved_contract_addresses[]; .contract_address == "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48" and .source == "contract_address")' \
@@ -329,6 +453,7 @@ Expected: duplicate USDC filters dedupe to one concrete search contract.
 status="$(curl -sS -o /tmp/mother-erc20-usdc-mixed.out.json -w '%{http_code}' \
   -X POST "$IB_API/v1/erc20-transfers/search" \
   -H "$JSON_HEADER" \
+  -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-usdc-mixed.json)"
 echo "HTTP $status"
 jq -e '.ok == true and .token_filters.requested.asset_slugs == ["usdc"] and (.token_filters.resolved_contract_addresses | length) == 1 and .token_filters.resolved_contract_addresses[0].asset_slug == "usdc"' \
@@ -346,6 +471,7 @@ jq '.tokens = {asset_slugs: ["ethereum"], contract_addresses: []}' \
 status="$(curl -sS -o /tmp/mother-erc20-native.out.json -w '%{http_code}' \
   -X POST "$IB_API/v1/erc20-transfers/search" \
   -H "$JSON_HEADER" \
+  -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-native.json)"
 echo "HTTP $status"
 jq -e '.ok == false and .error.code == "asset_not_erc20_on_network"' \
@@ -363,6 +489,7 @@ jq '.tokens = {asset_slugs: ["missing-but-syntactically-valid"], contract_addres
 status="$(curl -sS -o /tmp/mother-erc20-unknown-slug.out.json -w '%{http_code}' \
   -X POST "$IB_API/v1/erc20-transfers/search" \
   -H "$JSON_HEADER" \
+  -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-unknown-slug.json)"
 echo "HTTP $status"
 jq -e '.ok == false and .error.code == "asset_not_found"' \
@@ -381,6 +508,7 @@ jq --argjson from "$TEST_FROM_BLOCK" \
 status="$(curl -sS -o /tmp/mother-erc20-too-large-window.out.json -w '%{http_code}' \
   -X POST "$IB_API/v1/erc20-transfers/search" \
   -H "$JSON_HEADER" \
+  -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-too-large-window.json)"
 echo "HTTP $status"
 jq -e '.ok == false and .error.code == "window_too_large"' \
@@ -400,6 +528,7 @@ jq --argjson filters "[$filters]" \
 status="$(curl -sS -o /tmp/mother-erc20-too-many-filters.out.json -w '%{http_code}' \
   -X POST "$IB_API/v1/erc20-transfers/search" \
   -H "$JSON_HEADER" \
+  -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-too-many-filters.json)"
 echo "HTTP $status"
 jq -e '.ok == false and .error.code == "too_many_token_filters"' \
@@ -424,6 +553,7 @@ Expected classifications:
 status="$(curl -sS -o /tmp/mother-erc20-diagnose.out.json -w '%{http_code}' \
   -X POST "$IB_API/v1/erc20-transfers/search" \
   -H "$JSON_HEADER" \
+  -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-usdc-slug.json)"
 echo "HTTP $status"
 if [ "$status" = "200" ]; then
