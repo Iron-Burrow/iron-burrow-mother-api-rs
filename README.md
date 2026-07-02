@@ -41,6 +41,9 @@ Private Beta `/v1/*` endpoints require an issued API key:
 Beta API keys are private credentials. Do not expose them in frontend code,
 public repositories, logs, screenshots, or client-side agents.
 
+For a customer-facing copy-paste guide, see
+[Private Beta API Quickstart](docs/runbooks/private-beta-api-quickstart.md).
+
 The production Beta deployment should run with `PUBLIC_API_SURFACE=beta` and
 `ERC20_TRANSFERS_ENABLED=true`. Alpha compatibility mode still exists for the
 broader Production Alpha 1 route surface and is not the private Beta v0.2
