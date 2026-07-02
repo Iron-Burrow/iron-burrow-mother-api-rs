@@ -13,7 +13,9 @@ the mandatory ERC-20 transfer search surface from
 [SPEC-007](../specs/SPEC-007-public-erc-20-transfer-search-v1.md).
 
 Run these from the production repository root. Requires `curl`, `jq`, `grep`,
-`sed`, `awk`, and `seq`.
+`sed`, `awk`, `seq`, `docker`, and Docker Compose (`docker compose`). The
+production Compose stack must already be running before API-key issuance via
+`docker compose exec`.
 
 Beta `/v1/*` routes require inbound API-key authentication. Use an existing
 issued Beta key through `IB_API_KEY`, or issue a throwaway smoke key with the
