@@ -233,6 +233,7 @@ impl ApiKeyRepository {
         Ok(api_key)
     }
 
+    #[cfg(test)]
     pub(crate) async fn create_policy(
         &self,
         api_key_id: Uuid,
@@ -414,6 +415,7 @@ impl ApiKeyRepository {
         Ok(rows)
     }
 
+    #[cfg(test)]
     pub(crate) async fn update_last_used(&self, api_key_id: Uuid) -> Result<bool, RepositoryError> {
         #[cfg(test)]
         if let Self::InMemory(keys) = self {

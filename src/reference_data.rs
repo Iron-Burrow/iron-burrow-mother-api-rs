@@ -171,13 +171,14 @@ fn validate_catalog(catalog: &Catalog) -> Result<(), ReferenceDataError> {
             ));
         }
 
-        if mapping.status == "active" && mapping.is_native {
-            if !active_native_networks.insert(mapping.network_slug.as_str()) {
-                return invalid(format!(
-                    "duplicate active native mapping for network {:?}",
-                    mapping.network_slug
-                ));
-            }
+        if mapping.status == "active"
+            && mapping.is_native
+            && !active_native_networks.insert(mapping.network_slug.as_str())
+        {
+            return invalid(format!(
+                "duplicate active native mapping for network {:?}",
+                mapping.network_slug
+            ));
         }
 
         if mapping.status == "active" {

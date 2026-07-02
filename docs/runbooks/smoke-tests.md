@@ -1,43 +1,47 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-01
+last_reviewed: 2026-07-02
 agent_edit_policy: update_when_relevant
 ---
 
 # Production Smoke Tests
 
-Brief runbook for the Beta balance surface from
-[SPEC-008](specs/SPEC-008-balance-endpoint-beta-contract-hardening.md) and
-the optional ERC-20 transfer search release gate from
-[SPEC-007](specs/SPEC-007-public-erc-20-transfer-search-v1.md).
+Brief runbook for the private Beta balance surface from
+[SPEC-008](../specs/SPEC-008-balance-endpoint-beta-contract-hardening.md) and
+the mandatory ERC-20 transfer search surface from
+[SPEC-007](../specs/SPEC-007-public-erc-20-transfer-search-v1.md).
 
 Run these from the production repository root. Requires `curl`, `jq`, `grep`,
-`sed`, `awk`, and `seq`.
+`sed`, `awk`, `seq`, `docker`, and Docker Compose (`docker compose`). The
+production Compose stack must already be running before API-key issuance via
+`docker compose exec`.
 
 Beta `/v1/*` routes require inbound API-key authentication. Use an existing
 issued Beta key through `IB_API_KEY`, or issue a throwaway smoke key with the
-operator CLI before running protected-route checks.
+operator CLI inside the running Mother API container before running
+protected-route checks.
 
 ## Release Gate
 
-Do not call the balance surface Beta-ready until:
+Do not call private Beta ready until:
 
 - Mother API is deployed with `PUBLIC_API_SURFACE=beta`;
-- health, single-balance, bulk-balance, validation-error, disabled-route, and
-  unknown-route checks below pass;
-- `cargo test` passes for the release commit.
-
-Do not keep `ERC20_TRANSFERS_ENABLED=true` for first external users until:
-
+- Mother API is deployed with `ERC20_TRANSFERS_ENABLED=true`;
 - Bigwig Hub has `extraction.enabled: true`;
 - Mother API has `INFRA_GATEWAY_URL`, `INFRA_GATEWAY_TOKEN`, and
   `BIGWIG_REQUEST_TIMEOUT_MS=30000`;
-- transfer-search checks 1-9 below pass;
-- transfer-search check 10 does not show an availability or timeout failure.
+- health, single-balance, bulk-balance, validation-error, disabled-route, and
+  unknown-route checks below pass;
+- transfer-search checks 1-10 below pass without
+  `extraction_unavailable`, `upstream_provider_timeout`, or
+  `extraction_timeout` for the valid USDC smoke payload;
+- `cargo test` passes for the release commit.
 
-If any check fails after enabling the route, set `ERC20_TRANSFERS_ENABLED=false`
-again in the target environment and redeploy before exposing the route.
+If any transfer-search check fails after deployment, do not expose the Beta
+release as ready. Fix Bigwig or Mother API configuration and redeploy, or roll
+back the Beta release. Do not ship first Beta without the ERC-20 transfer
+endpoint.
 
 ## Setup
 
@@ -94,15 +98,18 @@ behavior, and inspects usage without touching production state.
 
 ## API-Key Setup
 
-Use an existing issued Beta key, or issue a throwaway smoke key from an
-operator shell with `DATABASE_URL` pointed at the target database.
-
-Issuing a key through the operator CLI requires a Rust toolchain with `cargo`
-available on that shell.
+Use an existing issued Beta key, or issue a throwaway smoke key from inside the
+running Mother API container. The container already has the `mother-api`
+binary and production `DATABASE_URL`.
 
 ```bash
 if [ -z "$IB_API_KEY" ]; then
-  issue_output="$(cargo run --quiet --bin mother-api -- admin api-key issue \
+  issue_output="$(docker compose \
+    --env-file .env.production \
+    -f compose.yaml \
+    -f compose.prod.yaml \
+    exec -T iron-burrow-mother-api \
+    mother-api admin api-key issue \
     --consumer-slug beta-smoke \
     --display-name "Beta Smoke" \
     --category internal \
@@ -256,7 +263,12 @@ test "$status" = "401"
 jq -e '.ok == false and .error.code == "unauthorized"' \
   /tmp/mother-balance-no-key.out.json
 
-limited_issue_output="$(cargo run --quiet --bin mother-api -- admin api-key issue \
+limited_issue_output="$(docker compose \
+  --env-file .env.production \
+  -f compose.yaml \
+  -f compose.prod.yaml \
+  exec -T iron-burrow-mother-api \
+  mother-api admin api-key issue \
   --consumer-slug beta-smoke-limited \
   --display-name "Beta Smoke Limited" \
   --category internal \
@@ -292,7 +304,12 @@ test "$status" = "429"
 jq -e '.ok == false and .error.code == "rate_limited"' \
   /tmp/mother-balance-limited.out.json
 
-revoke_output="$(cargo run --quiet --bin mother-api -- admin api-key revoke \
+revoke_output="$(docker compose \
+  --env-file .env.production \
+  -f compose.yaml \
+  -f compose.prod.yaml \
+  exec -T iron-burrow-mother-api \
+  mother-api admin api-key revoke \
   --key-prefix "$limited_prefix" \
   --format json)"
 printf '%s\n' "$revoke_output" | jq -e '.ok == true and .status == "revoked"'
@@ -309,7 +326,12 @@ test "$status" = "401"
 jq -e '.ok == false and .error.code == "unauthorized"' \
   /tmp/mother-balance-revoked.out.json
 
-usage_output="$(cargo run --quiet --bin mother-api -- admin api-key usage \
+usage_output="$(docker compose \
+  --env-file .env.production \
+  -f compose.yaml \
+  -f compose.prod.yaml \
+  exec -T iron-burrow-mother-api \
+  mother-api admin api-key usage \
   --consumer-slug beta-smoke-limited \
   --days 1 \
   --format json)"
@@ -399,8 +421,10 @@ curl -sS "$IB_API/health" \
 grep -E '^(PUBLIC_API_SURFACE|INFRA_GATEWAY_URL|INFRA_GATEWAY_TOKEN|BIGWIG_REQUEST_TIMEOUT_MS|BIGWIG_MAX_CONTRACT_ADDRESSES|ERC20_TRANSFERS_ENABLED|ERC20_TRANSFERS_MAX_TOKEN_FILTERS)=' .env.production \
   | sed 's/INFRA_GATEWAY_TOKEN=.*/INFRA_GATEWAY_TOKEN=<redacted>/'
 
-curl -sS -o /dev/null -w 'GET /v1/erc20-transfers/search -> HTTP %{http_code}\n' \
-  "$IB_API/v1/erc20-transfers/search"
+status="$(curl -sS -o /dev/null -w '%{http_code}' \
+  "$IB_API/v1/erc20-transfers/search")"
+echo "GET /v1/erc20-transfers/search -> HTTP $status"
+test "$status" = "405"
 ```
 
 ### 2. Unfiltered Small Block Window
@@ -414,6 +438,7 @@ status="$(curl -sS -o /tmp/mother-erc20-unfiltered.out.json -w '%{http_code}' \
   -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-unfiltered.json)"
 echo "HTTP $status"
+test "$status" = "200"
 jq -e '.ok == true and .type == "erc20_transfer_search" and .network_slug == "eth-mainnet" and (.transfers | type) == "array" and .limits.max_rows == 5000 and (.limits.truncated | type) == "boolean"' \
   /tmp/mother-erc20-unfiltered.out.json
 ```
@@ -429,6 +454,7 @@ status="$(curl -sS -o /tmp/mother-erc20-usdc-slug.out.json -w '%{http_code}' \
   -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-usdc-slug.json)"
 echo "HTTP $status"
+test "$status" = "200"
 jq -e '.ok == true and .token_filters.requested.asset_slugs == ["usdc"] and any(.token_filters.resolved_contract_addresses[]; .asset_slug == "usdc" and .contract_address == "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")' \
   /tmp/mother-erc20-usdc-slug.out.json
 ```
@@ -444,6 +470,7 @@ status="$(curl -sS -o /tmp/mother-erc20-usdc-contract.out.json -w '%{http_code}'
   -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-usdc-contract.json)"
 echo "HTTP $status"
+test "$status" = "200"
 jq -e '.ok == true and any(.token_filters.resolved_contract_addresses[]; .contract_address == "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48" and .source == "contract_address")' \
   /tmp/mother-erc20-usdc-contract.out.json
 ```
@@ -459,6 +486,7 @@ status="$(curl -sS -o /tmp/mother-erc20-usdc-mixed.out.json -w '%{http_code}' \
   -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-usdc-mixed.json)"
 echo "HTTP $status"
+test "$status" = "200"
 jq -e '.ok == true and .token_filters.requested.asset_slugs == ["usdc"] and (.token_filters.resolved_contract_addresses | length) == 1 and .token_filters.resolved_contract_addresses[0].asset_slug == "usdc"' \
   /tmp/mother-erc20-usdc-mixed.out.json
 ```
@@ -477,6 +505,7 @@ status="$(curl -sS -o /tmp/mother-erc20-native.out.json -w '%{http_code}' \
   -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-native.json)"
 echo "HTTP $status"
+test "$status" = "422"
 jq -e '.ok == false and .error.code == "asset_not_erc20_on_network"' \
   /tmp/mother-erc20-native.out.json
 ```
@@ -495,6 +524,7 @@ status="$(curl -sS -o /tmp/mother-erc20-unknown-slug.out.json -w '%{http_code}' 
   -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-unknown-slug.json)"
 echo "HTTP $status"
+test "$status" = "404"
 jq -e '.ok == false and .error.code == "asset_not_found"' \
   /tmp/mother-erc20-unknown-slug.out.json
 ```
@@ -514,6 +544,7 @@ status="$(curl -sS -o /tmp/mother-erc20-too-large-window.out.json -w '%{http_cod
   -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-too-large-window.json)"
 echo "HTTP $status"
+test "$status" = "422"
 jq -e '.ok == false and .error.code == "window_too_large"' \
   /tmp/mother-erc20-too-large-window.out.json
 ```
@@ -534,16 +565,17 @@ status="$(curl -sS -o /tmp/mother-erc20-too-many-filters.out.json -w '%{http_cod
   -H "$AUTH_HEADER" \
   -d @/tmp/mother-erc20-too-many-filters.json)"
 echo "HTTP $status"
+test "$status" = "422"
 jq -e '.ok == false and .error.code == "too_many_token_filters"' \
   /tmp/mother-erc20-too-many-filters.out.json
 ```
 
-### 10. Provider Timeout Or Disabled Extraction
+### 10. Valid USDC Provider Availability
 
-Do not force provider timeouts in production. If a valid request from checks
-2-5 fails, classify it with this command.
+Do not force provider timeouts in production. A valid USDC request must return
+`200`. Availability or timeout failures are private Beta release blockers.
 
-Expected classifications:
+Failure classifications:
 
 - HTTP `404` with no JSON body: Mother route gate is disabled.
 - HTTP `503`, `extraction_unavailable`: Bigwig extraction is disabled,
@@ -563,8 +595,10 @@ if [ "$status" = "200" ]; then
   echo "healthy"
 elif [ -s /tmp/mother-erc20-diagnose.out.json ]; then
   jq -r '.error.code? // "unknown-json-body"' /tmp/mother-erc20-diagnose.out.json
+  false
 else
   echo "no-json-body"
+  false
 fi
 ```
 
@@ -575,7 +609,8 @@ fi
 - Supported balance items with unavailable Bigwig or Price Indexer dependencies
   remain `200 OK` responses with sanitized item-level errors.
 - Unsupported asset-network pairs are skipped and reported in `skipped[]`.
-- Bigwig Hub extraction must be enabled before Mother keeps the public gate on.
+- Bigwig Hub extraction must be enabled before the private Beta release is
+  ready.
 - Public block windows are capped at 5,000 inclusive blocks on `eth-mainnet`.
 - Public lookback windows are capped at 86,400 seconds.
 - Public token filters are capped at 20 unique contracts after asset-slug
@@ -592,10 +627,7 @@ fi
 
 ## Pass Condition
 
-The balance Beta gate passes when balance checks B1-B4 match their expected
-HTTP status and JSON shape.
-
-The optional transfer-search gate passes when transfer checks 1-9 match their
-expected HTTP status and JSON shape, and transfer check 10 does not report
-`extraction_unavailable`, `upstream_provider_timeout`, or `extraction_timeout`
-for the valid USDC smoke payload.
+The private Beta gate passes when balance checks B1-B4 and transfer checks
+1-10 match their expected HTTP status and JSON shape. First Beta is not ready
+unless `/v1/erc20-transfers/search` is enabled and the valid USDC smoke payload
+returns `200`.
