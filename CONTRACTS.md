@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-07-01
+last_reviewed: 2026-07-02
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -62,6 +62,10 @@ Mother API supports an explicit runtime route-surface mode through
 - `beta` exposes only `GET /health`, `POST /v1/balances`,
   `POST /v1/balances/bulk`, and `POST /v1/erc20-transfers/search` when
   `ERC20_TRANSFERS_ENABLED=true`.
+
+The production private Beta deployment must set
+`ERC20_TRANSFERS_ENABLED=true`. A production Beta deployment with the transfer
+route disabled is not the supported v0.2 customer surface.
 
 In `beta` mode, `/health` remains public. The beta `/v1/*` routes listed
 above require `Authorization: Bearer <api_key>`. Missing, malformed,
@@ -1148,10 +1152,10 @@ Request-wide errors:
 
 ### `POST /v1/erc20-transfers/search`
 
-This endpoint is feature-gated by `ERC20_TRANSFERS_ENABLED`. When the gate is
-false, which is the default, Mother API does not register the route; callers
-receive the normal unmatched-route `404`. The contract below applies when the
-gate is explicitly enabled.
+This endpoint is feature-gated by `ERC20_TRANSFERS_ENABLED`. Production
+private Beta must set the gate to `true`. When the gate is false, Mother API
+does not register the route; callers receive the normal unmatched-route `404`.
+The contract below applies when the gate is enabled.
 
 Searches a bounded Ethereum mainnet ERC-20 `Transfer` log window for one
 watched EVM address. The route accepts catalog `asset_slug` filters, explicit

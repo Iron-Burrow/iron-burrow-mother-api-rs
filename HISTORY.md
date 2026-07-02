@@ -288,3 +288,11 @@ implementation, and documentation changes.
   without exposing raw keys or key hashes.
 - Added `make smoke-beta-auth`, a disposable local Docker/Postgres smoke check
   for the SPEC-010 auth contract.
+
+## 2026-07-02
+
+- Updated the production deploy runbook for the private Beta v0.2 lifecycle,
+  including the shared `db-apply` command that runs `mother-api db apply`
+  before the API service is recreated.
+- Passed `PUBLIC_API_SURFACE` through Compose so production deployments can
+  explicitly run the protected Beta surface instead of falling back to Alpha.

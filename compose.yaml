@@ -48,6 +48,7 @@ services:
     command: ["mother-api", "serve"]
     environment:
       APP_ENV: ${APP_ENV:-development}
+      PUBLIC_API_SURFACE: ${PUBLIC_API_SURFACE:-alpha}
       HTTP_HOST: 0.0.0.0
       HTTP_PORT: 3000
       DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/ibdb}

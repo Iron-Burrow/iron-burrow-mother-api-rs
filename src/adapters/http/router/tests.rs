@@ -242,7 +242,7 @@ async fn beta_auth_rejects_malformed_unsupported_and_unknown_keys() {
         (
             "malformed",
             Some(ApiKeyRepository::in_memory(Vec::new())),
-            format!("Bearer not-a-key"),
+            "Bearer not-a-key".to_string(),
         ),
         (
             "unsupported",

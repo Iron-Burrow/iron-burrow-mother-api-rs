@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-01
+last_reviewed: 2026-07-02
 agent_edit_policy: update_when_relevant
 ---
 
@@ -17,7 +17,7 @@ The **Mother API** is the public HTTP surface of the burrow. In private Beta
 mode, it exposes a deliberately small API surface:
 
 1. latest balance lookups;
-2. bounded ERC-20 transfer search, when explicitly enabled.
+2. bounded ERC-20 transfer search.
 
 Everything else is intentionally out of scope for this README. No hackathon
 demo routes, no FIFA routes, no prediction endpoints, no broad public catalog
@@ -41,9 +41,10 @@ Private Beta `/v1/*` endpoints require an issued API key:
 Beta API keys are private credentials. Do not expose them in frontend code,
 public repositories, logs, screenshots, or client-side agents.
 
-The production Beta deployment should run with `PUBLIC_API_SURFACE=beta`.
-Alpha compatibility mode still exists for the broader Production Alpha 1 route
-surface and is not the private Beta v0.2 customer surface.
+The production Beta deployment should run with `PUBLIC_API_SURFACE=beta` and
+`ERC20_TRANSFERS_ENABLED=true`. Alpha compatibility mode still exists for the
+broader Production Alpha 1 route surface and is not the private Beta v0.2
+customer surface.
 
 ## Public Health Check
 
@@ -64,7 +65,7 @@ internal data dependency is fully available.
 | `GET`  | `/health`                    | Public  | Lightweight process liveness check. |
 | `POST` | `/v1/balances`               | API key | Read latest balances for one supported account. |
 | `POST` | `/v1/balances/bulk`          | API key | Read latest balances for supported accounts, networks, and assets. |
-| `POST` | `/v1/erc20-transfers/search` | API key | Search bounded ERC-20 transfers when `ERC20_TRANSFERS_ENABLED=true`. |
+| `POST` | `/v1/erc20-transfers/search` | API key | Search bounded ERC-20 transfers. |
 
 In Beta mode, known Alpha-only routes return `403 endpoint_disabled`. Truly
 unknown routes remain normal `404` responses.
@@ -135,7 +136,8 @@ Endpoint:
 POST /v1/erc20-transfers/search
 ```
 
-This endpoint is registered only when `ERC20_TRANSFERS_ENABLED=true`.
+This endpoint is registered by `ERC20_TRANSFERS_ENABLED=true`, which is
+required for the production private Beta deployment.
 
 Example:
 

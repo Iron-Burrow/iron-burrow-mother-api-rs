@@ -32,8 +32,8 @@ language only.
   accepted Beta balance hardening record.
 - [SPEC-010](SPEC-010-beta-api-key-access-service.md) is the accepted Beta
   API-key access-service record.
-- [docs/smoke-tests.md](../smoke-tests.md) is the production smoke-test
-  runbook for the Beta release surface.
+- [docs/runbooks/smoke-tests.md](../runbooks/smoke-tests.md) is the production
+  smoke-test runbook for the Beta release surface.
 
 When this spec conflicts with `CONTRACTS.md`, `CONTRACTS.md` wins and this
 draft must be corrected before acceptance.
@@ -48,7 +48,7 @@ is stable enough for early private beta clients:
 | `GET` | `/health` | Public | Always registered. |
 | `POST` | `/v1/balances` | API key in Beta mode | Registered in Beta mode. |
 | `POST` | `/v1/balances/bulk` | API key in Beta mode | Registered in Beta mode. |
-| `POST` | `/v1/erc20-transfers/search` | API key in Beta mode | Registered only when `ERC20_TRANSFERS_ENABLED=true`. |
+| `POST` | `/v1/erc20-transfers/search` | API key in Beta mode | Registered when `ERC20_TRANSFERS_ENABLED=true`; required in production Beta. |
 
 The original release brief focused on bulk balances and ERC-20 transfer
 search. The implemented and documented Beta surface also includes the
@@ -74,6 +74,7 @@ Production private Beta deployments should run with:
 
 ```text
 PUBLIC_API_SURFACE=beta
+ERC20_TRANSFERS_ENABLED=true
 ```
 
 In this mode:
@@ -83,7 +84,8 @@ In this mode:
   `Authorization: Bearer <issued_beta_api_key>`.
 - Known Alpha-only routes return `403 endpoint_disabled`.
 - Truly unknown routes remain normal `404` responses.
-- The ERC-20 transfer route is absent unless `ERC20_TRANSFERS_ENABLED=true`.
+- The ERC-20 transfer route is required for production private Beta and is
+  registered by `ERC20_TRANSFERS_ENABLED=true`.
 
 Alpha compatibility mode may still expose the broader Production Alpha 1
 surface, but that is not the private Beta v0.2 customer surface.
@@ -215,9 +217,8 @@ Limits:
 
 Timestamp windows are supported by the current public DTO and contract as an
 alternative window shape. `CONTRACTS.md` documents `window_too_large` for
-block, timestamp, and lookback windows; before accepting this release spec,
-maintainers should confirm whether the timestamp-window maximum needs an
-explicit published value.
+block, timestamp, and lookback windows; maintainers should publish an explicit
+timestamp-window maximum in a follow-up if v0.2 clients need that value.
 
 Upstream behavior:
 
@@ -319,15 +320,15 @@ Minimum v0.2 visibility requirements:
 
 ## Documentation Requirements
 
-Before this spec can be accepted, these docs must be aligned:
+For this accepted spec, these docs must remain aligned:
 
 - `CONTRACTS.md` documents the binding Beta route surface, auth behavior,
   limits, examples, and error catalogue.
 - README stays brief and navigational.
 - Generated OpenAPI includes protected-route schemas, examples, and
   `BetaApiKeyAuth`.
-- `docs/smoke-tests.md` includes production Beta balance checks, API-key checks,
-  and optional transfer-search checks.
+- `docs/runbooks/smoke-tests.md` includes production Beta balance checks,
+  API-key checks, and mandatory transfer-search checks.
 - `HISTORY.md` records the implemented release slice.
 
 Private beta users should be pointed to a landing page and formal API docs
@@ -349,8 +350,9 @@ SPEC-011 is used to organize review or release PRs, split work this way:
      OpenAPI paths, and validation errors match SPEC-006/SPEC-008.
    - Confirm balance upstream degradation remains item-level where contracted.
 
-3. ERC-20 transfer gate verification
-   - Verify `/v1/erc20-transfers/search` remains feature-gated.
+3. ERC-20 transfer verification
+   - Verify `/v1/erc20-transfers/search` is enabled for production Beta through
+     `ERC20_TRANSFERS_ENABLED=true`.
    - Verify route, DTOs, token filters, limits, explicit errors, OpenAPI
      examples, and Bigwig failure mapping match SPEC-007 and `CONTRACTS.md`.
 
@@ -359,18 +361,15 @@ SPEC-011 is used to organize review or release PRs, split work this way:
      usage counters, OpenAPI security, and non-enumerating errors.
 
 5. Release docs and smoke checks
-   - Verify `docs/smoke-tests.md` and `scripts/smoke/beta-auth.sh` cover the
-     release gate.
+   - Verify `docs/runbooks/smoke-tests.md` and `scripts/smoke/beta-auth.sh`
+     cover the release gate.
    - Add a `HISTORY.md` entry only when runtime or contract behavior changes.
 
 ## Open Questions
 
 - Should the transfer timestamp-window maximum be explicitly published in
-  `CONTRACTS.md` before accepting SPEC-011, or is the current
-  `window_too_large` behavior sufficient for v0.2?
-- Should `ERC20_TRANSFERS_ENABLED=true` be part of the first external private
-  beta deployment, or should the route remain documented but disabled until
-  Bigwig extraction readiness is proven in the target environment?
+  `CONTRACTS.md` as a follow-up, or is the current `window_too_large` behavior
+  sufficient for v0.2?
 - What default per-key limits should operators use for the first private beta
   clients, beyond the SPEC-010 CLI defaults of 60 requests per minute and 5,000
   requests per day?
@@ -380,11 +379,9 @@ SPEC-011 is used to organize review or release PRs, split work this way:
 
 ## Blockers
 
-No product or architecture blocker is known for making this draft
-review-ready.
+No product or architecture blocker is known for private Beta readiness.
 
-External transfer-search enablement remains blocked in any target environment
-until:
+Private Beta readiness remains blocked in any target environment until:
 
 - Bigwig Hub extraction is enabled and reachable;
 - Mother API has `INFRA_GATEWAY_URL`, `INFRA_GATEWAY_TOKEN`, and a suitable
@@ -393,8 +390,8 @@ until:
   `upstream_provider_timeout`, or `extraction_timeout` on the valid USDC smoke
   payload.
 
-SPEC-011 acceptance should wait until the timestamp-window open question is
-resolved or explicitly deferred.
+The timestamp-window open question remains deferred unless it conflicts with
+`CONTRACTS.md` or production smoke behavior.
 
 ## Smoke Test Checklist
 
@@ -423,9 +420,10 @@ Production Beta balance gate:
 - Confirm balance unknown fields return `400 unknown_field`.
 - Confirm reserved balance network aliases return `400 invalid_request`.
 
-Optional ERC-20 transfer gate:
+Mandatory ERC-20 transfer gate:
 
-- Confirm route registration only when `ERC20_TRANSFERS_ENABLED=true`.
+- Confirm deployment uses `ERC20_TRANSFERS_ENABLED=true`.
+- Confirm route registration returns `405` for `GET /v1/erc20-transfers/search`.
 - Confirm unfiltered bounded search returns the contracted `200` shape.
 - Confirm USDC asset-slug search resolves the Ethereum mainnet USDC contract.
 - Confirm explicit USDC contract search is accepted and normalized.
