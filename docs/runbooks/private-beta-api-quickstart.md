@@ -40,6 +40,10 @@ Use `/v1/balances` for one account on one network. The `network_slug` field is
 the canonical network identifier; do not send `chain`, `chain_id`, or
 `chain_slug`.
 
+For balances, `as_of` currently supports only `{"kind": "latest"}`. Historical
+balance snapshots, block-specific balances, and timestamp-specific balances
+are not part of the private Beta surface yet.
+
 ```bash
 curl -sS "$IB_API/v1/balances" \
   -H "$AUTH_HEADER" \
@@ -64,6 +68,12 @@ curl -sS "$IB_API/v1/balances" \
     ]
   }' | jq
 ```
+
+Balance requests identify assets with canonical `asset_slug` values, such as
+`ethereum` or `usdc`. They do not accept token contract addresses. If you only
+know a token contract address today, use the ERC-20 transfer search endpoint's
+`tokens.contract_addresses` filter, or ask Iron Burrow for the matching asset
+slug before requesting balances.
 
 ## Bulk Balance Lookup
 
@@ -108,6 +118,11 @@ curl -sS "$IB_API/v1/balances/bulk" \
 Use `/v1/erc20-transfers/search` for bounded ERC-20 `Transfer` logs on
 Ethereum mainnet. Transfer search currently supports `eth-mainnet`.
 
+Use `asset_slugs` when you want Iron Burrow to resolve a known catalog asset,
+such as `usdc`, into its ERC-20 contract. Use `contract_addresses` when you
+already know the token contract, or when the token is not yet in the Iron
+Burrow catalog. You can also mix both filters in one request.
+
 ```bash
 curl -sS "$IB_API/v1/erc20-transfers/search" \
   -H "$AUTH_HEADER" \
@@ -128,6 +143,26 @@ curl -sS "$IB_API/v1/erc20-transfers/search" \
     }
   }' | jq
 ```
+
+The examples above use an explicit block window. Transfer search also accepts
+these `window` alternatives:
+
+```json
+{
+  "from_timestamp": "2026-06-25T00:00:00Z",
+  "to_timestamp": "2026-06-25T01:00:00Z"
+}
+```
+
+```json
+{
+  "lookback_seconds": 600,
+  "to": "latest"
+}
+```
+
+Use the `latest` lookback shape for simple recent activity checks. Keep
+lookbacks within 86,400 seconds.
 
 ## ERC-20 Transfers By Contract
 
