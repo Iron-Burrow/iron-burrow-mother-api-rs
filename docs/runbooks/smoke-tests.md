@@ -97,6 +97,9 @@ behavior, and inspects usage without touching production state.
 Use an existing issued Beta key, or issue a throwaway smoke key from an
 operator shell with `DATABASE_URL` pointed at the target database.
 
+Issuing a key through the operator CLI requires a Rust toolchain with `cargo`
+available on that shell.
+
 ```bash
 if [ -z "$IB_API_KEY" ]; then
   issue_output="$(cargo run --quiet --bin mother-api -- admin api-key issue \

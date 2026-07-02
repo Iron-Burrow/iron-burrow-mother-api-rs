@@ -66,6 +66,7 @@ require_command cargo
 require_command curl
 require_command docker
 require_command jq
+require_command seq
 
 if ! docker info >/dev/null 2>&1; then
 	echo "Docker is required for make smoke-beta-auth, but the Docker daemon is not available. Start Docker and try again." >&2
