@@ -79,6 +79,63 @@ headers in this release. The per-minute limiter is in-memory and assumes a
 single running Mother API instance for the private beta; distributed rate
 limiting is not part of this contract.
 
+The OpenAPI security scheme for protected Beta routes is named
+`BetaApiKeyAuth`. It is an HTTP bearer scheme using:
+
+```http
+Authorization: Bearer <api_key>
+```
+
+The bearer value is an issued private Beta API key. The scheme has no scopes.
+Mother API does not expose public API-key management routes, self-service
+customer dashboards, billing, x402, OAuth, or JWT authentication in this
+release.
+
+**Unauthorized protected-route response — `401 Unauthorized`:**
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "unauthorized",
+    "message": "The request lacks a valid active API key."
+  }
+}
+```
+
+This response is intentionally non-enumerating. Missing, malformed,
+unsupported, unknown, disabled, revoked, expired, and disabled-consumer
+credentials all use the same public shape.
+
+**Rate-limited protected-route response — `429 Too Many Requests`:**
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "rate_limited",
+    "message": "The valid API key exceeded a request limit."
+  }
+}
+```
+
+**Authentication-storage unavailable response — `503 Service Unavailable`:**
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "database_unavailable",
+    "message": "API-key authentication is temporarily unavailable."
+  }
+}
+```
+
+This `503` shape applies when Mother API cannot check a valid-format Beta
+credential because Postgres-backed API-key storage is unavailable. Route
+handlers may also return their own documented `503` errors after a request has
+passed authentication.
+
 In `beta` mode, known Alpha-only endpoints return `403 Forbidden` with
 `error.code="endpoint_disabled"`. Truly unknown routes remain normal
 unmatched-route `404 Not Found` responses.

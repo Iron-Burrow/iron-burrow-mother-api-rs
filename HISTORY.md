@@ -278,3 +278,13 @@ implementation, and documentation changes.
   counters, response-class counters, and last-used updates.
 - Documented the private-beta single-instance assumption for the in-memory
   per-minute limiter and the `429 rate_limited` public error shape.
+- Completed SPEC-010 PR 5 contract and smoke hardening for private-Beta
+  API-key access.
+- Documented `BetaApiKeyAuth`, protected-route `401 unauthorized`,
+  `429 rate_limited`, and auth-time `503 database_unavailable` behavior in
+  `CONTRACTS.md`, and added matching bearer security plus examples to OpenAPI.
+- Updated smoke documentation for issuing a throwaway key, authenticating
+  protected calls, proving limit and revocation behavior, and inspecting usage
+  without exposing raw keys or key hashes.
+- Added `make smoke-beta-auth`, a disposable local Docker/Postgres smoke check
+  for the SPEC-010 auth contract.

@@ -1,6 +1,11 @@
 use serde_json::Value;
 use utoipa::{
-    openapi::{example::ExampleBuilder, path::Operation, Content, RefOr},
+    openapi::{
+        example::ExampleBuilder,
+        path::Operation,
+        security::{HttpAuthScheme, HttpBuilder, SecurityRequirement, SecurityScheme},
+        Components, Content, RefOr,
+    },
     OpenApi,
 };
 
@@ -27,6 +32,8 @@ use crate::adapters::http::dto::filters::transfer_direction::TransferDirectionDT
 use crate::adapters::http::error::{ErrorBody, ErrorResponse};
 use crate::config::Config;
 
+const BETA_API_KEY_AUTH_SCHEME: &str = "BetaApiKeyAuth";
+
 pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
     let mut document = if config.erc20_transfers_enabled {
         Erc20TransfersApiDoc::openapi()
@@ -39,6 +46,8 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
     if config.erc20_transfers_enabled {
         add_erc20_transfer_examples(&mut document);
     }
+
+    add_beta_api_key_security(&mut document);
 
     document
 }
@@ -171,13 +180,23 @@ struct Erc20TransfersApiDoc;
             body = ErrorResponse
         ),
         (
+            status = 401,
+            description = "The protected Beta route request lacks a valid active API key",
+            body = ErrorResponse
+        ),
+        (
+            status = 429,
+            description = "The valid Beta API key exceeded a configured request limit",
+            body = ErrorResponse
+        ),
+        (
             status = 500,
             description = "Mother API detected an internally inconsistent balance state",
             body = ErrorResponse
         ),
         (
             status = 503,
-            description = "Mother API balance catalog is temporarily unavailable",
+            description = "Mother API balance catalog or API-key authentication storage is temporarily unavailable",
             body = ErrorResponse
         )
     )
@@ -207,13 +226,23 @@ async fn resolve_single_balance_operation() {}
             body = ErrorResponse
         ),
         (
+            status = 401,
+            description = "The protected Beta route request lacks a valid active API key",
+            body = ErrorResponse
+        ),
+        (
+            status = 429,
+            description = "The valid Beta API key exceeded a configured request limit",
+            body = ErrorResponse
+        ),
+        (
             status = 500,
             description = "Mother API detected an internally inconsistent balance state",
             body = ErrorResponse
         ),
         (
             status = 503,
-            description = "Mother API balance catalog is temporarily unavailable",
+            description = "Mother API balance catalog or API-key authentication storage is temporarily unavailable",
             body = ErrorResponse
         )
     )
@@ -241,8 +270,18 @@ async fn resolve_bulk_balances_operation() {}
             body = ErrorResponse
         ),
         (
+            status = 401,
+            description = "The protected Beta route request lacks a valid active API key",
+            body = ErrorResponse
+        ),
+        (
             status = 404,
             description = "Requested network is unsupported for transfer search",
+            body = ErrorResponse
+        ),
+        (
+            status = 429,
+            description = "The valid Beta API key exceeded a configured request limit",
             body = ErrorResponse
         ),
         (
@@ -262,7 +301,7 @@ async fn resolve_bulk_balances_operation() {}
         ),
         (
             status = 503,
-            description = "Transfer extraction or asset-contract mapping is temporarily unavailable",
+            description = "Transfer extraction, asset-contract mapping, or API-key authentication storage is temporarily unavailable",
             body = ErrorResponse
         ),
         (
@@ -274,6 +313,43 @@ async fn resolve_bulk_balances_operation() {}
 )]
 #[allow(dead_code)]
 async fn erc20_transfer_search_operation() {}
+
+fn add_beta_api_key_security(document: &mut utoipa::openapi::OpenApi) {
+    let components = document.components.get_or_insert_with(Components::new);
+    components.add_security_scheme(
+        BETA_API_KEY_AUTH_SCHEME,
+        SecurityScheme::Http(
+            HttpBuilder::new()
+                .scheme(HttpAuthScheme::Bearer)
+                .bearer_format("API key")
+                .description(Some(
+                    "Private Beta API key presented as `Authorization: Bearer <api_key>`.",
+                ))
+                .build(),
+        ),
+    );
+
+    for path_item in document.paths.paths.values_mut() {
+        for operation in [
+            path_item.get.as_mut(),
+            path_item.post.as_mut(),
+            path_item.put.as_mut(),
+            path_item.delete.as_mut(),
+            path_item.options.as_mut(),
+            path_item.head.as_mut(),
+            path_item.patch.as_mut(),
+            path_item.trace.as_mut(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            operation.security = Some(vec![SecurityRequirement::new(
+                BETA_API_KEY_AUTH_SCHEME,
+                Vec::<String>::new(),
+            )]);
+        }
+    }
+}
 
 fn add_balance_examples(document: &mut utoipa::openapi::OpenApi) {
     add_single_balance_examples(document);
@@ -333,6 +409,7 @@ fn add_single_balance_examples(document: &mut utoipa::openapi::OpenApi) {
             ),
         ],
     );
+    add_protected_route_error_examples(operation);
 }
 
 fn add_bulk_balance_examples(document: &mut utoipa::openapi::OpenApi) {
@@ -393,6 +470,7 @@ fn add_bulk_balance_examples(document: &mut utoipa::openapi::OpenApi) {
             ),
         ],
     );
+    add_protected_route_error_examples(operation);
 }
 
 fn add_erc20_transfer_examples(document: &mut utoipa::openapi::OpenApi) {
@@ -546,6 +624,67 @@ fn add_erc20_transfer_examples(document: &mut utoipa::openapi::OpenApi) {
             ),
         ],
     );
+    add_protected_route_error_examples(operation);
+}
+
+fn add_protected_route_error_examples(operation: &mut Operation) {
+    add_response_examples(
+        operation,
+        "401",
+        [(
+            "unauthorized",
+            "Missing or invalid Beta API key",
+            unauthorized_response(),
+        )],
+    );
+    add_response_examples(
+        operation,
+        "429",
+        [(
+            "rate_limited",
+            "Valid Beta API key exceeded a configured request limit",
+            rate_limited_response(),
+        )],
+    );
+    append_response_examples(
+        operation,
+        "503",
+        [(
+            "api_key_authentication_unavailable",
+            "API-key authentication storage unavailable",
+            database_unavailable_for_auth_response(),
+        )],
+    );
+}
+
+fn unauthorized_response() -> Value {
+    serde_json::json!({
+        "ok": false,
+        "error": {
+            "code": "unauthorized",
+            "message": "The request lacks a valid active API key."
+        }
+    })
+}
+
+fn rate_limited_response() -> Value {
+    serde_json::json!({
+        "ok": false,
+        "error": {
+            "code": "rate_limited",
+            "message": "The valid API key exceeded a request limit."
+        }
+    })
+}
+
+fn database_unavailable_for_auth_response() -> Value {
+    serde_json::json!({
+        "ok": false,
+        "error": {
+            "code": "database_unavailable",
+            "message": "API-key authentication is temporarily unavailable."
+        }
+    })
 }
 
 fn add_response_examples<const N: usize>(
@@ -563,12 +702,46 @@ fn add_response_examples<const N: usize>(
     add_content_examples(content, examples);
 }
 
+fn append_response_examples<const N: usize>(
+    operation: &mut Operation,
+    status: &str,
+    examples: [(&'static str, &'static str, Value); N],
+) {
+    let Some(RefOr::T(response)) = operation.responses.responses.get_mut(status) else {
+        return;
+    };
+    let Some(content) = response.content.get_mut("application/json") else {
+        return;
+    };
+
+    append_content_examples(content, examples);
+}
+
 fn add_content_examples<const N: usize>(
     content: &mut Content,
     examples: [(&'static str, &'static str, Value); N],
 ) {
     content.example = None;
     content.examples.clear();
+    content
+        .examples
+        .extend(examples.into_iter().map(|(name, summary, value)| {
+            (
+                name.to_string(),
+                ExampleBuilder::new()
+                    .summary(summary)
+                    .value(Some(value))
+                    .build()
+                    .into(),
+            )
+        }));
+}
+
+fn append_content_examples<const N: usize>(
+    content: &mut Content,
+    examples: [(&'static str, &'static str, Value); N],
+) {
+    content.example = None;
     content
         .examples
         .extend(examples.into_iter().map(|(name, summary, value)| {
@@ -644,6 +817,36 @@ mod tests {
                 "/v1/erc20-transfers/search".to_string()
             ])
         );
+    }
+
+    #[test]
+    fn openapi_declares_beta_api_key_bearer_security() {
+        let json = document_json(&Config::default());
+        let scheme = &json["components"]["securitySchemes"][BETA_API_KEY_AUTH_SCHEME];
+
+        assert_eq!(scheme["type"], "http");
+        assert_eq!(scheme["scheme"], "bearer");
+        assert_eq!(scheme["bearerFormat"], "API key");
+        assert!(scheme["description"]
+            .as_str()
+            .expect("security scheme should include a description")
+            .contains("Authorization: Bearer <api_key>"));
+    }
+
+    #[test]
+    fn generated_beta_paths_require_beta_api_key_security() {
+        let json = document_json(&Config {
+            erc20_transfers_enabled: true,
+            ..Config::default()
+        });
+
+        for path in [
+            "/v1/balances",
+            "/v1/balances/bulk",
+            "/v1/erc20-transfers/search",
+        ] {
+            assert_beta_api_key_security(&json["paths"][path]["post"]);
+        }
     }
 
     #[test]
@@ -849,6 +1052,7 @@ mod tests {
             "400",
             "request_too_large",
         ));
+        assert_protected_route_error_examples(single_responses);
 
         let bulk_operation = &json["paths"]["/v1/balances/bulk"]["post"];
         let bulk_request_examples =
@@ -884,6 +1088,7 @@ mod tests {
             "400",
             "request_too_large",
         ));
+        assert_protected_route_error_examples(bulk_responses);
     }
 
     #[test]
@@ -964,7 +1169,9 @@ mod tests {
         let responses = operation["post"]["responses"]
             .as_object()
             .expect("transfer-search responses should be an object");
-        for status in ["200", "400", "404", "422", "500", "502", "503", "504"] {
+        for status in [
+            "200", "400", "401", "404", "429", "422", "500", "502", "503", "504",
+        ] {
             assert!(responses.contains_key(status), "missing response {status}");
         }
     }
@@ -1048,6 +1255,7 @@ mod tests {
             response_example_value(responses, "503", "extraction_unavailable"),
             erc20_transfer_examples::extraction_unavailable_response()
         );
+        assert_protected_route_error_examples(responses);
         assert_eq!(
             response_example_value(responses, "504", "upstream_provider_timeout"),
             erc20_transfer_examples::upstream_provider_timeout_response()
@@ -1146,7 +1354,7 @@ mod tests {
             format!("#/components/schemas/{response_schema}")
         );
 
-        for status in ["400", "500", "503"] {
+        for status in ["400", "401", "429", "500", "503"] {
             assert_eq!(
                 operation["responses"][status]["content"]["application/json"]["schema"]["$ref"],
                 "#/components/schemas/ErrorResponse",
@@ -1162,6 +1370,8 @@ mod tests {
             BTreeSet::from([
                 "200".to_string(),
                 "400".to_string(),
+                "401".to_string(),
+                "429".to_string(),
                 "500".to_string(),
                 "503".to_string()
             ])
@@ -1249,6 +1459,31 @@ mod tests {
                 .cloned()
                 .collect::<BTreeSet<_>>(),
             BTreeSet::from(["error".to_string(), "ok".to_string()])
+        );
+    }
+
+    fn assert_beta_api_key_security(operation: &Value) {
+        assert_eq!(
+            operation["security"],
+            serde_json::json!([{ BETA_API_KEY_AUTH_SCHEME: [] }])
+        );
+    }
+
+    fn assert_protected_route_error_examples(responses: &Value) {
+        let unauthorized = response_example_value(responses, "401", "unauthorized");
+        assert_error_example(unauthorized.clone());
+        assert_eq!(unauthorized, unauthorized_response());
+
+        let rate_limited = response_example_value(responses, "429", "rate_limited");
+        assert_error_example(rate_limited.clone());
+        assert_eq!(rate_limited, rate_limited_response());
+
+        let database_unavailable =
+            response_example_value(responses, "503", "api_key_authentication_unavailable");
+        assert_error_example(database_unavailable.clone());
+        assert_eq!(
+            database_unavailable,
+            database_unavailable_for_auth_response()
         );
     }
 
