@@ -9,8 +9,11 @@ const TX_HASH_2: &str = "0x00000000000000000000000000000000000000000000000000000
 
 pub(crate) fn unfiltered_request() -> Value {
     json!({
-        "network_slug": NETWORK_SLUG,
-        "address": WATCHED_ADDRESS,
+        "account": {
+            "network_slug": NETWORK_SLUG,
+            "address": WATCHED_ADDRESS,
+            "client_ref": "treasury-main"
+        },
         "direction": "any",
         "tokens": null,
         "window": block_window()
@@ -193,8 +196,11 @@ pub(crate) fn internal_error_response() -> Value {
 
 fn request_with_tokens(tokens: Value) -> Value {
     json!({
-        "network_slug": NETWORK_SLUG,
-        "address": WATCHED_ADDRESS,
+        "account": {
+            "network_slug": NETWORK_SLUG,
+            "address": WATCHED_ADDRESS,
+            "client_ref": "treasury-main"
+        },
         "direction": "any",
         "tokens": tokens,
         "window": block_window()
@@ -212,8 +218,11 @@ fn success_response(token_filters: Value, transfers: Vec<Value>, truncated: bool
     json!({
         "ok": true,
         "type": "erc20_transfer_search",
-        "network_slug": NETWORK_SLUG,
-        "address": WATCHED_ADDRESS,
+        "account": {
+            "network_slug": NETWORK_SLUG,
+            "address": WATCHED_ADDRESS,
+            "client_ref": "treasury-main"
+        },
         "direction": "any",
         "window": block_window(),
         "token_filters": token_filters,

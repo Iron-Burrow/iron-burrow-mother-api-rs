@@ -22,8 +22,11 @@ use crate::{
 #[test]
 fn request_serialization_snapshot_matches_public_shape() {
     let request = Erc20TransferSearchRequest {
-        network_slug: "eth-mainnet".to_string(),
-        address: "0xabc0000000000000000000000000000000000000".to_string(),
+        account: Erc20TransferAccount {
+            network_slug: "eth-mainnet".to_string(),
+            address: "0xabc0000000000000000000000000000000000000".to_string(),
+            client_ref: Some("treasury-main".to_string()),
+        },
         direction: TransferDirectionDTO::Any,
         tokens: Some(TokenFilterDTO {
             asset_slugs: vec!["usdc".to_string(), "usdt".to_string()],
@@ -38,8 +41,11 @@ fn request_serialization_snapshot_matches_public_shape() {
     assert_json_snapshot(
         &request,
         r#"{
-  "network_slug": "eth-mainnet",
-  "address": "0xabc0000000000000000000000000000000000000",
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0xabc0000000000000000000000000000000000000",
+    "client_ref": "treasury-main"
+  },
   "direction": "any",
   "tokens": {
     "asset_slugs": [
@@ -63,8 +69,11 @@ fn response_serialization_snapshot_matches_public_shape() {
     let response = Erc20TransferSearchResponse {
         ok: true,
         response_type: "erc20_transfer_search".to_string(),
-        network_slug: "eth-mainnet".to_string(),
-        address: "0xabc0000000000000000000000000000000000000".to_string(),
+        account: Erc20TransferAccount {
+            network_slug: "eth-mainnet".to_string(),
+            address: "0xabc0000000000000000000000000000000000000".to_string(),
+            client_ref: Some("treasury-main".to_string()),
+        },
         direction: TransferDirectionDTO::Any,
         window: OnchainWindowDTO::Block(BlockWindowDTO {
             from_block: 18_600_000,
@@ -122,8 +131,11 @@ fn response_serialization_snapshot_matches_public_shape() {
         r#"{
   "ok": true,
   "type": "erc20_transfer_search",
-  "network_slug": "eth-mainnet",
-  "address": "0xabc0000000000000000000000000000000000000",
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0xabc0000000000000000000000000000000000000",
+    "client_ref": "treasury-main"
+  },
   "direction": "any",
   "window": {
     "from_block": 18600000,
@@ -223,6 +235,23 @@ fn request_rejects_unknown_top_level_fields() {
     body["chain"] = json!("eth-mainnet");
 
     assert!(serde_json::from_value::<Erc20TransferSearchRequest>(body).is_err());
+}
+
+#[test]
+fn request_rejects_legacy_top_level_account_fields() {
+    let mut body = valid_erc20_transfers_request_body();
+    body["network_slug"] = json!("eth-mainnet");
+    body["address"] = json!("0xabc0000000000000000000000000000000000000");
+
+    assert!(Erc20TransferSearchRequest::try_from(&json_object(body)).is_err());
+}
+
+#[test]
+fn account_rejects_unknown_fields() {
+    let mut body = valid_erc20_transfers_request_body();
+    body["account"]["chain"] = json!("eth-mainnet");
+
+    assert!(Erc20TransferSearchRequest::try_from(&json_object(body)).is_err());
 }
 
 #[test]
@@ -381,10 +410,14 @@ fn validation_accepts_minimal_asset_contract_and_mixed_token_filter_shapes() {
     for (body, expected_tokens) in cases {
         let request = Erc20TransferSearchRequest::try_from(&json_object(body)).unwrap();
 
-        assert_eq!(request.network_slug, "eth-mainnet");
+        assert_eq!(request.account.network_slug, "eth-mainnet");
         assert_eq!(
-            request.address,
+            request.account.address,
             "0xabc0000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            request.account.client_ref,
+            Some("treasury-main".to_string())
         );
         assert_eq!(request.direction, TransferDirectionDTO::Any);
         assert_eq!(request.tokens.unwrap_or_default(), expected_tokens);

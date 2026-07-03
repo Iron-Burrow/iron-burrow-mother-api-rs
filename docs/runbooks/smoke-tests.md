@@ -176,8 +176,11 @@ jq -n \
   --argjson from "$TEST_FROM_BLOCK" \
   --argjson to "$TEST_TO_BLOCK" \
   '{
-    network_slug: "eth-mainnet",
-    address: $address,
+    account: {
+      network_slug: "eth-mainnet",
+      address: $address,
+      client_ref: "transfer-unfiltered-smoke"
+    },
     direction: "any",
     tokens: null,
     window: {from_block: $from, to_block: $to}
@@ -188,8 +191,11 @@ jq -n \
   --argjson from "$TEST_FROM_BLOCK" \
   --argjson to "$TEST_TO_BLOCK" \
   '{
-    network_slug: "eth-mainnet",
-    address: $address,
+    account: {
+      network_slug: "eth-mainnet",
+      address: $address,
+      client_ref: "transfer-usdc-slug-smoke"
+    },
     direction: "any",
     tokens: {asset_slugs: ["usdc"], contract_addresses: []},
     window: {from_block: $from, to_block: $to}
@@ -201,8 +207,11 @@ jq -n \
   --argjson from "$TEST_FROM_BLOCK" \
   --argjson to "$TEST_TO_BLOCK" \
   '{
-    network_slug: "eth-mainnet",
-    address: $address,
+    account: {
+      network_slug: "eth-mainnet",
+      address: $address,
+      client_ref: "transfer-usdc-contract-smoke"
+    },
     direction: "any",
     tokens: {asset_slugs: [], contract_addresses: [$usdc]},
     window: {from_block: $from, to_block: $to}
@@ -214,8 +223,11 @@ jq -n \
   --argjson from "$TEST_FROM_BLOCK" \
   --argjson to "$TEST_TO_BLOCK" \
   '{
-    network_slug: "eth-mainnet",
-    address: $address,
+    account: {
+      network_slug: "eth-mainnet",
+      address: $address,
+      client_ref: "transfer-usdc-mixed-smoke"
+    },
     direction: "any",
     tokens: {asset_slugs: ["usdc"], contract_addresses: [$usdc]},
     window: {from_block: $from, to_block: $to}
@@ -439,7 +451,7 @@ status="$(curl -sS -o /tmp/mother-erc20-unfiltered.out.json -w '%{http_code}' \
   -d @/tmp/mother-erc20-unfiltered.json)"
 echo "HTTP $status"
 test "$status" = "200"
-jq -e '.ok == true and .type == "erc20_transfer_search" and .network_slug == "eth-mainnet" and (.transfers | type) == "array" and .limits.max_rows == 5000 and (.limits.truncated | type) == "boolean"' \
+jq -e '.ok == true and .type == "erc20_transfer_search" and .account.network_slug == "eth-mainnet" and .account.client_ref == "transfer-unfiltered-smoke" and (.transfers | type) == "array" and .limits.max_rows == 5000 and (.limits.truncated | type) == "boolean"' \
   /tmp/mother-erc20-unfiltered.out.json
 ```
 

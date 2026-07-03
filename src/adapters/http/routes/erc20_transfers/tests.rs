@@ -122,6 +122,16 @@ async fn successful_bigwig_response_returns_final_public_response() {
 
     assert_eq!(response["ok"], true);
     assert_eq!(response["type"], "erc20_transfer_search");
+    assert_eq!(
+        response["account"],
+        json!({
+            "network_slug": "eth-mainnet",
+            "address": "0xabc0000000000000000000000000000000000000",
+            "client_ref": "treasury-main"
+        })
+    );
+    assert!(response.get("network_slug").is_none());
+    assert!(response.get("address").is_none());
     assert_eq!(response["transfers"][0]["amount"]["raw"], "12500000");
     assert_eq!(response["transfers"][0]["amount"]["decimal"], "12.5");
     assert_eq!(response["transfers"][0]["token"]["asset_slug"], "usdc");
@@ -153,13 +163,16 @@ async fn successful_bigwig_response_returns_final_public_response() {
     assert_json_snapshot(
         &response,
         r#"{
-  "address": "0xabc0000000000000000000000000000000000000",
+  "account": {
+    "address": "0xabc0000000000000000000000000000000000000",
+    "client_ref": "treasury-main",
+    "network_slug": "eth-mainnet"
+  },
   "direction": "any",
   "limits": {
     "max_rows": 5000,
     "truncated": true
   },
-  "network_slug": "eth-mainnet",
   "ok": true,
   "token_filters": {
     "requested": {
@@ -621,6 +634,29 @@ async fn invalid_requests_return_stable_public_codes() {
             Some("application/json"),
             serde_json::to_vec(&{
                 let mut body = valid_erc20_transfers_request_body();
+                body["network_slug"] = json!("eth-mainnet");
+                body["address"] = json!("0xabc0000000000000000000000000000000000000");
+                body
+            })
+            .unwrap(),
+            StatusCode::BAD_REQUEST,
+            "unknown_field",
+        ),
+        (
+            Some("application/json"),
+            serde_json::to_vec(&{
+                let mut body = valid_erc20_transfers_request_body();
+                body["account"]["chain"] = json!("eth-mainnet");
+                body
+            })
+            .unwrap(),
+            StatusCode::BAD_REQUEST,
+            "unknown_field",
+        ),
+        (
+            Some("application/json"),
+            serde_json::to_vec(&{
+                let mut body = valid_erc20_transfers_request_body();
                 body["tokens"]["symbol"] = json!("USDC");
                 body
             })
@@ -643,7 +679,10 @@ async fn invalid_requests_return_stable_public_codes() {
             Some("application/json"),
             serde_json::to_vec(&{
                 let mut body = valid_erc20_transfers_request_body();
-                body.as_object_mut().unwrap().remove("network_slug");
+                body["account"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("network_slug");
                 body
             })
             .unwrap(),
@@ -654,7 +693,7 @@ async fn invalid_requests_return_stable_public_codes() {
             Some("application/json"),
             serde_json::to_vec(&{
                 let mut body = valid_erc20_transfers_request_body();
-                body["network_slug"] = json!("");
+                body["account"]["network_slug"] = json!("");
                 body
             })
             .unwrap(),
@@ -665,7 +704,7 @@ async fn invalid_requests_return_stable_public_codes() {
             Some("application/json"),
             serde_json::to_vec(&{
                 let mut body = valid_erc20_transfers_request_body();
-                body["network_slug"] = json!(null);
+                body["account"]["network_slug"] = json!(null);
                 body
             })
             .unwrap(),
@@ -676,7 +715,7 @@ async fn invalid_requests_return_stable_public_codes() {
             Some("application/json"),
             serde_json::to_vec(&{
                 let mut body = valid_erc20_transfers_request_body();
-                body["network_slug"] = json!("ETH-MAINNET");
+                body["account"]["network_slug"] = json!("ETH-MAINNET");
                 body
             })
             .unwrap(),
@@ -687,7 +726,7 @@ async fn invalid_requests_return_stable_public_codes() {
             Some("application/json"),
             serde_json::to_vec(&{
                 let mut body = valid_erc20_transfers_request_body();
-                body["network_slug"] = json!("base-mainnet");
+                body["account"]["network_slug"] = json!("base-mainnet");
                 body
             })
             .unwrap(),
@@ -698,7 +737,7 @@ async fn invalid_requests_return_stable_public_codes() {
             Some("application/json"),
             serde_json::to_vec(&{
                 let mut body = valid_erc20_transfers_request_body();
-                body["address"] = json!("0x1234");
+                body["account"]["address"] = json!("0x1234");
                 body
             })
             .unwrap(),

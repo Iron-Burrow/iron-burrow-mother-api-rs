@@ -18,9 +18,9 @@ use crate::adapters::http::dto::balances::{
     SingleAsOfPayload, SingleBalanceRequest, SingleBalanceResponse,
 };
 use crate::adapters::http::dto::erc20_transfers::{
-    examples as erc20_transfer_examples, Erc20TransferAmount, Erc20TransferRow,
-    Erc20TransferSearchLimits, Erc20TransferSearchRequest, Erc20TransferSearchResponse,
-    Erc20TransferToken,
+    examples as erc20_transfer_examples, Erc20TransferAccount, Erc20TransferAmount,
+    Erc20TransferRow, Erc20TransferSearchLimits, Erc20TransferSearchRequest,
+    Erc20TransferSearchResponse, Erc20TransferToken,
 };
 use crate::adapters::http::dto::filters::onchain_window::{
     BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO, TimestampWindowDTO,
@@ -79,6 +79,7 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
         BulkBalanceRequest,
         BulkBalanceResponse,
         Erc20TransferAmount,
+        Erc20TransferAccount,
         BlockWindowDTO,
         TransferDirectionDTO,
         LookbackTargetDTO,
@@ -134,6 +135,7 @@ struct BaseApiDoc;
         BulkBalanceRequest,
         BulkBalanceResponse,
         Erc20TransferAmount,
+        Erc20TransferAccount,
         BlockWindowDTO,
         TransferDirectionDTO,
         LookbackTargetDTO,
@@ -1139,6 +1141,7 @@ mod tests {
         for schema in [
             "Erc20TransferSearchRequest",
             "Erc20TransferSearchResponse",
+            "Erc20TransferAccount",
             "OnchainWindowDTO",
             "TokenFilterDTO",
             "ResolvedTokenFilterDTO",
@@ -1287,13 +1290,13 @@ mod tests {
             .as_object()
             .expect("request schema should have object properties");
 
-        for field in ["network_slug", "address", "direction", "tokens", "window"] {
+        for field in ["account", "direction", "tokens", "window"] {
             assert!(
                 properties.contains_key(field),
                 "missing request field {field}"
             );
         }
-        for disallowed_field in ["chain", "chain_id", "chain_slug"] {
+        for disallowed_field in ["network_slug", "address", "chain", "chain_id", "chain_slug"] {
             assert!(
                 !properties.contains_key(disallowed_field),
                 "request schema must not expose {disallowed_field}"
@@ -1306,10 +1309,23 @@ mod tests {
             .iter()
             .map(|value| value.as_str().expect("required field should be a string"))
             .collect::<Vec<_>>();
-        for field in ["network_slug", "address", "direction", "window"] {
+        for field in ["account", "direction", "window"] {
             assert!(required.contains(&field), "missing required field {field}");
         }
         assert!(!required.contains(&"tokens"));
+
+        let account_schema = schemas
+            .get("Erc20TransferAccount")
+            .expect("missing account schema");
+        let account_properties = account_schema["properties"]
+            .as_object()
+            .expect("account schema should have object properties");
+        for field in ["network_slug", "address", "client_ref"] {
+            assert!(
+                account_properties.contains_key(field),
+                "missing account field {field}"
+            );
+        }
     }
 
     #[test]

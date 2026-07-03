@@ -128,8 +128,11 @@ curl -sS "$IB_API/v1/erc20-transfers/search" \
   -H "$AUTH_HEADER" \
   -H "Content-Type: application/json" \
   -d '{
-    "network_slug": "eth-mainnet",
-    "address": "0xabc0000000000000000000000000000000000000",
+    "account": {
+      "network_slug": "eth-mainnet",
+      "address": "0xabc0000000000000000000000000000000000000",
+      "client_ref": "treasury-main"
+    },
     "direction": "any",
     "tokens": {
       "asset_slugs": [
@@ -175,8 +178,11 @@ curl -sS "$IB_API/v1/erc20-transfers/search" \
   -H "$AUTH_HEADER" \
   -H "Content-Type: application/json" \
   -d '{
-    "network_slug": "eth-mainnet",
-    "address": "0xabc0000000000000000000000000000000000000",
+    "account": {
+      "network_slug": "eth-mainnet",
+      "address": "0xabc0000000000000000000000000000000000000",
+      "client_ref": "treasury-main"
+    },
     "direction": "any",
     "tokens": {
       "asset_slugs": [],
