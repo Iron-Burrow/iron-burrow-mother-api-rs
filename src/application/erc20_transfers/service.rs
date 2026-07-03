@@ -9,7 +9,7 @@ use crate::application::balances::catalog::{
 };
 use crate::application::filters::onchain_window::OnchainWindow;
 use crate::application::filters::transfer_direction::TransferDirection;
-use crate::domain::balance_catalog::{
+use crate::domain::assets::balance_catalog::{
     BalanceTargetKind, CatalogIntegrityIssue, CatalogResolverError,
 };
 

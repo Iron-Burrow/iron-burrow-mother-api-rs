@@ -2,8 +2,8 @@ use serde::Serialize;
 
 use crate::adapters::postgres::errors::RepositoryError;
 use crate::adapters::postgres::global_assets::GlobalAssetRepository;
-use crate::domain::asset_match::AssetMatch;
-use crate::domain::global_assets::GlobalAsset;
+use crate::domain::assets::asset_match::AssetMatch;
+use crate::domain::assets::global_assets::GlobalAsset;
 
 use super::query::NormalizedQuery;
 

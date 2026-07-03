@@ -23,7 +23,7 @@ use crate::{
     config::{Config, PublicApiSurface},
     domain::api_keys::hash_presented_api_key,
 };
-use crate::{domain::global_assets::GlobalAsset, state::AppState};
+use crate::{domain::assets::global_assets::GlobalAsset, state::AppState};
 
 const TEST_API_KEY: &str =
     "ib_live_0123456789abcdef.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";

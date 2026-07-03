@@ -632,8 +632,8 @@ fn selector_payload(selector: &BalanceTokenSelector) -> BalanceSelectorPayload {
 
 fn contract_address(target: &ResolvedBalanceTarget) -> Option<String> {
     match &target.kind {
-        crate::domain::balance_catalog::BalanceTargetKind::Native => None,
-        crate::domain::balance_catalog::BalanceTargetKind::Erc20 { contract_address } => {
+        crate::domain::assets::balance_catalog::BalanceTargetKind::Native => None,
+        crate::domain::assets::balance_catalog::BalanceTargetKind::Erc20 { contract_address } => {
             Some(contract_address.clone())
         }
     }

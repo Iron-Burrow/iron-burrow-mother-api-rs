@@ -22,7 +22,7 @@ use crate::{
             BalanceSnapshotServiceError, BalanceSnapshotTokens,
         },
     },
-    domain::balance_catalog::CatalogResolverError,
+    domain::assets::balance_catalog::CatalogResolverError,
     state::AppState,
 };
 

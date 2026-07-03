@@ -4,8 +4,8 @@ use serde::Serialize;
 use tracing::{info, warn};
 
 use crate::adapters::postgres::errors::RepositoryError;
-use crate::domain::asset_chain_map::AssetChainMap;
-use crate::domain::global_assets::{GlobalAsset, GlobalAssetDetail};
+use crate::domain::assets::asset_chain_map::AssetChainMap;
+use crate::domain::assets::global_assets::{GlobalAsset, GlobalAssetDetail};
 use crate::{
     adapters::postgres::global_assets::GlobalAssetRepository,
     adapters::price_indexer::{

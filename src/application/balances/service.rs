@@ -12,7 +12,9 @@ use crate::adapters::bigwig::balances::{
 };
 use crate::adapters::bigwig::client::BigwigClient;
 use crate::adapters::bigwig::error::BigwigError;
-use crate::domain::balance_catalog::{BalanceTarget, BalanceTargetKind, CatalogResolverError};
+use crate::domain::assets::balance_catalog::{
+    BalanceTarget, BalanceTargetKind, CatalogResolverError,
+};
 
 use super::{
     catalog::{

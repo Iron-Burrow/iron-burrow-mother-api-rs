@@ -1,6 +1,6 @@
 use crate::adapters::postgres::balance_catalog::{BalanceCatalogRow, Erc20TokenCatalogRow};
 use crate::adapters::postgres::global_assets::GlobalAssetRepository;
-use crate::domain::balance_catalog::{
+use crate::domain::assets::balance_catalog::{
     BalanceTarget, BalanceTargetKind, CatalogIntegrityIssue, CatalogResolverError,
 };
 

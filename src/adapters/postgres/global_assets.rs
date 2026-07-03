@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use sqlx::{FromRow, PgPool};
 
-use crate::domain::asset_match::{confidence_rank, AssetMatch, ExactMatchConfidence};
-use crate::domain::global_assets::{GlobalAsset, GlobalAssetDetail};
+use crate::domain::assets::asset_match::{confidence_rank, AssetMatch, ExactMatchConfidence};
+use crate::domain::assets::global_assets::{GlobalAsset, GlobalAssetDetail};
 use crate::domain::networks::NetworkRef;
 
 use super::asset_chain_map::{

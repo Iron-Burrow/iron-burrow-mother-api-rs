@@ -32,7 +32,7 @@ use crate::application::filters::{
     onchain_window::{BlockWindow, LookbackTarget, LookbackWindow, OnchainWindow, TimestampWindow},
     transfer_direction::TransferDirection,
 };
-use crate::domain::balance_catalog::{CatalogIntegrityIssue, CatalogResolverError};
+use crate::domain::assets::balance_catalog::{CatalogIntegrityIssue, CatalogResolverError};
 use crate::{adapters::http::error::ApiError, state::AppState};
 
 const ERC20_TRANSFER_SEARCH_MAX_ROWS: u64 = 5_000;

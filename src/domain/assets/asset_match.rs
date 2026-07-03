@@ -1,4 +1,4 @@
-use crate::domain::global_assets::GlobalAsset;
+use crate::domain::assets::global_assets::GlobalAsset;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AssetMatch {

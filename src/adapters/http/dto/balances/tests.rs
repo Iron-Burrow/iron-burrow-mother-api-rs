@@ -7,7 +7,7 @@ use crate::{
         BalanceAccountResult, BalanceEvidence, BalanceItemOutcome, BalanceQuoteOutcome,
         BalanceTokenSelector, ResolvedBalanceTarget,
     },
-    domain::balance_catalog::BalanceTargetKind,
+    domain::assets::balance_catalog::BalanceTargetKind,
     test_utils::json::json_object,
 };
 
