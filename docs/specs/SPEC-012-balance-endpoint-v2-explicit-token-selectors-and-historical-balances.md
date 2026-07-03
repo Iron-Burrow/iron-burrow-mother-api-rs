@@ -219,14 +219,22 @@ They must not leak upstream provider topology or pricing internals.
 
 ## Implementation PR Breakdown
 
-### PR 1 - V2 DTOs and Public Examples
+### PR 1 - V2 DTOs, Validation, and Draft OpenAPI Review
 
 - Replace balance request DTOs and reusable examples with the `tokens` shape.
 - Reject legacy `assets[]`, unknown fields, reserved network aliases, empty
   token selectors, invalid contract addresses, and unsupported `as_of` forms
   not yet backed by upstream evidence.
-- Update OpenAPI schemas and examples so the draft v2 contract can be reviewed
-  without changing runtime behavior.
+- Update the generated OpenAPI schema and examples behind the draft v2 contract
+  so reviewers can inspect the intended public surface.
+- Add OpenAPI snapshot/contract tests proving:
+  - `tokens.asset_slugs[]` is documented;
+  - `tokens.contract_addresses[]` is documented;
+  - `assets[]` is no longer present in the v2 request schema;
+  - unsupported historical `as_of` variants are not accidentally documented
+    as enabled runtime behavior.
+- Do not enable the breaking runtime contract yet unless the repository has a
+  feature flag or explicit beta-surface switch for reviewing draft contracts.
 
 ### PR 2 - Latest Balance Token Selector Orchestration
 
