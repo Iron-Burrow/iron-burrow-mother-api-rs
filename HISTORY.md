@@ -316,3 +316,14 @@ implementation, and documentation changes.
 - Preserved the internal Bigwig ERC-20 transfer extraction request shape while
   updating contracts, quickstarts, smoke checks, OpenAPI examples, and route
   coverage for the public transfer account object.
+- Completed SPEC-012 PR 3 for latest balance token selector orchestration:
+  `tokens.contract_addresses` now resolve as explicit ERC-20 balance targets
+  alongside catalog `tokens.asset_slugs`.
+- Known explicit contracts are enriched with catalog metadata and quote lookup;
+  unknown explicit contracts can return raw balances with nullable metadata and
+  `quote.status="unsupported"`.
+- Deduplicated equivalent asset-slug and contract-address balance targets
+  before Bigwig work while preserving selector-level response attribution.
+- Updated `CONTRACTS.md`, OpenAPI schemas/descriptions, examples, and balance
+  route/service coverage for selector attribution and nullable raw-only
+  explicit-contract positions.

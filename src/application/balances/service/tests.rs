@@ -36,7 +36,7 @@ async fn groups_networks_concurrently_and_restores_caller_order() {
             account("eth-mainnet", ACCOUNT_B, Some("eth-b")),
             account("base-mainnet", ACCOUNT_C, Some("base-c")),
         ],
-        asset_slugs: vec!["usdc".to_string(), "ethereum".to_string()],
+        tokens: token_slugs(["usdc", "ethereum"]),
         quote_currency: "MXN".to_string(),
     };
 
@@ -84,7 +84,7 @@ async fn groups_networks_concurrently_and_restores_caller_order() {
     }
 
     assert_eq!(result.quote_currency, "MXN");
-    assert_eq!(result.requested_asset_slugs, request.asset_slugs);
+    assert_eq!(result.requested_token_count, request.tokens.len());
     assert_eq!(
         result
             .accounts
@@ -125,7 +125,7 @@ async fn batches_deduplicated_quotes_once_and_fans_them_out_in_caller_order() {
             account("base-mainnet", ACCOUNT_A, Some("base")),
             account("eth-mainnet", ACCOUNT_B, Some("eth")),
         ],
-        asset_slugs: vec!["usdc".to_string(), "ethereum".to_string()],
+        tokens: token_slugs(["usdc", "ethereum"]),
         quote_currency: "MXN".to_string(),
     };
 
@@ -167,7 +167,7 @@ async fn batches_deduplicated_quotes_once_and_fans_them_out_in_caller_order() {
                 ..
             },
             ..
-        } if amount == "0.001000"
+        } if amount.as_deref() == Some("0.001000")
             && currency == "MXN"
             && unit_price == "2.50"
             && value == "0.002500"
@@ -179,15 +179,18 @@ async fn batches_deduplicated_quotes_once_and_fans_them_out_in_caller_order() {
             amount,
             quote: BalanceQuoteOutcome::Available { value, .. },
             ..
-        } if amount == "0.000000000000001000"
+        } if amount.as_deref() == Some("0.000000000000001000")
             && value == "0.000000000000002500"
     ));
 }
 
 #[test]
 fn matches_quotes_with_the_same_normalized_pricing_slug_used_for_collection() {
-    let mut pricing_target = target("eth-mainnet", 1, "ethereum", BalanceTargetKind::Native);
-    pricing_target.pricing_asset_slug = " Ethereum ".to_string();
+    let mut pricing_target = resolved_target_from_asset_selector(
+        "ethereum",
+        target("eth-mainnet", 1, "ethereum", BalanceTargetKind::Native),
+    );
+    pricing_target.pricing_asset_slug = Some(" Ethereum ".to_string());
     let accounts = vec![RawBalanceAccountResult {
         account: account("eth-mainnet", ACCOUNT_A, None),
         evidence: None,
@@ -224,8 +227,8 @@ fn matches_quotes_with_the_same_normalized_pricing_slug_used_for_collection() {
                 ..
             },
             ..
-        } if target.pricing_asset_slug == " Ethereum "
-            && amount == "1.000000000000000000"
+        } if target.pricing_asset_slug.as_deref() == Some(" Ethereum ")
+            && amount.as_deref() == Some("1.000000000000000000")
             && currency == "USD"
             && unit_price == "2.50"
             && value == "2.500000000000000000"
@@ -298,6 +301,26 @@ fn account(network_slug: &str, address: &str, client_ref: Option<&str>) -> Balan
         network_slug: network_slug.to_string(),
         address: address.to_string(),
         client_ref: client_ref.map(str::to_string),
+    }
+}
+
+fn token_slugs<const N: usize>(asset_slugs: [&str; N]) -> BalanceSnapshotTokens {
+    BalanceSnapshotTokens {
+        asset_slugs: asset_slugs.into_iter().map(str::to_string).collect(),
+        contract_addresses: Vec::new(),
+    }
+}
+
+fn mixed_tokens(asset_slugs: &[&str], contract_addresses: &[&str]) -> BalanceSnapshotTokens {
+    BalanceSnapshotTokens {
+        asset_slugs: asset_slugs
+            .iter()
+            .map(|asset_slug| (*asset_slug).to_string())
+            .collect(),
+        contract_addresses: contract_addresses
+            .iter()
+            .map(|contract_address| (*contract_address).to_string())
+            .collect(),
     }
 }
 
@@ -447,6 +470,13 @@ fn read_http_request(stream: &mut impl Read) -> String {
     String::from_utf8(request).unwrap()
 }
 
+fn request_body_json(request: &str) -> Value {
+    request
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| serde_json::from_str::<Value>(body).unwrap())
+        .unwrap()
+}
+
 fn grouped_accounts(network_slug: &str, count: usize) -> GroupedAccounts {
     GroupedAccounts {
         network_slug: network_slug.to_string(),
@@ -482,9 +512,9 @@ fn target(
 }
 
 fn validation_plan() -> NetworkGroupPlan {
-    plan_network_group(
+    plan_asset_group(
         grouped_accounts("base-mainnet", 2),
-        &["usdc".to_string(), "ethereum".to_string()],
+        vec!["usdc".to_string(), "ethereum".to_string()],
         vec![
             BalanceTargetResolution::Resolved(target(
                 "base-mainnet",
@@ -503,6 +533,18 @@ fn validation_plan() -> NetworkGroupPlan {
         ],
     )
     .unwrap()
+}
+
+fn plan_asset_group(
+    group: GroupedAccounts,
+    asset_slugs: Vec<String>,
+    resolutions: Vec<BalanceTargetResolution>,
+) -> Result<NetworkGroupPlan, BalanceSnapshotServiceError> {
+    let tokens = BalanceSnapshotTokens {
+        asset_slugs,
+        contract_addresses: Vec::new(),
+    };
+    plan_network_group(group, &tokens, None, resolutions, Vec::new())
 }
 
 fn response_for_plan(
@@ -569,7 +611,7 @@ async fn deduplicates_targets_and_fans_out_duplicate_assets() {
     let result = service(Some(bigwig_client(&base_url)))
         .resolve_latest(BalanceSnapshotRequest {
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
-            asset_slugs: vec!["usdc".to_string(), "usdc".to_string()],
+            tokens: token_slugs(["usdc", "usdc"]),
             quote_currency: "USD".to_string(),
         })
         .await
@@ -589,7 +631,7 @@ async fn deduplicates_targets_and_fans_out_duplicate_assets() {
                 quote,
                 ..
             } => {
-                assert_eq!(target.asset_slug, "usdc");
+                assert_eq!(target.asset_slug.as_deref(), Some("usdc"));
                 assert_eq!(
                     quote,
                     &BalanceQuoteOutcome::Unavailable {
@@ -605,6 +647,57 @@ async fn deduplicates_targets_and_fans_out_duplicate_assets() {
 }
 
 #[tokio::test]
+async fn mixed_asset_and_explicit_contract_deduplicates_upstream_and_keeps_attribution() {
+    let contract = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+    let Some((bigwig_url, bigwig_server)) = spawn_dynamic_server(1) else {
+        return;
+    };
+    let Some((price_url, price_server)) = spawn_price_server(&["usdc"], "USD", "1.00") else {
+        return;
+    };
+
+    let result = service_with_quote(
+        Some(bigwig_client(&bigwig_url)),
+        Some(price_quote_client(&price_url)),
+    )
+    .resolve_latest(BalanceSnapshotRequest {
+        accounts: vec![account("eth-mainnet", ACCOUNT_A, None)],
+        tokens: mixed_tokens(&["usdc"], &[contract]),
+        quote_currency: "USD".to_string(),
+    })
+    .await
+    .unwrap();
+
+    let requests = bigwig_server.join().unwrap();
+    assert_eq!(requests[0]["targets"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        requests[0]["targets"],
+        json!([{"kind": "erc20", "contract_address": contract}])
+    );
+    let price_request = price_server.join().unwrap();
+    assert_eq!(request_body_json(&price_request)["slugs"], json!(["usdc"]));
+    assert_eq!(result.accounts[0].items.len(), 2);
+    assert!(matches!(
+        &result.accounts[0].items[0],
+        BalanceItemOutcome::Resolved {
+            target,
+            quote: BalanceQuoteOutcome::Available { .. },
+            ..
+        } if target.selector == BalanceTokenSelector::AssetSlug("usdc".to_string())
+            && target.asset_slug.as_deref() == Some("usdc")
+    ));
+    assert!(matches!(
+        &result.accounts[0].items[1],
+        BalanceItemOutcome::Resolved {
+            target,
+            quote: BalanceQuoteOutcome::Available { .. },
+            ..
+        } if target.selector == BalanceTokenSelector::ContractAddress(contract.to_string())
+            && target.asset_slug.as_deref() == Some("usdc")
+    ));
+}
+
+#[tokio::test]
 async fn skips_unsupported_pairs_without_calling_bigwig() {
     let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
         return;
@@ -613,7 +706,7 @@ async fn skips_unsupported_pairs_without_calling_bigwig() {
     let result = service(Some(bigwig_client(&base_url)))
         .resolve_latest(BalanceSnapshotRequest {
             accounts: vec![account("mantle-mainnet", ACCOUNT_A, None)],
-            asset_slugs: vec!["wrapped-bitcoin".to_string()],
+            tokens: token_slugs(["wrapped-bitcoin"]),
             quote_currency: "USD".to_string(),
         })
         .await
@@ -643,7 +736,7 @@ async fn skipped_only_results_do_not_call_price_indexer() {
     let result = service_with_quote(None, Some(price_quote_client(&base_url)))
         .resolve_latest(BalanceSnapshotRequest {
             accounts: vec![account("mantle-mainnet", ACCOUNT_A, None)],
-            asset_slugs: vec!["wrapped-bitcoin".to_string()],
+            tokens: token_slugs(["wrapped-bitcoin"]),
             quote_currency: "USD".to_string(),
         })
         .await
@@ -665,7 +758,7 @@ async fn missing_bigwig_client_marks_supported_items_provider_unavailable() {
     let result = service(None)
         .resolve_latest(BalanceSnapshotRequest {
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
-            asset_slugs: vec!["usdc".to_string(), "wrapped-bitcoin".to_string()],
+            tokens: token_slugs(["usdc", "wrapped-bitcoin"]),
             quote_currency: "USD".to_string(),
         })
         .await
@@ -697,7 +790,7 @@ async fn planning_failure_prevents_all_bigwig_calls() {
                 account("base-mainnet", ACCOUNT_A, None),
                 account("unknown-mainnet", ACCOUNT_B, None),
             ],
-            asset_slugs: vec!["usdc".to_string()],
+            tokens: token_slugs(["usdc"]),
             quote_currency: "USD".to_string(),
         })
         .await
@@ -720,7 +813,7 @@ async fn unsupported_global_asset_is_a_whole_request_error() {
     let error = service(None)
         .resolve_latest(BalanceSnapshotRequest {
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
-            asset_slugs: vec!["missing-asset".to_string()],
+            tokens: token_slugs(["missing-asset"]),
             quote_currency: "USD".to_string(),
         })
         .await
@@ -785,7 +878,7 @@ async fn malformed_raw_amount_invalidates_group_evidence_before_quote_lookup() {
     let result = service(Some(bigwig_client(&base_url)))
         .resolve_latest(BalanceSnapshotRequest {
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
-            asset_slugs: vec!["usdc".to_string()],
+            tokens: token_slugs(["usdc"]),
             quote_currency: "USD".to_string(),
         })
         .await
@@ -806,9 +899,9 @@ async fn malformed_raw_amount_invalidates_group_evidence_before_quote_lookup() {
 fn rejects_cross_asset_target_collisions_and_conflicting_metadata() {
     let group = grouped_accounts("base-mainnet", 1);
     let assets = vec!["asset-a".to_string(), "asset-b".to_string()];
-    let collision = plan_network_group(
+    let collision = plan_asset_group(
         group.clone(),
-        &assets,
+        assets,
         vec![
             BalanceTargetResolution::Resolved(target(
                 "base-mainnet",
@@ -837,9 +930,9 @@ fn rejects_cross_asset_target_collisions_and_conflicting_metadata() {
     let first = target("base-mainnet", 8453, "asset-a", BalanceTargetKind::Native);
     let mut conflicting = first.clone();
     conflicting.symbol = "DIFFERENT".to_string();
-    let error = plan_network_group(
+    let error = plan_asset_group(
         group,
-        &duplicate_assets,
+        duplicate_assets,
         vec![
             BalanceTargetResolution::Resolved(first),
             BalanceTargetResolution::Resolved(conflicting),
@@ -858,9 +951,9 @@ fn rejects_cross_asset_target_collisions_and_conflicting_metadata() {
 #[test]
 fn rejects_inconsistent_chain_ids_and_bigwig_group_limits() {
     let assets = vec!["asset-a".to_string(), "asset-b".to_string()];
-    let inconsistent = plan_network_group(
+    let inconsistent = plan_asset_group(
         grouped_accounts("base-mainnet", 1),
-        &assets,
+        assets,
         vec![
             BalanceTargetResolution::Resolved(target(
                 "base-mainnet",
@@ -887,9 +980,9 @@ fn rejects_inconsistent_chain_ids_and_bigwig_group_limits() {
         }
     ));
 
-    let too_many_accounts = plan_network_group(
+    let too_many_accounts = plan_asset_group(
         grouped_accounts("base-mainnet", BIGWIG_MAX_ACCOUNTS + 1),
-        &["asset-a".to_string()],
+        vec!["asset-a".to_string()],
         vec![BalanceTargetResolution::Resolved(target(
             "base-mainnet",
             8453,
@@ -920,9 +1013,9 @@ fn rejects_inconsistent_chain_ids_and_bigwig_group_limits() {
             ))
         })
         .collect();
-    let too_many_targets = plan_network_group(
+    let too_many_targets = plan_asset_group(
         grouped_accounts("base-mainnet", 1),
-        &many_assets,
+        many_assets,
         many_resolutions,
     )
     .unwrap_err();

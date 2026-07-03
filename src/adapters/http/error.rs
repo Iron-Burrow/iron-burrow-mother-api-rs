@@ -240,14 +240,6 @@ impl ApiError {
         }
     }
 
-    pub fn unsupported_token_selector() -> Self {
-        Self {
-            status: StatusCode::BAD_REQUEST,
-            code: "unsupported_token_selector",
-            message: "This token selector is not supported for balance resolution yet.".to_string(),
-        }
-    }
-
     pub fn request_too_large() -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,

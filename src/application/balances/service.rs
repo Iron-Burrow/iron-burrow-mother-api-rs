@@ -15,7 +15,10 @@ use crate::adapters::bigwig::error::BigwigError;
 use crate::domain::balance_catalog::{BalanceTarget, BalanceTargetKind, CatalogResolverError};
 
 use super::{
-    catalog::{BalanceTargetResolution, CatalogBalanceTargetResolver},
+    catalog::{
+        BalanceNetworkResolution, BalanceTargetResolution, CatalogBalanceTargetResolver,
+        ContractBalanceTargetResolution,
+    },
     decimal::{format_amount, is_unsigned_integer, multiply_amount_by_price},
     quote::{PriceQuoteClient, PriceQuoteClientError, PriceQuoteResolution},
 };
@@ -111,7 +114,7 @@ impl BalanceSnapshotService {
 
         Ok(BalanceSnapshotResult {
             quote_currency: request.quote_currency,
-            requested_asset_slugs: request.asset_slugs,
+            requested_token_count: request.tokens.len(),
             accounts: enrich_account_results(raw_account_results, quotes),
         })
     }
@@ -124,14 +127,38 @@ impl BalanceSnapshotService {
         let mut plans = Vec::with_capacity(grouped_accounts.len());
 
         for group in grouped_accounts {
-            let resolutions = self
+            let asset_resolutions = self
                 .catalog_resolver
-                .resolve_network(&group.network_slug, &request.asset_slugs)
+                .resolve_network(&group.network_slug, &request.tokens.asset_slugs)
                 .await?;
+            let network_resolution = if request.tokens.contract_addresses.is_empty() {
+                None
+            } else {
+                let Some(network) = self
+                    .catalog_resolver
+                    .resolve_evm_network(&group.network_slug)
+                    .await?
+                else {
+                    return Err(BalanceSnapshotServiceError::UnsupportedNetwork {
+                        network_slug: group.network_slug,
+                    });
+                };
+                Some(network)
+            };
+            let contract_resolutions = match network_resolution.as_ref() {
+                Some(network) => {
+                    self.catalog_resolver
+                        .resolve_erc20_contracts(network, &request.tokens.contract_addresses)
+                        .await?
+                }
+                None => Vec::new(),
+            };
             plans.push(plan_network_group(
                 group,
-                &request.asset_slugs,
-                resolutions,
+                &request.tokens,
+                network_resolution,
+                asset_resolutions,
+                contract_resolutions,
             )?);
         }
 
@@ -142,8 +169,20 @@ impl BalanceSnapshotService {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BalanceSnapshotRequest {
     pub accounts: Vec<BalanceSnapshotAccount>,
-    pub asset_slugs: Vec<String>,
+    pub tokens: BalanceSnapshotTokens,
     pub quote_currency: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct BalanceSnapshotTokens {
+    pub asset_slugs: Vec<String>,
+    pub contract_addresses: Vec<String>,
+}
+
+impl BalanceSnapshotTokens {
+    pub fn len(&self) -> usize {
+        self.asset_slugs.len() + self.contract_addresses.len()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -156,7 +195,7 @@ pub struct BalanceSnapshotAccount {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BalanceSnapshotResult {
     pub quote_currency: String,
-    pub requested_asset_slugs: Vec<String>,
+    pub requested_token_count: usize,
     pub accounts: Vec<BalanceAccountResult>,
 }
 
@@ -178,9 +217,9 @@ pub struct BalanceEvidence {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BalanceItemOutcome {
     Resolved {
-        target: BalanceTarget,
+        target: ResolvedBalanceTarget,
         raw_amount: String,
-        amount: String,
+        amount: Option<String>,
         quote: BalanceQuoteOutcome,
     },
     Skipped {
@@ -188,9 +227,28 @@ pub enum BalanceItemOutcome {
         asset_slug: String,
     },
     Failed {
-        target: BalanceTarget,
+        target: ResolvedBalanceTarget,
         code: BalanceItemErrorCode,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedBalanceTarget {
+    pub selector: BalanceTokenSelector,
+    pub network_slug: String,
+    pub chain_id: i64,
+    pub asset_slug: Option<String>,
+    pub symbol: Option<String>,
+    pub name: Option<String>,
+    pub decimals: Option<u8>,
+    pub pricing_asset_slug: Option<String>,
+    pub kind: BalanceTargetKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BalanceTokenSelector {
+    AssetSlug(String),
+    ContractAddress(String),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -226,7 +284,7 @@ struct RawBalanceAccountResult {
 #[derive(Clone, Debug)]
 enum RawBalanceItemOutcome {
     Resolved {
-        target: BalanceTarget,
+        target: ResolvedBalanceTarget,
         raw_amount: String,
     },
     Skipped {
@@ -234,7 +292,7 @@ enum RawBalanceItemOutcome {
         asset_slug: String,
     },
     Failed {
-        target: BalanceTarget,
+        target: ResolvedBalanceTarget,
         code: BalanceItemErrorCode,
     },
 }
@@ -325,7 +383,7 @@ struct NetworkGroupPlan {
     network_slug: String,
     chain_id: Option<i64>,
     accounts: Vec<GroupAccount>,
-    asset_plans: Vec<AssetPlan>,
+    token_plans: Vec<TokenPlan>,
     targets: Vec<PlannedTarget>,
 }
 
@@ -350,10 +408,10 @@ impl NetworkGroupPlan {
 }
 
 #[derive(Clone, Debug)]
-enum AssetPlan {
+enum TokenPlan {
     Supported {
         target_index: usize,
-        target: BalanceTarget,
+        target: ResolvedBalanceTarget,
     },
     Skipped {
         network_slug: String,
@@ -364,7 +422,7 @@ enum AssetPlan {
 #[derive(Clone, Debug)]
 struct PlannedTarget {
     wire_target: BigwigTarget,
-    catalog_target: BalanceTarget,
+    first_target: ResolvedBalanceTarget,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -374,7 +432,7 @@ enum TargetKey {
 }
 
 impl TargetKey {
-    fn from_catalog(kind: &BalanceTargetKind) -> Self {
+    fn from_kind(kind: &BalanceTargetKind) -> Self {
         match kind {
             BalanceTargetKind::Native => Self::Native,
             BalanceTargetKind::Erc20 { contract_address } => {
@@ -422,22 +480,28 @@ fn group_accounts(accounts: &[BalanceSnapshotAccount]) -> Vec<GroupedAccounts> {
 
 fn plan_network_group(
     group: GroupedAccounts,
-    requested_asset_slugs: &[String],
-    resolutions: Vec<BalanceTargetResolution>,
+    requested_tokens: &BalanceSnapshotTokens,
+    network_resolution: Option<BalanceNetworkResolution>,
+    asset_resolutions: Vec<BalanceTargetResolution>,
+    contract_resolutions: Vec<ContractBalanceTargetResolution>,
 ) -> Result<NetworkGroupPlan, BalanceSnapshotServiceError> {
-    if resolutions.len() != requested_asset_slugs.len() {
+    if asset_resolutions.len() != requested_tokens.asset_slugs.len()
+        || contract_resolutions.len() != requested_tokens.contract_addresses.len()
+    {
         return Err(invalid_plan(
             &group.network_slug,
             BalancePlanIssue::ResolutionCountMismatch,
         ));
     }
 
-    let mut chain_id = None;
+    let mut chain_id = network_resolution.map(|network| network.chain_id);
     let mut targets = Vec::<PlannedTarget>::new();
     let mut target_indexes = HashMap::<TargetKey, usize>::new();
-    let mut asset_plans = Vec::with_capacity(resolutions.len());
+    let mut token_plans = Vec::with_capacity(requested_tokens.len());
 
-    for (requested_asset_slug, resolution) in requested_asset_slugs.iter().zip(resolutions) {
+    for (requested_asset_slug, resolution) in
+        requested_tokens.asset_slugs.iter().zip(asset_resolutions)
+    {
         match resolution {
             BalanceTargetResolution::UnsupportedNetwork { network_slug, .. } => {
                 return Err(BalanceSnapshotServiceError::UnsupportedNetwork { network_slug });
@@ -465,7 +529,7 @@ fn plan_network_group(
                         BalancePlanIssue::UnexpectedResolutionNetwork,
                     ));
                 }
-                asset_plans.push(AssetPlan::Skipped {
+                token_plans.push(TokenPlan::Skipped {
                     network_slug,
                     asset_slug,
                 });
@@ -491,38 +555,90 @@ fn plan_network_group(
                     _ => {}
                 }
 
-                let key = TargetKey::from_catalog(&target.kind);
-                let target_index = if let Some(existing_index) = target_indexes.get(&key).copied() {
-                    let existing = &targets[existing_index].catalog_target;
-                    if existing.asset_slug != target.asset_slug {
-                        return Err(invalid_plan(
-                            &group.network_slug,
-                            BalancePlanIssue::TargetCollision,
-                        ));
-                    }
-                    if existing != &target {
-                        return Err(invalid_plan(
-                            &group.network_slug,
-                            BalancePlanIssue::ConflictingTargetMetadata,
-                        ));
-                    }
-                    existing_index
-                } else {
-                    let target_index = targets.len();
-                    target_indexes.insert(key, target_index);
-                    targets.push(PlannedTarget {
-                        wire_target: bigwig_target(&target.kind),
-                        catalog_target: target.clone(),
-                    });
-                    target_index
-                };
+                let target = resolved_target_from_asset_selector(requested_asset_slug, target);
+                let target_index = push_planned_target(
+                    &group.network_slug,
+                    &mut targets,
+                    &mut target_indexes,
+                    &target,
+                )?;
 
-                asset_plans.push(AssetPlan::Supported {
+                token_plans.push(TokenPlan::Supported {
                     target_index,
                     target,
                 });
             }
         }
+    }
+
+    for (requested_contract_address, resolution) in requested_tokens
+        .contract_addresses
+        .iter()
+        .zip(contract_resolutions)
+    {
+        let target = match resolution {
+            ContractBalanceTargetResolution::Resolved(target) => {
+                if target.network_slug != group.network_slug
+                    || !matches!(target.kind, BalanceTargetKind::Erc20 { .. })
+                {
+                    return Err(invalid_plan(
+                        &group.network_slug,
+                        BalancePlanIssue::UnexpectedResolutionNetwork,
+                    ));
+                }
+
+                match chain_id {
+                    Some(expected_chain_id) if expected_chain_id != target.chain_id => {
+                        return Err(invalid_plan(
+                            &group.network_slug,
+                            BalancePlanIssue::InconsistentChainId,
+                        ));
+                    }
+                    None => chain_id = Some(target.chain_id),
+                    _ => {}
+                }
+
+                resolved_target_from_contract_selector(requested_contract_address, target)
+            }
+            ContractBalanceTargetResolution::Unknown {
+                network_slug,
+                chain_id: contract_chain_id,
+                contract_address,
+            } => {
+                if network_slug != group.network_slug
+                    || contract_address != requested_contract_address.to_ascii_lowercase()
+                {
+                    return Err(invalid_plan(
+                        &group.network_slug,
+                        BalancePlanIssue::UnexpectedResolutionNetwork,
+                    ));
+                }
+
+                match chain_id {
+                    Some(expected_chain_id) if expected_chain_id != contract_chain_id => {
+                        return Err(invalid_plan(
+                            &group.network_slug,
+                            BalancePlanIssue::InconsistentChainId,
+                        ));
+                    }
+                    None => chain_id = Some(contract_chain_id),
+                    _ => {}
+                }
+
+                unresolved_contract_target(&network_slug, contract_chain_id, contract_address)
+            }
+        };
+
+        let target_index = push_planned_target(
+            &group.network_slug,
+            &mut targets,
+            &mut target_indexes,
+            &target,
+        )?;
+        token_plans.push(TokenPlan::Supported {
+            target_index,
+            target,
+        });
     }
 
     let item_count = group.accounts.len().saturating_mul(targets.len());
@@ -539,9 +655,102 @@ fn plan_network_group(
         network_slug: group.network_slug,
         chain_id,
         accounts: group.accounts,
-        asset_plans,
+        token_plans,
         targets,
     })
+}
+
+fn push_planned_target(
+    network_slug: &str,
+    targets: &mut Vec<PlannedTarget>,
+    target_indexes: &mut HashMap<TargetKey, usize>,
+    target: &ResolvedBalanceTarget,
+) -> Result<usize, BalanceSnapshotServiceError> {
+    let key = TargetKey::from_kind(&target.kind);
+    if let Some(existing_index) = target_indexes.get(&key).copied() {
+        let existing = &targets[existing_index].first_target;
+        if matches!(existing.selector, BalanceTokenSelector::AssetSlug(_))
+            && matches!(target.selector, BalanceTokenSelector::AssetSlug(_))
+            && existing.asset_slug != target.asset_slug
+        {
+            return Err(invalid_plan(
+                network_slug,
+                BalancePlanIssue::TargetCollision,
+            ));
+        }
+        if matches!(existing.selector, BalanceTokenSelector::AssetSlug(_))
+            && matches!(target.selector, BalanceTokenSelector::AssetSlug(_))
+            && existing != target
+        {
+            return Err(invalid_plan(
+                network_slug,
+                BalancePlanIssue::ConflictingTargetMetadata,
+            ));
+        }
+        return Ok(existing_index);
+    }
+
+    let target_index = targets.len();
+    target_indexes.insert(key, target_index);
+    targets.push(PlannedTarget {
+        wire_target: bigwig_target(&target.kind),
+        first_target: target.clone(),
+    });
+    Ok(target_index)
+}
+
+fn resolved_target_from_asset_selector(
+    requested_asset_slug: &str,
+    target: BalanceTarget,
+) -> ResolvedBalanceTarget {
+    ResolvedBalanceTarget {
+        selector: BalanceTokenSelector::AssetSlug(requested_asset_slug.to_string()),
+        network_slug: target.network_slug,
+        chain_id: target.chain_id,
+        asset_slug: Some(target.asset_slug),
+        symbol: Some(target.symbol),
+        name: Some(target.name),
+        decimals: Some(target.decimals),
+        pricing_asset_slug: Some(target.pricing_asset_slug),
+        kind: target.kind,
+    }
+}
+
+fn resolved_target_from_contract_selector(
+    requested_contract_address: &str,
+    target: BalanceTarget,
+) -> ResolvedBalanceTarget {
+    ResolvedBalanceTarget {
+        selector: BalanceTokenSelector::ContractAddress(
+            requested_contract_address.to_ascii_lowercase(),
+        ),
+        network_slug: target.network_slug,
+        chain_id: target.chain_id,
+        asset_slug: Some(target.asset_slug),
+        symbol: Some(target.symbol),
+        name: Some(target.name),
+        decimals: Some(target.decimals),
+        pricing_asset_slug: Some(target.pricing_asset_slug),
+        kind: target.kind,
+    }
+}
+
+fn unresolved_contract_target(
+    network_slug: &str,
+    chain_id: i64,
+    contract_address: String,
+) -> ResolvedBalanceTarget {
+    ResolvedBalanceTarget {
+        selector: BalanceTokenSelector::ContractAddress(contract_address.clone()),
+        network_slug: network_slug.to_string(),
+        chain_id,
+        asset_slug: None,
+        symbol: None,
+        name: None,
+        decimals: None,
+        pricing_asset_slug: None,
+        kind: BalanceTargetKind::Erc20 { contract_address },
+    }
 }
 
 fn invalid_plan(network_slug: &str, issue: BalancePlanIssue) -> BalanceSnapshotServiceError {
@@ -624,17 +833,17 @@ fn assemble_group_results(
                 .as_ref()
                 .map(|validated| validated.evidence.clone());
             let items = plan
-                .asset_plans
+                .token_plans
                 .iter()
-                .map(|asset_plan| match asset_plan {
-                    AssetPlan::Skipped {
+                .map(|token_plan| match token_plan {
+                    TokenPlan::Skipped {
                         network_slug,
                         asset_slug,
                     } => RawBalanceItemOutcome::Skipped {
                         network_slug: network_slug.clone(),
                         asset_slug: asset_slug.clone(),
                     },
-                    AssetPlan::Supported {
+                    TokenPlan::Supported {
                         target_index,
                         target,
                     } => {
@@ -679,14 +888,14 @@ fn failed_group_results(
         .iter()
         .map(|group_account| {
             let items = plan
-                .asset_plans
+                .token_plans
                 .iter()
-                .map(|asset_plan| match asset_plan {
-                    AssetPlan::Supported { target, .. } => RawBalanceItemOutcome::Failed {
+                .map(|token_plan| match token_plan {
+                    TokenPlan::Supported { target, .. } => RawBalanceItemOutcome::Failed {
                         target: target.clone(),
                         code,
                     },
-                    AssetPlan::Skipped {
+                    TokenPlan::Skipped {
                         network_slug,
                         asset_slug,
                     } => RawBalanceItemOutcome::Skipped {
@@ -805,9 +1014,11 @@ fn collect_pricing_asset_slugs(accounts: &[RawBalanceAccountResult]) -> Vec<Stri
     for account in accounts {
         for item in &account.items {
             if let RawBalanceItemOutcome::Resolved { target, .. } = item {
-                let pricing_asset_slug = normalize_pricing_asset_slug(&target.pricing_asset_slug);
-                if seen.insert(pricing_asset_slug.clone()) {
-                    pricing_asset_slugs.push(pricing_asset_slug);
+                if let Some(pricing_asset_slug) = &target.pricing_asset_slug {
+                    let pricing_asset_slug = normalize_pricing_asset_slug(pricing_asset_slug);
+                    if seen.insert(pricing_asset_slug.clone()) {
+                        pricing_asset_slugs.push(pricing_asset_slug);
+                    }
                 }
             }
         }
@@ -844,23 +1055,28 @@ fn enrich_item(
 ) -> BalanceItemOutcome {
     match item {
         RawBalanceItemOutcome::Resolved { target, raw_amount } => {
-            let amount = format_amount(&raw_amount, target.decimals)
-                .expect("validated Bigwig raw amount must format exactly");
-            let quote = match quotes {
-                Ok(quotes) => quotes
-                    .get(&normalize_pricing_asset_slug(&target.pricing_asset_slug))
-                    .map(|quote| enrich_quote(quote, &raw_amount, target.decimals))
-                    .unwrap_or(BalanceQuoteOutcome::Unavailable {
-                        code: BalanceItemErrorCode::InternalError,
-                    }),
-                Err(PriceQuoteClientError::ProviderUnavailable) => {
-                    BalanceQuoteOutcome::Unavailable {
-                        code: BalanceItemErrorCode::PriceProviderUnavailable,
+            let amount = target.decimals.map(|decimals| {
+                format_amount(&raw_amount, decimals)
+                    .expect("validated Bigwig raw amount must format exactly")
+            });
+            let quote = match (&target.pricing_asset_slug, target.decimals) {
+                (Some(pricing_asset_slug), Some(decimals)) => match quotes {
+                    Ok(quotes) => quotes
+                        .get(&normalize_pricing_asset_slug(pricing_asset_slug))
+                        .map(|quote| enrich_quote(quote, &raw_amount, decimals))
+                        .unwrap_or(BalanceQuoteOutcome::Unavailable {
+                            code: BalanceItemErrorCode::InternalError,
+                        }),
+                    Err(PriceQuoteClientError::ProviderUnavailable) => {
+                        BalanceQuoteOutcome::Unavailable {
+                            code: BalanceItemErrorCode::PriceProviderUnavailable,
+                        }
                     }
-                }
-                Err(PriceQuoteClientError::InternalError) => BalanceQuoteOutcome::Unavailable {
-                    code: BalanceItemErrorCode::InternalError,
+                    Err(PriceQuoteClientError::InternalError) => BalanceQuoteOutcome::Unavailable {
+                        code: BalanceItemErrorCode::InternalError,
+                    },
                 },
+                _ => BalanceQuoteOutcome::Unsupported,
             };
 
             BalanceItemOutcome::Resolved {

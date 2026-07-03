@@ -19,7 +19,7 @@ use crate::{
         quote::PriceQuoteClient,
         service::{
             BalanceSnapshotAccount, BalanceSnapshotRequest, BalanceSnapshotService,
-            BalanceSnapshotServiceError,
+            BalanceSnapshotServiceError, BalanceSnapshotTokens,
         },
     },
     domain::balance_catalog::CatalogResolverError,
@@ -27,7 +27,7 @@ use crate::{
 };
 
 const MAX_ACCOUNTS: usize = 50;
-const MAX_ASSETS: usize = 20;
+const MAX_TOKENS: usize = 20;
 const MAX_RESOLUTION_ITEMS: usize = 1_000;
 
 pub async fn resolve_single_balance(
@@ -102,16 +102,21 @@ fn validate_request(
     if tokens.asset_slugs.is_empty() && tokens.contract_addresses.is_empty() {
         return Err(ApiError::empty_tokens());
     }
-    if !tokens.contract_addresses.is_empty() {
-        return Err(ApiError::unsupported_token_selector());
-    }
+
+    let mut seen_contracts = HashSet::<String>::with_capacity(tokens.contract_addresses.len());
+    let contract_addresses = tokens
+        .contract_addresses
+        .into_iter()
+        .filter(|contract_address| seen_contracts.insert(contract_address.clone()))
+        .collect::<Vec<_>>();
+    let token_count = tokens.asset_slugs.len() + contract_addresses.len();
 
     let resolution_items = accounts
         .len()
-        .checked_mul(tokens.asset_slugs.len())
+        .checked_mul(token_count)
         .ok_or_else(ApiError::request_too_large)?;
     if accounts.len() > MAX_ACCOUNTS
-        || tokens.asset_slugs.len() > MAX_ASSETS
+        || token_count > MAX_TOKENS
         || resolution_items > MAX_RESOLUTION_ITEMS
     {
         return Err(ApiError::request_too_large());
@@ -155,7 +160,10 @@ fn validate_request(
                 client_ref: account.client_ref,
             })
             .collect(),
-        asset_slugs: tokens.asset_slugs,
+        tokens: BalanceSnapshotTokens {
+            asset_slugs: tokens.asset_slugs,
+            contract_addresses,
+        },
         quote_currency,
     })
 }
@@ -269,7 +277,8 @@ mod tests {
         assert_eq!(request.quote_currency, "MXN");
         assert_eq!(request.accounts[0].network_slug, "eth-mainnet");
         assert_eq!(request.accounts[0].address, ACCOUNT_A);
-        assert_eq!(request.asset_slugs, ["ethereum"]);
+        assert_eq!(request.tokens.asset_slugs, ["ethereum"]);
+        assert!(request.tokens.contract_addresses.is_empty());
     }
 
     #[test]
@@ -312,7 +321,7 @@ mod tests {
         let accounts = (0..MAX_ACCOUNTS)
             .map(|index| account("eth-mainnet", &format!("0x{index:040x}")))
             .collect();
-        let asset_slugs = (0..MAX_ASSETS)
+        let asset_slugs = (0..MAX_TOKENS)
             .map(|index| format!("asset-{index}"))
             .collect::<Vec<_>>();
 
@@ -325,7 +334,30 @@ mod tests {
         .unwrap();
 
         assert_eq!(request.accounts.len(), MAX_ACCOUNTS);
-        assert_eq!(request.asset_slugs.len(), MAX_ASSETS);
+        assert_eq!(request.tokens.asset_slugs.len(), MAX_TOKENS);
+    }
+
+    #[test]
+    fn validation_deduplicates_explicit_contracts_before_limits() {
+        let request = validate_request(
+            latest_as_of(),
+            vec![account("eth-mainnet", ACCOUNT_A)],
+            "USD".to_string(),
+            BalanceTokenSelectorRequest {
+                asset_slugs: Vec::new(),
+                contract_addresses: vec![
+                    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
+                    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
+                ],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            request.tokens.contract_addresses,
+            ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]
+        );
+        assert!(request.tokens.asset_slugs.is_empty());
     }
 
     #[tokio::test]
@@ -471,6 +503,156 @@ mod tests {
 
         bigwig_handle.await.unwrap();
         price_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn known_explicit_contract_returns_catalog_metadata_and_quote() {
+        let contract = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+        let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
+            "eth-mainnet",
+            1,
+            json!({"kind": "erc20", "contract_address": contract}),
+            &[(ACCOUNT_A, "1000000")],
+        )) else {
+            return;
+        };
+        let Some((price_url, price_handle)) = spawn_server(price_success("usdc", "USD", "1.00"))
+        else {
+            return;
+        };
+        let app = balance_app(Some(&bigwig_url), Some(&price_url));
+
+        let (status, response) = post_json(
+            app,
+            "/v1/balances",
+            json!({
+                "as_of": {"kind": "latest"},
+                "account": {"network_slug": "eth-mainnet", "address": ACCOUNT_A},
+                "quote_currency": "USD",
+                "tokens": {"asset_slugs": [], "contract_addresses": [contract]}
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let position = &response["positions"][0];
+        assert_eq!(
+            position["selector"],
+            json!({"kind": "contract_address", "value": contract})
+        );
+        assert_eq!(position["contract_address"], contract);
+        assert_eq!(position["asset_slug"], "usdc");
+        assert_eq!(position["symbol"], "USDC");
+        assert_eq!(position["balance"]["amount"], "1.000000");
+        assert_eq!(position["balance"]["decimals"], 6);
+        assert_eq!(position["quote"]["status"], "available");
+
+        let bigwig_request = bigwig_handle.await.unwrap();
+        assert_eq!(
+            request_body_json(&bigwig_request)["targets"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        let price_request = price_handle.await.unwrap();
+        assert_eq!(
+            request_body_json(&price_request),
+            json!({"slugs": ["usdc"], "quoteCurrency": "USD"})
+        );
+    }
+
+    #[tokio::test]
+    async fn unknown_explicit_contract_returns_raw_balance_with_unsupported_quote() {
+        let contract = "0x9999999999999999999999999999999999999999";
+        let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
+            "eth-mainnet",
+            1,
+            json!({"kind": "erc20", "contract_address": contract}),
+            &[(ACCOUNT_A, "123456789")],
+        )) else {
+            return;
+        };
+        let app = balance_app(Some(&bigwig_url), None);
+
+        let (status, response) = post_json(
+            app,
+            "/v1/balances",
+            json!({
+                "as_of": {"kind": "latest"},
+                "account": {"network_slug": "eth-mainnet", "address": ACCOUNT_A},
+                "quote_currency": "USD",
+                "tokens": {"asset_slugs": [], "contract_addresses": [contract]}
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(response["status"], "partial");
+        let position = &response["positions"][0];
+        assert_eq!(
+            position["selector"],
+            json!({"kind": "contract_address", "value": contract})
+        );
+        assert_eq!(position["contract_address"], contract);
+        assert_eq!(position["asset_slug"], Value::Null);
+        assert_eq!(position["symbol"], Value::Null);
+        assert_eq!(position["balance"]["raw_amount"], "123456789");
+        assert_eq!(position["balance"]["amount"], Value::Null);
+        assert_eq!(position["balance"]["decimals"], Value::Null);
+        assert_eq!(position["quote"]["status"], "unsupported");
+        assert_eq!(response["errors"], json!([]));
+
+        let bigwig_request = bigwig_handle.await.unwrap();
+        assert_eq!(
+            request_body_json(&bigwig_request)["targets"],
+            json!([{"kind": "erc20", "contract_address": contract}])
+        );
+    }
+
+    #[tokio::test]
+    async fn duplicate_asset_and_contract_target_calls_bigwig_once_and_fans_out() {
+        let contract = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+        let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
+            "eth-mainnet",
+            1,
+            json!({"kind": "erc20", "contract_address": contract}),
+            &[(ACCOUNT_A, "2500000")],
+        )) else {
+            return;
+        };
+        let app = balance_app(Some(&bigwig_url), None);
+
+        let (status, response) = post_json(
+            app,
+            "/v1/balances",
+            json!({
+                "as_of": {"kind": "latest"},
+                "account": {"network_slug": "eth-mainnet", "address": ACCOUNT_A},
+                "quote_currency": "USD",
+                "tokens": {"asset_slugs": ["usdc"], "contract_addresses": [contract]}
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(response["positions"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            response["positions"][0]["selector"],
+            json!({"kind": "asset_slug", "value": "usdc"})
+        );
+        assert_eq!(
+            response["positions"][1]["selector"],
+            json!({"kind": "contract_address", "value": contract})
+        );
+        assert_eq!(response["positions"][0]["balance"]["raw_amount"], "2500000");
+        assert_eq!(response["positions"][1]["balance"]["raw_amount"], "2500000");
+
+        let bigwig_request = bigwig_handle.await.unwrap();
+        assert_eq!(
+            request_body_json(&bigwig_request)["targets"],
+            json!([{"kind": "erc20", "contract_address": contract}])
+        );
     }
 
     #[tokio::test]
@@ -770,18 +952,6 @@ mod tests {
                 json!({
                     "as_of": {"kind": "latest"},
                     "accounts": [valid_account.clone()],
-                    "quote_currency": "USD",
-                    "tokens": {
-                        "asset_slugs": [],
-                        "contract_addresses": ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]
-                    }
-                }),
-                "unsupported_token_selector",
-            ),
-            (
-                json!({
-                    "as_of": {"kind": "latest"},
-                    "accounts": [valid_account.clone()],
                     "quote_currency": "EUR",
                     "tokens": valid_tokens.clone()
                 }),
@@ -848,7 +1018,7 @@ mod tests {
                 })
             })
             .collect::<Vec<_>>();
-        let too_many_assets = (0..=MAX_ASSETS)
+        let too_many_assets = (0..=MAX_TOKENS)
             .map(|index| format!("asset-{index}"))
             .collect::<Vec<_>>();
 

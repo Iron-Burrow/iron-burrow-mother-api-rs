@@ -5,6 +5,7 @@ use super::*;
 use crate::{
     application::balances::service::{
         BalanceAccountResult, BalanceEvidence, BalanceItemOutcome, BalanceQuoteOutcome,
+        BalanceTokenSelector, ResolvedBalanceTarget,
     },
     domain::balance_catalog::BalanceTargetKind,
     test_utils::json::json_object,
@@ -362,7 +363,12 @@ fn single_response_serializes_complete_shape_and_observation_time() {
                 "observed_at": "2026-06-17T12:00:00Z"
             },
             "positions": [{
+                "selector": {
+                    "kind": "asset_slug",
+                    "value": "usdc"
+                },
                 "network_slug": "base-mainnet",
+                "contract_address": null,
                 "asset_slug": "usdc",
                 "symbol": "USDC",
                 "balance": {
@@ -470,7 +476,7 @@ fn bulk_status_is_partial_when_any_account_degrades_but_another_resolves() {
     second.account.address = "0x2222222222222222222222222222222222222222".to_string();
     let response = BalanceResponseAssembler.bulk(BalanceSnapshotResult {
         quote_currency: "MXN".to_string(),
-        requested_asset_slugs: vec!["usdc".to_string()],
+        requested_token_count: 1,
         accounts: vec![first, second],
     });
     let value = serde_json::to_value(response).unwrap();
@@ -499,7 +505,7 @@ fn single_without_evidence_serializes_null_observed_at_and_evidence() {
 fn snapshot(items: Vec<BalanceItemOutcome>) -> BalanceSnapshotResult {
     BalanceSnapshotResult {
         quote_currency: "MXN".to_string(),
-        requested_asset_slugs: vec!["usdc".to_string(), "ethereum".to_string()],
+        requested_token_count: 2,
         accounts: vec![account_result(items)],
     }
 }
@@ -530,7 +536,7 @@ fn resolved(
     BalanceItemOutcome::Resolved {
         target: target(asset_slug),
         raw_amount: raw_amount.to_string(),
-        amount: amount.to_string(),
+        amount: Some(amount.to_string()),
         quote,
     }
 }
@@ -544,15 +550,16 @@ fn available_quote() -> BalanceQuoteOutcome {
     }
 }
 
-fn target(asset_slug: &str) -> BalanceTarget {
-    BalanceTarget {
+fn target(asset_slug: &str) -> ResolvedBalanceTarget {
+    ResolvedBalanceTarget {
+        selector: BalanceTokenSelector::AssetSlug(asset_slug.to_string()),
         network_slug: "base-mainnet".to_string(),
         chain_id: 8453,
-        asset_slug: asset_slug.to_string(),
-        symbol: asset_slug.to_ascii_uppercase(),
-        name: format!("{asset_slug} display name"),
-        decimals: if asset_slug == "ethereum" { 18 } else { 6 },
-        pricing_asset_slug: asset_slug.to_string(),
+        asset_slug: Some(asset_slug.to_string()),
+        symbol: Some(asset_slug.to_ascii_uppercase()),
+        name: Some(format!("{asset_slug} display name")),
+        decimals: Some(if asset_slug == "ethereum" { 18 } else { 6 }),
+        pricing_asset_slug: Some(asset_slug.to_string()),
         kind: BalanceTargetKind::Native,
     }
 }

@@ -4,7 +4,7 @@ use crate::{
         quote::PriceQuoteClient,
         service::{
             BalanceItemErrorCode, BalanceItemOutcome, BalanceSnapshotAccount,
-            BalanceSnapshotRequest, BalanceSnapshotService,
+            BalanceSnapshotRequest, BalanceSnapshotService, BalanceSnapshotTokens,
         },
     },
     test_utils::constants::INFRA_GATEWAY_URL,
@@ -36,7 +36,10 @@ async fn malformed_success_body_becomes_internal_item_failure() {
     let result = service(Some(bigwig_client(&base_url)))
         .resolve_latest(BalanceSnapshotRequest {
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
-            asset_slugs: vec!["usdc".to_string()],
+            tokens: BalanceSnapshotTokens {
+                asset_slugs: vec!["usdc".to_string()],
+                contract_addresses: Vec::new(),
+            },
             quote_currency: "USD".to_string(),
         })
         .await

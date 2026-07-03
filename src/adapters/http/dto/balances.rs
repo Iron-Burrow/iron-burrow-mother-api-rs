@@ -10,9 +10,9 @@ use crate::{
     },
     application::balances::service::{
         BalanceAccountResult, BalanceEvidence, BalanceItemErrorCode, BalanceItemOutcome,
-        BalanceQuoteOutcome, BalanceSnapshotAccount, BalanceSnapshotResult,
+        BalanceQuoteOutcome, BalanceSnapshotAccount, BalanceSnapshotResult, BalanceTokenSelector,
+        ResolvedBalanceTarget,
     },
-    domain::balance_catalog::BalanceTarget,
 };
 
 #[allow(dead_code)]
@@ -228,7 +228,7 @@ impl BalanceResponseAssembler {
 
     pub(crate) fn bulk(&self, snapshot: BalanceSnapshotResult) -> BulkBalanceResponse {
         let requested_accounts = snapshot.accounts.len();
-        let requested_assets = snapshot.requested_asset_slugs.len();
+        let requested_assets = snapshot.requested_token_count;
         let accounts = snapshot
             .accounts
             .into_iter()
@@ -393,18 +393,26 @@ pub(crate) struct BalanceBlockPayload {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 pub(crate) struct BalancePositionPayload {
+    selector: BalanceSelectorPayload,
     network_slug: String,
-    asset_slug: String,
-    symbol: String,
+    contract_address: Option<String>,
+    asset_slug: Option<String>,
+    symbol: Option<String>,
     balance: BalanceAmountPayload,
     quote: BalanceQuotePayload,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+pub(crate) struct BalanceSelectorPayload {
+    kind: String,
+    value: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 pub(crate) struct BalanceAmountPayload {
     raw_amount: String,
-    amount: String,
-    decimals: u8,
+    amount: Option<String>,
+    decimals: Option<u8>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
@@ -434,7 +442,9 @@ pub(crate) struct BalanceSkippedPayload {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 pub(crate) struct BalanceErrorPayload {
     network_slug: String,
-    asset_slug: String,
+    selector: BalanceSelectorPayload,
+    contract_address: Option<String>,
+    asset_slug: Option<String>,
     code: String,
     message: String,
 }
@@ -475,8 +485,12 @@ fn shape_account(account: BalanceAccountResult) -> ShapedAccount {
                 if let Some(error) = error {
                     errors.push(error);
                 }
+                let selector = selector_payload(&target.selector);
+                let contract_address = contract_address(&target);
                 positions.push(BalancePositionPayload {
+                    selector,
                     network_slug: target.network_slug,
+                    contract_address,
                     asset_slug: target.asset_slug,
                     symbol: target.symbol,
                     balance: BalanceAmountPayload {
@@ -524,7 +538,7 @@ fn shape_account(account: BalanceAccountResult) -> ShapedAccount {
 }
 
 fn shape_quote(
-    target: &BalanceTarget,
+    target: &ResolvedBalanceTarget,
     quote: BalanceQuoteOutcome,
 ) -> (BalanceQuotePayload, Option<BalanceErrorPayload>) {
     match quote {
@@ -566,7 +580,10 @@ fn shape_quote(
     }
 }
 
-fn error_payload(target: &BalanceTarget, code: BalanceItemErrorCode) -> BalanceErrorPayload {
+fn error_payload(
+    target: &ResolvedBalanceTarget,
+    code: BalanceItemErrorCode,
+) -> BalanceErrorPayload {
     let (code, message) = match code {
         BalanceItemErrorCode::BalanceResolutionFailed => (
             "balance_resolution_failed",
@@ -592,9 +609,33 @@ fn error_payload(target: &BalanceTarget, code: BalanceItemErrorCode) -> BalanceE
 
     BalanceErrorPayload {
         network_slug: target.network_slug.clone(),
+        selector: selector_payload(&target.selector),
+        contract_address: contract_address(target),
         asset_slug: target.asset_slug.clone(),
         code: code.to_string(),
         message: message.to_string(),
+    }
+}
+
+fn selector_payload(selector: &BalanceTokenSelector) -> BalanceSelectorPayload {
+    match selector {
+        BalanceTokenSelector::AssetSlug(asset_slug) => BalanceSelectorPayload {
+            kind: "asset_slug".to_string(),
+            value: asset_slug.clone(),
+        },
+        BalanceTokenSelector::ContractAddress(contract_address) => BalanceSelectorPayload {
+            kind: "contract_address".to_string(),
+            value: contract_address.clone(),
+        },
+    }
+}
+
+fn contract_address(target: &ResolvedBalanceTarget) -> Option<String> {
+    match &target.kind {
+        crate::domain::balance_catalog::BalanceTargetKind::Native => None,
+        crate::domain::balance_catalog::BalanceTargetKind::Erc20 { contract_address } => {
+            Some(contract_address.clone())
+        }
     }
 }
 
