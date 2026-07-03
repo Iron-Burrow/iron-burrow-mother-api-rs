@@ -10,9 +10,10 @@ agent_edit_policy: update_when_relevant
 Draft replacement spec for the private Beta balance endpoints.
 
 This document does not override [CONTRACTS.md](../../CONTRACTS.md). The
-current binding balance contract remains latest-only and `assets[]`-based
-until SPEC-012 is implemented and the contract, OpenAPI, examples, smoke
-checks, and [HISTORY.md](../../HISTORY.md) are updated in the same change.
+current binding balance contract remains latest-only, and only slices already
+reflected in `CONTRACTS.md` are public truth until later SPEC-012 slices are
+implemented and the contract, OpenAPI, examples, smoke checks, and
+[HISTORY.md](../../HISTORY.md) are updated in the same change.
 
 Breaking the private Beta balance contract is acceptable for v0.3 because the
 resulting surface should be clearer, less catalog-bound, and harder to
@@ -57,7 +58,8 @@ response caching for this feature.
 ## Request Contract Direction
 
 Both balance endpoints use the existing single-account and bulk-account
-shapes, except that `assets[]` is replaced by `tokens`:
+shapes, with account identity grouped under `account` or `accounts[]` and
+token intent grouped under `tokens`:
 
 ```json
 {
@@ -81,6 +83,47 @@ shapes, except that `assets[]` is replaced by `tokens`:
 
 `network_slug` remains the only public network identity. The v0.3 contract must
 not accept `chain`, `chain_id`, or `chain_slug` as aliases.
+
+## Account Identity Alignment
+
+Mother API account-scoped public endpoints should use a shared account
+identity shape:
+
+```json
+{
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0xabc0000000000000000000000000000000000000",
+    "client_ref": "optional-ref"
+  }
+}
+```
+
+`network_slug` remains the canonical public network identifier, but for
+account-scoped public endpoints it should live under `account` rather than as
+a top-level field. `account.address` is the watched or balance-owning EVM
+account address, not an ERC-20 token contract address. `account.client_ref` is
+optional caller-defined metadata that Mother API may echo in public responses
+when present.
+
+This shape already matches the intended balance request and response direction.
+A future breaking change should homologate `POST /v1/erc20-transfers/search`
+to the same public account shape in both request and response:
+
+- replace top-level public `network_slug` and `address` with `account`;
+- accept optional `account.client_ref` and echo it unchanged when present;
+- reject top-level public `network_slug` and `address` rather than keeping
+  compatibility aliases;
+- keep transfer `tokens.contract_addresses[]` distinct from
+  `account.address`;
+- keep Bigwig's accepted internal ERC-20 transfer extraction contract
+  unchanged.
+
+Until that ERC-20 transfer change is implemented, this section is planning
+guidance only. The binding ERC-20 transfer public contract remains
+[CONTRACTS.md](../../CONTRACTS.md), and Mother API may unwrap the future public
+`account` object into Bigwig's existing internal top-level `network_slug` and
+`address` fields.
 
 `tokens` follows the ERC-20 transfer-search style where practical:
 
@@ -210,6 +253,9 @@ They must not leak upstream provider topology or pricing internals.
 - Update balance DTOs and examples to use `tokens`, not `assets[]`.
 - Reuse the existing token-filter validation style from ERC-20 transfer
   search where it fits the balance contract.
+- Align future account-scoped public request and response shapes on
+  `account.network_slug`, `account.address`, and optional
+  `account.client_ref`.
 - Reuse existing catalog helpers for resolving explicit ERC-20 contract
   addresses to known assets when possible.
 - Extend balance orchestration only through accepted upstream balance evidence
@@ -218,6 +264,19 @@ They must not leak upstream provider topology or pricing internals.
   smoke checks, and `HISTORY.md` in the implementation change.
 
 ## Implementation PR Breakdown
+
+### PR 0 - Public Account Shape Documentation Alignment
+
+- Update SPEC-012 with the cross-endpoint account identity direction for
+  account-scoped public endpoints.
+- Keep this PR documentation-only: no runtime DTOs, route behavior, generated
+  OpenAPI, smoke checks, or binding contract examples change.
+- Do not update `CONTRACTS.md`, README quickstarts, runbooks, smoke docs,
+  OpenAPI examples, or `HISTORY.md` until the matching runtime change lands.
+- If SPEC-007 is touched, add only a forward-looking note that a future
+  private-Beta breaking change may move ERC-20 transfer search to the shared
+  `account` wrapper; do not rewrite SPEC-007 as though that shape is already
+  implemented.
 
 ### PR 1 - V0.3 DTOs, Validation, and Draft OpenAPI Review
 
@@ -236,7 +295,23 @@ They must not leak upstream provider topology or pricing internals.
 - Do not enable the breaking runtime contract yet unless the repository has a
   feature flag or explicit beta-surface switch for reviewing draft contracts.
 
-### PR 2 - Latest Balance Token Selector Orchestration
+### PR 2 - ERC-20 Transfer Account Shape Homologation
+
+- Change the public ERC-20 transfer request and response DTOs to use
+  `account.network_slug`, `account.address`, and optional
+  `account.client_ref`.
+- Remove top-level public `network_slug` and `address`; do not keep them as
+  request aliases.
+- Preserve the accepted internal Bigwig transfer extraction request shape by
+  unwrapping public `account` into Bigwig's existing top-level
+  `network_slug` and `address`.
+- Update `CONTRACTS.md`, README/private-Beta quickstarts, runbooks, smoke
+  checks, generated OpenAPI, examples, route tests, and `HISTORY.md` in the
+  same runtime change.
+- Add tests proving public responses echo `account.client_ref` when present
+  and do not expose top-level public `network_slug` or `address`.
+
+### PR 3 - Latest Balance Token Selector Orchestration
 
 - Resolve `tokens.asset_slugs` through the existing catalog-backed balance
   target resolver.
@@ -247,7 +322,7 @@ They must not leak upstream provider topology or pricing internals.
 - Keep unresolved explicit contracts eligible for raw balance results with
   `unsupported` quote status.
 
-### PR 3 - Quote and Response Shaping
+### PR 4 - Quote and Response Shaping
 
 - Extend balance responses only as needed to expose requested token identity,
   resolved token identity, metadata availability, raw balance status, and
@@ -257,7 +332,7 @@ They must not leak upstream provider topology or pricing internals.
 - Ensure missing, stale, unsupported, or provider-unavailable quote data does
   not hide otherwise valid raw balance evidence.
 
-### PR 4 - Enable Binding V0.3 Contract, Docs, OpenAPI, and Smoke Coverage
+### PR 5 - Enable Binding V0.3 Contract, Docs, OpenAPI, and Smoke Coverage
 
 - Enable the v0.3 breaking balance contract for the private Beta surface.
 - Update `CONTRACTS.md` so `tokens` is the binding request shape and `assets[]`
@@ -273,7 +348,7 @@ They must not leak upstream provider topology or pricing internals.
   - smoke examples are synchronized with the public contract;
   - public errors remain sanitized.
 
-### PR 5 - Historical Balances
+### PR 6 - Historical Balances
 
 - Implement historical `as_of` only after Bigwig or another accepted upstream
   contract exposes historical balance evidence.
@@ -290,6 +365,13 @@ They must not leak upstream provider topology or pricing internals.
   unresolved contract quote status, and mixed selector deduplication.
 - Contract and OpenAPI tests prove the generated balance schema exposes
   `tokens` and no longer exposes `assets[]`.
+- ERC-20 transfer account-shape tests are added only in the runtime
+  homologation PR:
+  - requests require `account.network_slug` and `account.address`;
+  - responses echo `account` and optional `account.client_ref`;
+  - top-level public `network_slug` and `address` are rejected or absent;
+  - Bigwig still receives its accepted internal top-level network and address
+    fields.
 - Historical tests are added only after the accepted upstream historical
   balance contract exists:
   - timestamp requests use upstream historical evidence;
@@ -301,7 +383,13 @@ They must not leak upstream provider topology or pricing internals.
 
 - Breaking the private Beta balance contract is acceptable.
 - `assets[]` is removed immediately and is not a compatibility alias.
+- The future ERC-20 transfer account wrapper is a private-Beta breaking
+  change and will not keep top-level public `network_slug` or `address`
+  compatibility aliases.
 - SPEC-012 remains draft until the replacement contract and upstream
   historical support are ready.
+- `account.client_ref` is Mother API public metadata only; it is not forwarded
+  to Bigwig or used for extraction, catalog resolution, token filtering, or
+  limits.
 - Mother API does not expand into direct EVM RPC, price indexing, or
   timestamp-to-block ownership.
