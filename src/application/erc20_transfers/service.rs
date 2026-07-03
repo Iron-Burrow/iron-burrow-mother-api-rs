@@ -7,11 +7,11 @@ use crate::adapters::postgres::global_assets::GlobalAssetRepository;
 use crate::application::balances::catalog::{
     BalanceTargetResolution, CatalogBalanceTargetResolver,
 };
-use crate::application::filters::transfer_direction::TransferDirection;
 use crate::domain::assets::balance_catalog::{
     BalanceTargetKind, CatalogIntegrityIssue, CatalogResolverError,
 };
 use crate::domain::onchain_time::onchain_window::OnchainWindow;
+use crate::domain::transfers::transfer_direction::TransferDirection;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Erc20TransferSearchInput {

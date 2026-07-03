@@ -28,11 +28,11 @@ use crate::application::erc20_transfers::service::{
     Erc20TransferSearchResult, Erc20TransferSearchTokenFilters, Erc20TransferTokenCatalogMetadata,
     Erc20TransferTokenFilterSource, ResolvedErc20TransferTokenFilter,
 };
-use crate::application::filters::transfer_direction::TransferDirection;
 use crate::domain::assets::balance_catalog::{CatalogIntegrityIssue, CatalogResolverError};
 use crate::domain::onchain_time::onchain_window::{
     BlockWindow, LookbackTarget, LookbackWindow, OnchainWindow, TimestampWindow,
 };
+use crate::domain::transfers::transfer_direction::TransferDirection;
 use crate::{adapters::http::error::ApiError, state::AppState};
 
 const ERC20_TRANSFER_SEARCH_MAX_ROWS: u64 = 5_000;
