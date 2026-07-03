@@ -257,13 +257,21 @@ They must not leak upstream provider topology or pricing internals.
 - Ensure missing, stale, unsupported, or provider-unavailable quote data does
   not hide otherwise valid raw balance evidence.
 
-### PR 4 - Contract, Docs, and Smoke Coverage
+### PR 4 - Enable Binding V2 Contract, Docs, OpenAPI, and Smoke Coverage
 
-- Update `CONTRACTS.md`, README/private-Beta examples, generated OpenAPI,
-  smoke checks, and `HISTORY.md` in the same change that enables the v2
-  breaking contract.
-- Add route and contract tests proving `assets[]` is removed, `tokens` is
-  accepted, and public errors remain sanitized.
+- Enable the v2 breaking balance contract for the private Beta surface.
+- Update `CONTRACTS.md` so `tokens` is the binding request shape and `assets[]`
+  is explicitly removed.
+- Regenerate and commit OpenAPI from the enabled runtime contract.
+- Update README/private-Beta examples to match the generated OpenAPI.
+- Update smoke checks to send `tokens`, not `assets[]`.
+- Update `HISTORY.md` with the private Beta breaking change.
+- Add route, contract, and OpenAPI tests proving:
+  - `assets[]` is rejected;
+  - `tokens` is accepted;
+  - generated OpenAPI matches the enabled runtime DTOs;
+  - smoke examples are synchronized with the public contract;
+  - public errors remain sanitized.
 
 ### PR 5 - Historical Balances
 
