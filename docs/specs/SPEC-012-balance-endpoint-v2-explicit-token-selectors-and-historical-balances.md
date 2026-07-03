@@ -217,6 +217,55 @@ They must not leak upstream provider topology or pricing internals.
 - Update `CONTRACTS.md`, README/private-Beta examples, generated OpenAPI,
   smoke checks, and `HISTORY.md` in the implementation change.
 
+## Implementation PR Breakdown
+
+### PR 1 - V2 DTOs and Public Examples
+
+- Replace balance request DTOs and reusable examples with the `tokens` shape.
+- Reject legacy `assets[]`, unknown fields, reserved network aliases, empty
+  token selectors, invalid contract addresses, and unsupported `as_of` forms
+  not yet backed by upstream evidence.
+- Update OpenAPI schemas and examples so the draft v2 contract can be reviewed
+  without changing runtime behavior.
+
+### PR 2 - Latest Balance Token Selector Orchestration
+
+- Resolve `tokens.asset_slugs` through the existing catalog-backed balance
+  target resolver.
+- Resolve `tokens.contract_addresses` as explicit ERC-20 balance targets and
+  enrich them with catalog metadata when available.
+- Deduplicate equivalent asset-slug and contract-address targets before
+  upstream work where practical.
+- Keep unresolved explicit contracts eligible for raw balance results with
+  `unsupported` quote status.
+
+### PR 3 - Quote and Response Shaping
+
+- Extend balance responses only as needed to expose requested token identity,
+  resolved token identity, metadata availability, raw balance status, and
+  quote status.
+- Keep quote statuses aligned to `available`, `unavailable`, and
+  `unsupported`.
+- Ensure missing, stale, unsupported, or provider-unavailable quote data does
+  not hide otherwise valid raw balance evidence.
+
+### PR 4 - Contract, Docs, and Smoke Coverage
+
+- Update `CONTRACTS.md`, README/private-Beta examples, generated OpenAPI,
+  smoke checks, and `HISTORY.md` in the same change that enables the v2
+  breaking contract.
+- Add route and contract tests proving `assets[]` is removed, `tokens` is
+  accepted, and public errors remain sanitized.
+
+### PR 5 - Historical Balances
+
+- Implement historical `as_of` only after Bigwig or another accepted upstream
+  contract exposes historical balance evidence.
+- Add timestamp and block-number route coverage proving historical requests
+  never fall back to latest balances.
+- Add historical quote tests proving latest prices are not silently used for
+  historical balance requests.
+
 ## Test Plan
 
 - DTO tests reject `assets[]`, accept `tokens`, reject unknown fields, reject
