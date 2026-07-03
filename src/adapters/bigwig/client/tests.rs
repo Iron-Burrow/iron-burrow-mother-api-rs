@@ -1,10 +1,11 @@
+use crate::domain::accounts::OnchainAccount;
 use crate::{
     application::balances::{
         catalog::CatalogBalanceTargetResolver,
         quote::PriceQuoteClient,
         service::{
-            BalanceItemErrorCode, BalanceItemOutcome, BalanceSnapshotAccount,
-            BalanceSnapshotRequest, BalanceSnapshotService, BalanceSnapshotTokens,
+            BalanceItemErrorCode, BalanceItemOutcome, BalanceSnapshotRequest,
+            BalanceSnapshotService, BalanceSnapshotTokens,
         },
     },
     test_utils::constants::INFRA_GATEWAY_URL,
@@ -56,8 +57,8 @@ async fn malformed_success_body_becomes_internal_item_failure() {
     ));
 }
 
-fn account(network_slug: &str, address: &str, client_ref: Option<&str>) -> BalanceSnapshotAccount {
-    BalanceSnapshotAccount {
+fn account(network_slug: &str, address: &str, client_ref: Option<&str>) -> OnchainAccount {
+    OnchainAccount {
         network_slug: network_slug.to_string(),
         address: address.to_string(),
         client_ref: client_ref.map(str::to_string),

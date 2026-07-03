@@ -512,7 +512,7 @@ fn snapshot(items: Vec<BalanceItemOutcome>) -> BalanceSnapshotResult {
 
 fn account_result(items: Vec<BalanceItemOutcome>) -> BalanceAccountResult {
     BalanceAccountResult {
-        account: BalanceSnapshotAccount {
+        account: OnchainAccount {
             network_slug: "base-mainnet".to_string(),
             address: "0x1111111111111111111111111111111111111111".to_string(),
             client_ref: Some("treasury".to_string()),

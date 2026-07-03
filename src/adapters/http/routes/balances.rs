@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use axum::{body::Bytes, extract::State, http::HeaderMap, Json};
 use tracing::warn;
 
+use crate::domain::accounts::OnchainAccount;
 use crate::{
     adapters::http::{
         dto::balances::{
@@ -18,8 +19,8 @@ use crate::{
         catalog::CatalogBalanceTargetResolver,
         quote::PriceQuoteClient,
         service::{
-            BalanceSnapshotAccount, BalanceSnapshotRequest, BalanceSnapshotService,
-            BalanceSnapshotServiceError, BalanceSnapshotTokens,
+            BalanceSnapshotRequest, BalanceSnapshotService, BalanceSnapshotServiceError,
+            BalanceSnapshotTokens,
         },
     },
     domain::assets::balance_catalog::CatalogResolverError,
@@ -154,7 +155,7 @@ fn validate_request(
     Ok(BalanceSnapshotRequest {
         accounts: accounts
             .into_iter()
-            .map(|account| BalanceSnapshotAccount {
+            .map(|account| OnchainAccount {
                 network_slug: account.network_slug,
                 address: account.address,
                 client_ref: account.client_ref,

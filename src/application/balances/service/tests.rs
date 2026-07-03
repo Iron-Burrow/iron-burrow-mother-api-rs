@@ -296,8 +296,8 @@ fn price_quote_client(base_url: &str) -> PriceQuoteClient {
     PriceQuoteClient::new(PriceIndexerClient::new(base_url, "test-token", 2_000).unwrap())
 }
 
-fn account(network_slug: &str, address: &str, client_ref: Option<&str>) -> BalanceSnapshotAccount {
-    BalanceSnapshotAccount {
+fn account(network_slug: &str, address: &str, client_ref: Option<&str>) -> OnchainAccount {
+    OnchainAccount {
         network_slug: network_slug.to_string(),
         address: address.to_string(),
         client_ref: client_ref.map(str::to_string),

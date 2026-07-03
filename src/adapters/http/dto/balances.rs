@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
 
+use crate::domain::accounts::OnchainAccount;
 use crate::{
     adapters::http::{
         error::ApiError,
@@ -10,8 +11,7 @@ use crate::{
     },
     application::balances::service::{
         BalanceAccountResult, BalanceEvidence, BalanceItemErrorCode, BalanceItemOutcome,
-        BalanceQuoteOutcome, BalanceSnapshotAccount, BalanceSnapshotResult, BalanceTokenSelector,
-        ResolvedBalanceTarget,
+        BalanceQuoteOutcome, BalanceSnapshotResult, BalanceTokenSelector, ResolvedBalanceTarget,
     },
 };
 
@@ -353,8 +353,8 @@ pub(crate) struct BalanceAccountIdentityPayload {
     client_ref: Option<String>,
 }
 
-impl From<BalanceSnapshotAccount> for BalanceAccountIdentityPayload {
-    fn from(account: BalanceSnapshotAccount) -> Self {
+impl From<OnchainAccount> for BalanceAccountIdentityPayload {
+    fn from(account: OnchainAccount) -> Self {
         Self {
             network_slug: account.network_slug,
             address: account.address,

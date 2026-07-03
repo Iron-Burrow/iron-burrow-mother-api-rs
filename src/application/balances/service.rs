@@ -12,6 +12,7 @@ use crate::adapters::bigwig::balances::{
 };
 use crate::adapters::bigwig::client::BigwigClient;
 use crate::adapters::bigwig::error::BigwigError;
+use crate::domain::accounts::OnchainAccount;
 use crate::domain::assets::balance_catalog::{
     BalanceTarget, BalanceTargetKind, CatalogResolverError,
 };
@@ -170,7 +171,7 @@ impl BalanceSnapshotService {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BalanceSnapshotRequest {
-    pub accounts: Vec<BalanceSnapshotAccount>,
+    pub accounts: Vec<OnchainAccount>,
     pub tokens: BalanceSnapshotTokens,
     pub quote_currency: String,
 }
@@ -188,13 +189,6 @@ impl BalanceSnapshotTokens {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BalanceSnapshotAccount {
-    pub network_slug: String,
-    pub address: String,
-    pub client_ref: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BalanceSnapshotResult {
     pub quote_currency: String,
     pub requested_token_count: usize,
@@ -203,7 +197,7 @@ pub struct BalanceSnapshotResult {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BalanceAccountResult {
-    pub account: BalanceSnapshotAccount,
+    pub account: OnchainAccount,
     pub evidence: Option<BalanceEvidence>,
     pub items: Vec<BalanceItemOutcome>,
 }
@@ -278,7 +272,7 @@ pub enum BalanceQuoteOutcome {
 
 #[derive(Clone, Debug)]
 struct RawBalanceAccountResult {
-    account: BalanceSnapshotAccount,
+    account: OnchainAccount,
     evidence: Option<BalanceEvidence>,
     items: Vec<RawBalanceItemOutcome>,
 }
@@ -377,7 +371,7 @@ struct GroupedAccounts {
 #[derive(Clone, Debug)]
 struct GroupAccount {
     original_index: usize,
-    account: BalanceSnapshotAccount,
+    account: OnchainAccount,
 }
 
 #[derive(Clone, Debug)]
@@ -453,7 +447,7 @@ impl TargetKey {
     }
 }
 
-fn group_accounts(accounts: &[BalanceSnapshotAccount]) -> Vec<GroupedAccounts> {
+fn group_accounts(accounts: &[OnchainAccount]) -> Vec<GroupedAccounts> {
     let mut group_indexes = HashMap::new();
     let mut groups = Vec::<GroupedAccounts>::new();
 
