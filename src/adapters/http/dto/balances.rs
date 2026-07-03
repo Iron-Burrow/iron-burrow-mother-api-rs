@@ -132,7 +132,24 @@ fn validate_as_of_object(value: Option<&Value>) -> Result<(), ApiError> {
         return Err(ApiError::invalid_request());
     };
 
-    reject_unknown_fields(as_of, &AS_OF_FIELDS)
+    reject_unknown_fields(as_of, &AS_OF_FIELDS)?;
+    validate_required_string(as_of.get("kind"))?;
+    validate_optional_string(as_of.get("timestamp"))?;
+    validate_optional_string(as_of.get("block_number"))
+}
+
+fn validate_required_string(value: Option<&Value>) -> Result<(), ApiError> {
+    match value {
+        Some(Value::String(_)) => Ok(()),
+        _ => Err(ApiError::invalid_request()),
+    }
+}
+
+fn validate_optional_string(value: Option<&Value>) -> Result<(), ApiError> {
+    match value {
+        None | Some(Value::String(_)) => Ok(()),
+        Some(_) => Err(ApiError::invalid_request()),
+    }
 }
 
 fn validate_account_object(value: Option<&Value>) -> Result<(), ApiError> {

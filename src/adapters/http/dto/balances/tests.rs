@@ -144,6 +144,54 @@ async fn request_validation_rejects_reserved_aliases_with_invalid_request() {
 }
 
 #[tokio::test]
+async fn request_validation_rejects_invalid_as_of_field_values_with_invalid_request() {
+    for body in [
+        {
+            let mut body = examples::single_request();
+            body["as_of"]["kind"] = json!(null);
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["as_of"]["timestamp"] = json!(null);
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["as_of"]["timestamp"] = json!(123);
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["as_of"]["block_number"] = json!(null);
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["as_of"]["block_number"] = json!(123);
+            body
+        },
+    ] {
+        assert_api_error_code(
+            SingleBalanceRequest::try_from(json_object(body)),
+            "invalid_request",
+        )
+        .await;
+    }
+
+    let mut historical = examples::single_request();
+    historical["as_of"] = json!({
+        "kind": "timestamp",
+        "timestamp": "2026-07-03T00:00:00Z"
+    });
+    let request = SingleBalanceRequest::try_from(json_object(historical)).unwrap();
+    assert_eq!(
+        request.as_of.timestamp.as_deref(),
+        Some("2026-07-03T00:00:00Z")
+    );
+}
+
+#[tokio::test]
 async fn request_validation_rejects_empty_missing_and_invalid_tokens() {
     for body in [
         {

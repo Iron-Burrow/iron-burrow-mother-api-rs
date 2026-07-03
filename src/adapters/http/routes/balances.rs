@@ -491,6 +491,16 @@ mod tests {
                 br#"{"as_of":{"kind":"latest"},"account":[],"quote_currency":"USD","tokens":{"asset_slugs":["ethereum"],"contract_addresses":[]}}"#
                     .as_slice(),
             ),
+            (
+                Some("application/json"),
+                br#"{"as_of":{"kind":"latest","timestamp":null},"account":{"network_slug":"eth-mainnet","address":"0x1111111111111111111111111111111111111111"},"quote_currency":"USD","tokens":{"asset_slugs":["ethereum"],"contract_addresses":[]}}"#
+                    .as_slice(),
+            ),
+            (
+                Some("application/json"),
+                br#"{"as_of":{"kind":"latest","block_number":null},"account":{"network_slug":"eth-mainnet","address":"0x1111111111111111111111111111111111111111"},"quote_currency":"USD","tokens":{"asset_slugs":["ethereum"],"contract_addresses":[]}}"#
+                    .as_slice(),
+            ),
             (Some("application/json"), br#"[]"#.as_slice()),
             (
                 None,
