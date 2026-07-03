@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 
+use crate::domain::onchain_time::{onchain_window::BlockWindow, onchain_window::OnchainWindow};
 use crate::{
     application::{
         erc20_transfers::service::{
@@ -8,10 +9,7 @@ use crate::{
             Erc20TransferExtractionRow, Erc20TransferExtractor, Erc20TransferSearchError,
             Erc20TransferSearchInput, Erc20TransferTokenFilterSource,
         },
-        filters::{
-            onchain_window::{BlockWindow, OnchainWindow},
-            transfer_direction::TransferDirection,
-        },
+        filters::transfer_direction::TransferDirection,
     },
     test_utils::fixtures::global_assets::global_assets_repository,
 };

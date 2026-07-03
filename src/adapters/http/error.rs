@@ -6,7 +6,7 @@ use axum::{
 use serde::Serialize;
 use utoipa::ToSchema;
 
-use crate::application::filters::onchain_window::InvalidOnchainWindowError;
+use crate::domain::onchain_time::onchain_window::InvalidOnchainWindowError;
 
 #[derive(Debug)]
 pub struct ApiError {

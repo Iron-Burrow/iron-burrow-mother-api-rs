@@ -5,9 +5,8 @@ use crate::application::erc20_transfers::service::{
     Erc20TransferExtractionError, Erc20TransferExtractionRequest, Erc20TransferExtractionResult,
     Erc20TransferExtractionRow, Erc20TransferExtractor,
 };
-use crate::application::filters::{
-    onchain_window::OnchainWindow, transfer_direction::TransferDirection,
-};
+use crate::application::filters::transfer_direction::TransferDirection;
+use crate::domain::onchain_time::onchain_window::OnchainWindow;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct BigwigErc20TransferRequest {
@@ -240,10 +239,10 @@ mod tests {
 
     use crate::application::{
         erc20_transfers::service::Erc20TransferExtractionRequest,
-        filters::{
-            onchain_window::{BlockWindow, LookbackWindow, OnchainWindow, TimestampWindow},
-            transfer_direction::TransferDirection,
-        },
+        filters::transfer_direction::TransferDirection,
+    };
+    use crate::domain::onchain_time::onchain_window::{
+        BlockWindow, LookbackWindow, OnchainWindow, TimestampWindow,
     };
 
     use super::*;
