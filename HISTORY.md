@@ -308,3 +308,11 @@ implementation, and documentation changes.
   until explicit contract balance resolution is implemented.
 - Updated `CONTRACTS.md` and README examples for the breaking private-Beta
   request-shape change, including new `empty_tokens` validation behavior.
+- Homologated the public ERC-20 transfer search account shape with SPEC-012
+  balance account identity: requests and responses now use
+  `account.network_slug`, `account.address`, and optional
+  `account.client_ref` instead of top-level public `network_slug` and
+  `address`.
+- Preserved the internal Bigwig ERC-20 transfer extraction request shape while
+  updating contracts, quickstarts, smoke checks, OpenAPI examples, and route
+  coverage for the public transfer account object.

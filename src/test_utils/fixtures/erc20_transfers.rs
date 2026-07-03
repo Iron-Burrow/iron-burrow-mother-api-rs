@@ -11,8 +11,11 @@ pub(crate) fn erc20_transfers_enabled_config() -> Config {
 
 pub(crate) fn valid_erc20_transfers_request_body() -> Value {
     json!({
-        "network_slug": "eth-mainnet",
-        "address": "0xabc0000000000000000000000000000000000000",
+        "account": {
+            "network_slug": "eth-mainnet",
+            "address": "0xabc0000000000000000000000000000000000000",
+            "client_ref": "treasury-main"
+        },
         "direction": "any",
         "tokens": {
             "asset_slugs": ["usdc"],

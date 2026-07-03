@@ -5,7 +5,7 @@ use tracing::warn;
 
 use crate::adapters::http::dto::{
     erc20_transfers::{
-        Erc20TransferAmount, Erc20TransferRow, Erc20TransferSearchLimits,
+        Erc20TransferAccount, Erc20TransferAmount, Erc20TransferRow, Erc20TransferSearchLimits,
         Erc20TransferSearchRequest, Erc20TransferSearchResponse, Erc20TransferToken,
     },
     filters::{
@@ -45,6 +45,7 @@ pub async fn search_erc20_transfers(
     ensure_json_content_type(&headers)?;
     let request = parse_json_object_body(&body)?;
     let request = Erc20TransferSearchRequest::try_from(&request)?;
+    let client_ref = request.account.client_ref.clone();
     let input = erc20_transfer_search_input_from_request(request)?;
     let plan = build_search_plan(
         input,
@@ -62,7 +63,9 @@ pub async fn search_erc20_transfers(
         .await
         .map_err(erc20_transfer_search_error_to_api_error)?;
 
-    Ok(Json(erc20_transfer_search_response_from_result(result)))
+    Ok(Json(erc20_transfer_search_response_from_result(
+        result, client_ref,
+    )))
 }
 
 pub(crate) fn erc20_transfer_search_input_from_request(
@@ -71,8 +74,8 @@ pub(crate) fn erc20_transfer_search_input_from_request(
     let tokens = transfer_search_token_filters_from_dto(request.tokens.unwrap_or_default());
 
     Ok(Erc20TransferSearchInput {
-        network_slug: request.network_slug,
-        address: request.address,
+        network_slug: request.account.network_slug,
+        address: request.account.address,
         direction: transfer_direction_from_dto(request.direction),
         window: onchain_window_from_dto(request.window)?,
         asset_slugs: tokens.asset_slugs,
@@ -115,6 +118,7 @@ fn onchain_window_from_dto(window: OnchainWindowDTO) -> Result<OnchainWindow, Ap
 
 fn erc20_transfer_search_response_from_result(
     result: Erc20TransferSearchResult,
+    client_ref: Option<String>,
 ) -> Erc20TransferSearchResponse {
     let Erc20TransferSearchResult {
         plan,
@@ -130,8 +134,11 @@ fn erc20_transfer_search_response_from_result(
     Erc20TransferSearchResponse {
         ok: true,
         response_type: "erc20_transfer_search".to_string(),
-        network_slug: request.network_slug,
-        address: request.address.clone(),
+        account: Erc20TransferAccount {
+            network_slug: request.network_slug,
+            address: request.address.clone(),
+            client_ref,
+        },
         direction: transfer_direction_to_dto(request.direction),
         window: onchain_window_to_dto(&request.window),
         token_filters: TokenFilterResolutionDTO {

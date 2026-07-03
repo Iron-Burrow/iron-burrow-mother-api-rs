@@ -1182,10 +1182,11 @@ Fields:
 
 | Field | Type | Notes |
 | ----- | ---- | ----- |
-| `network_slug` | string | Required. Currently only `eth-mainnet`. |
-| `address` | string | Required EVM address, normalized to lowercase in execution and response. |
+| `account.network_slug` | string | Required. Currently only `eth-mainnet`. |
+| `account.address` | string | Required EVM address, normalized to lowercase in execution and response. |
+| `account.client_ref` | string/null | Optional caller reference echoed unchanged in successful responses; `null` when omitted. |
 | `direction` | string | Required. One of `any`, `from`, or `to`. |
-| `tokens.asset_slugs` | array of strings | Optional exact catalog slugs. Each must resolve to an ERC-20 contract on `network_slug`. |
+| `tokens.asset_slugs` | array of strings | Optional exact catalog slugs. Each must resolve to an ERC-20 contract on `account.network_slug`. |
 | `tokens.contract_addresses` | array of strings | Optional ERC-20 contract addresses. Unknown contracts are valid filters. |
 | `window.from_block` / `window.to_block` | integers | Block window. |
 | `window.from_timestamp` / `window.to_timestamp` | strings | Timestamp window alternative. |
@@ -1194,11 +1195,14 @@ Fields:
 `tokens` may be omitted, `null`, or `{}` for an unfiltered ERC-20 transfer
 search.
 
+Top-level public `network_slug` and `address` fields are not accepted as
+aliases. Account identity must be grouped under `account`.
+
 Token filter semantics:
 
 - `tokens.asset_slugs` are exact canonical Mother API asset slugs. Symbols,
   aliases, and generic names are not accepted.
-- Each asset slug must resolve to an ERC-20 contract on `network_slug`.
+- Each asset slug must resolve to an ERC-20 contract on `account.network_slug`.
 - Mother API resolves asset slugs first, then appends explicit
   `tokens.contract_addresses`.
 - Explicit contract addresses are valid even when unknown to the Mother
@@ -1241,8 +1245,11 @@ Unfiltered search request:
 
 ```json
 {
-  "network_slug": "eth-mainnet",
-  "address": "0xabc0000000000000000000000000000000000000",
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0xabc0000000000000000000000000000000000000",
+    "client_ref": "treasury-main"
+  },
   "direction": "any",
   "tokens": null,
   "window": {
@@ -1260,8 +1267,11 @@ Unfiltered success response:
 {
   "ok": true,
   "type": "erc20_transfer_search",
-  "network_slug": "eth-mainnet",
-  "address": "0xabc0000000000000000000000000000000000000",
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0xabc0000000000000000000000000000000000000",
+    "client_ref": "treasury-main"
+  },
   "direction": "any",
   "window": {
     "from_block": 18600000,
@@ -1288,8 +1298,11 @@ Asset slug filter request:
 
 ```json
 {
-  "network_slug": "eth-mainnet",
-  "address": "0xabc0000000000000000000000000000000000000",
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0xabc0000000000000000000000000000000000000",
+    "client_ref": "treasury-main"
+  },
   "direction": "any",
   "tokens": {
     "asset_slugs": ["usdc"],
@@ -1310,8 +1323,11 @@ Asset slug filter success response:
 {
   "ok": true,
   "type": "erc20_transfer_search",
-  "network_slug": "eth-mainnet",
-  "address": "0xabc0000000000000000000000000000000000000",
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0xabc0000000000000000000000000000000000000",
+    "client_ref": "treasury-main"
+  },
   "direction": "any",
   "window": {
     "from_block": 18600000,
@@ -1346,8 +1362,11 @@ Contract address filter request:
 
 ```json
 {
-  "network_slug": "eth-mainnet",
-  "address": "0xabc0000000000000000000000000000000000000",
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0xabc0000000000000000000000000000000000000",
+    "client_ref": "treasury-main"
+  },
   "direction": "any",
   "tokens": {
     "asset_slugs": [],
@@ -1370,8 +1389,11 @@ Contract address filter success response:
 {
   "ok": true,
   "type": "erc20_transfer_search",
-  "network_slug": "eth-mainnet",
-  "address": "0xabc0000000000000000000000000000000000000",
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0xabc0000000000000000000000000000000000000",
+    "client_ref": "treasury-main"
+  },
   "direction": "any",
   "window": {
     "from_block": 18600000,
@@ -1408,8 +1430,11 @@ Mixed filter request:
 
 ```json
 {
-  "network_slug": "eth-mainnet",
-  "address": "0xabc0000000000000000000000000000000000000",
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0xabc0000000000000000000000000000000000000",
+    "client_ref": "treasury-main"
+  },
   "direction": "any",
   "tokens": {
     "asset_slugs": ["usdc"],
@@ -1432,8 +1457,11 @@ Mixed filter success response:
 {
   "ok": true,
   "type": "erc20_transfer_search",
-  "network_slug": "eth-mainnet",
-  "address": "0xabc0000000000000000000000000000000000000",
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0xabc0000000000000000000000000000000000000",
+    "client_ref": "treasury-main"
+  },
   "direction": "any",
   "window": {
     "from_block": 18600000,
@@ -1514,8 +1542,11 @@ Native asset rejection request:
 
 ```json
 {
-  "network_slug": "eth-mainnet",
-  "address": "0xabc0000000000000000000000000000000000000",
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0xabc0000000000000000000000000000000000000",
+    "client_ref": "treasury-main"
+  },
   "direction": "any",
   "tokens": {
     "asset_slugs": ["ethereum"],
@@ -1548,8 +1579,11 @@ Unknown slug rejection request:
 
 ```json
 {
-  "network_slug": "eth-mainnet",
-  "address": "0xabc0000000000000000000000000000000000000",
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0xabc0000000000000000000000000000000000000",
+    "client_ref": "treasury-main"
+  },
   "direction": "any",
   "tokens": {
     "asset_slugs": ["missing-but-syntactically-valid"],
@@ -1582,8 +1616,11 @@ Too many filters request:
 
 ```json
 {
-  "network_slug": "eth-mainnet",
-  "address": "0xabc0000000000000000000000000000000000000",
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0xabc0000000000000000000000000000000000000",
+    "client_ref": "treasury-main"
+  },
   "direction": "any",
   "tokens": {
     "asset_slugs": [],
@@ -1640,8 +1677,11 @@ Truncated success response:
 {
   "ok": true,
   "type": "erc20_transfer_search",
-  "network_slug": "eth-mainnet",
-  "address": "0xabc0000000000000000000000000000000000000",
+  "account": {
+    "network_slug": "eth-mainnet",
+    "address": "0xabc0000000000000000000000000000000000000",
+    "client_ref": "treasury-main"
+  },
   "direction": "any",
   "window": {
     "from_block": 18600000,
@@ -1734,18 +1774,18 @@ Request-wide errors:
 
 - `400 invalid_json` — malformed JSON, non-object body, or missing/non-JSON
   `Content-Type`.
-- `400 unknown_field` — request, token, or window object contains an unknown
-  field.
-- `400 missing_network_slug` — `network_slug` is missing or empty.
-- `404 unsupported_network` — `network_slug` is unsupported for transfer
+- `400 unknown_field` — request, account, token, or window object contains an
+  unknown field.
+- `400 missing_network_slug` — `account.network_slug` is missing or empty.
+- `404 unsupported_network` — `account.network_slug` is unsupported for transfer
   search.
-- `400 invalid_address` — `address` is not an EVM address.
+- `400 invalid_address` — `account.address` is not an EVM address.
 - `400 invalid_direction` — `direction` is not `any`, `from`, or `to`.
 - `400 invalid_window` — window shape or bounds are invalid.
 - `400 invalid_asset_slug` — an asset slug has invalid syntax.
 - `404 asset_not_found` — an asset slug is syntactically valid but unknown.
 - `422 asset_not_available_on_network` — an asset exists but is unavailable
-  on `network_slug`.
+  on `account.network_slug`.
 - `422 asset_not_erc20_on_network` — an asset maps to native or non-ERC-20
   support on `network_slug`.
 - `422 window_too_large` — the requested block, timestamp, or lookback
@@ -1986,8 +2026,8 @@ Fields:
 | 400  | `invalid_limit`         | `limit` query parameter is not a positive integer.                     |
 | 400  | `invalid_json`          | A strict JSON endpoint receives malformed JSON, a non-object body, or missing/non-JSON content type and exposes that specific code; balance endpoints map these failures to `invalid_request`. |
 | 400  | `unknown_field`         | A strict JSON request object, including balance request objects, contains an unsupported field. |
-| 400  | `missing_network_slug`  | A transfer search request omits `network_slug` or sends it empty.       |
-| 400  | `invalid_address`       | A transfer search address is not an EVM address.                       |
+| 400  | `missing_network_slug`  | A transfer search request omits `account.network_slug` or sends it empty. |
+| 400  | `invalid_address`       | A transfer search `account.address` is not an EVM address.             |
 | 400  | `invalid_direction`     | A transfer search direction is not `any`, `from`, or `to`.             |
 | 400  | `invalid_window`        | A transfer search window is missing, malformed, or reversed.           |
 | 400  | `invalid_asset_slug`    | A balance or transfer token `asset_slug` filter has invalid syntax.     |
