@@ -5,7 +5,7 @@ last_reviewed: 2026-07-03
 agent_edit_policy: update_when_relevant
 ---
 
-# SPEC-012 - Balance Endpoint v2 Explicit Token Selectors and Historical Balances
+# SPEC-012 - Balance Endpoint v0.3 Explicit Token Selectors and Historical Balances
 
 Draft replacement spec for the private Beta balance endpoints.
 
@@ -14,13 +14,13 @@ current binding balance contract remains latest-only and `assets[]`-based
 until SPEC-012 is implemented and the contract, OpenAPI, examples, smoke
 checks, and [HISTORY.md](../../HISTORY.md) are updated in the same change.
 
-Breaking the private Beta balance contract is acceptable for v2 because the
+Breaking the private Beta balance contract is acceptable for v0.3 because the
 resulting surface should be clearer, less catalog-bound, and harder to
 misinterpret.
 
 ## Goal
 
-`POST /v1/balances` and `POST /v1/balances/bulk` should become v2 balance
+`POST /v1/balances` and `POST /v1/balances/bulk` should become v0.3 balance
 endpoints that can request:
 
 - latest or historical balances through explicit `as_of`;
@@ -28,7 +28,7 @@ endpoints that can request:
 - explicit ERC-20 token contracts through `tokens.contract_addresses`;
 - quote values only when pricing is supported and time-aligned.
 
-The v2 request replaces `assets[]` with `tokens`. The legacy `assets[]` shape
+The v0.3 request replaces `assets[]` with `tokens`. The legacy `assets[]` shape
 is not accepted as an alias.
 
 ## Ownership
@@ -79,7 +79,7 @@ shapes, except that `assets[]` is replaced by `tokens`:
 }
 ```
 
-`network_slug` remains the only public network identity. The v2 contract must
+`network_slug` remains the only public network identity. The v0.3 contract must
 not accept `chain`, `chain_id`, or `chain_slug` as aliases.
 
 `tokens` follows the ERC-20 transfer-search style where practical:
@@ -101,7 +101,7 @@ failures remain item-level failures when upstream evidence supports that.
 
 ## `as_of`
 
-V2 supports these public forms:
+V0.3 supports these public forms:
 
 ```json
 { "kind": "latest" }
@@ -124,7 +124,7 @@ Historical requests must never silently fall back to latest balances. If the
 requested historical evidence is unavailable, the affected account or token
 result must report explicit unavailability.
 
-For `block_number`, block numbers are network-local. The first v2
+For `block_number`, block numbers are network-local. The first v0.3
 implementation may reject mixed-network bulk requests for `block_number`
 unless the accepted upstream contract supports a network-to-block mapping.
 
@@ -158,7 +158,7 @@ as `unavailable`.
 
 ## Response Direction
 
-The v2 response should preserve the current balance response structure where
+The v0.3 response should preserve the current balance response structure where
 possible while adding the minimum fields needed to distinguish:
 
 - requested token selector and resolved token identity;
@@ -219,18 +219,18 @@ They must not leak upstream provider topology or pricing internals.
 
 ## Implementation PR Breakdown
 
-### PR 1 - V2 DTOs, Validation, and Draft OpenAPI Review
+### PR 1 - V0.3 DTOs, Validation, and Draft OpenAPI Review
 
 - Replace balance request DTOs and reusable examples with the `tokens` shape.
 - Reject legacy `assets[]`, unknown fields, reserved network aliases, empty
   token selectors, invalid contract addresses, and unsupported `as_of` forms
   not yet backed by upstream evidence.
-- Update the generated OpenAPI schema and examples behind the draft v2 contract
+- Update the generated OpenAPI schema and examples behind the draft v0.3 contract
   so reviewers can inspect the intended public surface.
 - Add OpenAPI snapshot/contract tests proving:
   - `tokens.asset_slugs[]` is documented;
   - `tokens.contract_addresses[]` is documented;
-  - `assets[]` is no longer present in the v2 request schema;
+  - `assets[]` is no longer present in the v0.3 request schema;
   - unsupported historical `as_of` variants are not accidentally documented
     as enabled runtime behavior.
 - Do not enable the breaking runtime contract yet unless the repository has a
@@ -257,9 +257,9 @@ They must not leak upstream provider topology or pricing internals.
 - Ensure missing, stale, unsupported, or provider-unavailable quote data does
   not hide otherwise valid raw balance evidence.
 
-### PR 4 - Enable Binding V2 Contract, Docs, OpenAPI, and Smoke Coverage
+### PR 4 - Enable Binding V0.3 Contract, Docs, OpenAPI, and Smoke Coverage
 
-- Enable the v2 breaking balance contract for the private Beta surface.
+- Enable the v0.3 breaking balance contract for the private Beta surface.
 - Update `CONTRACTS.md` so `tokens` is the binding request shape and `assets[]`
   is explicitly removed.
 - Regenerate and commit OpenAPI from the enabled runtime contract.

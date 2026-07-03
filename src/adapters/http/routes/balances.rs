@@ -6,8 +6,8 @@ use tracing::warn;
 use crate::{
     adapters::http::{
         dto::balances::{
-            BalanceAccountRequest, BalanceAsOfRequest, BalanceAssetRequest,
-            BalanceResponseAssembler, BalanceResponseAssemblerError, BulkBalanceRequest,
+            BalanceAccountRequest, BalanceAsOfRequest, BalanceResponseAssembler,
+            BalanceResponseAssemblerError, BalanceTokenSelectorRequest, BulkBalanceRequest,
             BulkBalanceResponse, SingleBalanceRequest, SingleBalanceResponse,
         },
         error::ApiError,
@@ -40,7 +40,7 @@ pub async fn resolve_single_balance(
         request.as_of,
         vec![request.account],
         request.quote_currency,
-        request.assets,
+        request.tokens,
     )?;
     let snapshot = resolve_snapshot(&state, request).await?;
     let response = BalanceResponseAssembler
@@ -60,7 +60,7 @@ pub async fn resolve_bulk_balances(
         request.as_of,
         request.accounts,
         request.quote_currency,
-        request.assets,
+        request.tokens,
     )?;
     let snapshot = resolve_snapshot(&state, request).await?;
 
@@ -91,24 +91,27 @@ fn validate_request(
     as_of: BalanceAsOfRequest,
     accounts: Vec<BalanceAccountRequest>,
     quote_currency: String,
-    assets: Vec<BalanceAssetRequest>,
+    tokens: BalanceTokenSelectorRequest,
 ) -> Result<BalanceSnapshotRequest, ApiError> {
-    if as_of.kind != "latest" {
+    if as_of.kind != "latest" || as_of.timestamp.is_some() || as_of.block_number.is_some() {
         return Err(ApiError::unsupported_as_of());
     }
     if accounts.is_empty() {
         return Err(ApiError::empty_accounts());
     }
-    if assets.is_empty() {
-        return Err(ApiError::empty_assets());
+    if tokens.asset_slugs.is_empty() && tokens.contract_addresses.is_empty() {
+        return Err(ApiError::empty_tokens());
+    }
+    if !tokens.contract_addresses.is_empty() {
+        return Err(ApiError::unsupported_token_selector());
     }
 
     let resolution_items = accounts
         .len()
-        .checked_mul(assets.len())
+        .checked_mul(tokens.asset_slugs.len())
         .ok_or_else(ApiError::request_too_large)?;
     if accounts.len() > MAX_ACCOUNTS
-        || assets.len() > MAX_ASSETS
+        || tokens.asset_slugs.len() > MAX_ASSETS
         || resolution_items > MAX_RESOLUTION_ITEMS
     {
         return Err(ApiError::request_too_large());
@@ -136,9 +139,9 @@ fn validate_request(
         }
     }
 
-    let mut seen_assets = HashSet::<String>::with_capacity(assets.len());
-    for asset in &assets {
-        if !seen_assets.insert(asset.asset_slug.clone()) {
+    let mut seen_assets = HashSet::<String>::with_capacity(tokens.asset_slugs.len());
+    for asset_slug in &tokens.asset_slugs {
+        if !seen_assets.insert(asset_slug.clone()) {
             return Err(ApiError::duplicate_asset());
         }
     }
@@ -152,7 +155,7 @@ fn validate_request(
                 client_ref: account.client_ref,
             })
             .collect(),
-        asset_slugs: assets.into_iter().map(|asset| asset.asset_slug).collect(),
+        asset_slugs: tokens.asset_slugs,
         quote_currency,
     })
 }
@@ -256,12 +259,10 @@ mod tests {
     #[test]
     fn validation_normalizes_quote_and_preserves_public_identifiers() {
         let request = validate_request(
-            BalanceAsOfRequest {
-                kind: "latest".to_string(),
-            },
+            latest_as_of(),
             vec![account("eth-mainnet", ACCOUNT_A)],
             " mxn ".to_string(),
-            vec![asset("ethereum")],
+            tokens(["ethereum"]),
         )
         .unwrap();
 
@@ -274,15 +275,13 @@ mod tests {
     #[test]
     fn validation_allows_same_address_on_different_networks() {
         let request = validate_request(
-            BalanceAsOfRequest {
-                kind: "latest".to_string(),
-            },
+            latest_as_of(),
             vec![
                 account("eth-mainnet", ACCOUNT_A),
                 account("base-mainnet", ACCOUNT_A),
             ],
             "USD".to_string(),
-            vec![asset("usdc")],
+            tokens(["usdc"]),
         )
         .unwrap();
 
@@ -292,15 +291,13 @@ mod tests {
     #[test]
     fn validation_rejects_duplicate_accounts_case_insensitively() {
         let error = validate_request(
-            BalanceAsOfRequest {
-                kind: "latest".to_string(),
-            },
+            latest_as_of(),
             vec![
                 account("eth-mainnet", "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"),
                 account("eth-mainnet", "0xABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD"),
             ],
             "USD".to_string(),
-            vec![asset("usdc")],
+            tokens(["usdc"]),
         )
         .unwrap_err();
 
@@ -315,17 +312,15 @@ mod tests {
         let accounts = (0..MAX_ACCOUNTS)
             .map(|index| account("eth-mainnet", &format!("0x{index:040x}")))
             .collect();
-        let assets = (0..MAX_ASSETS)
-            .map(|index| asset(&format!("asset-{index}")))
-            .collect();
+        let asset_slugs = (0..MAX_ASSETS)
+            .map(|index| format!("asset-{index}"))
+            .collect::<Vec<_>>();
 
         let request = validate_request(
-            BalanceAsOfRequest {
-                kind: "latest".to_string(),
-            },
+            latest_as_of(),
             accounts,
             "USD".to_string(),
-            assets,
+            token_vec(asset_slugs),
         )
         .unwrap();
 
@@ -360,7 +355,7 @@ mod tests {
                 "client_ref": "primary"
             },
             "quote_currency": " mxn ",
-            "assets": [{"asset_slug": "ethereum"}]
+            "tokens": {"asset_slugs": ["ethereum"], "contract_addresses": []}
         });
 
         let (status, response) = post_json(app, "/v1/balances", body).await;
@@ -444,7 +439,7 @@ mod tests {
                     {"network_slug": "eth-mainnet", "address": ACCOUNT_B}
                 ],
                 "quote_currency": "USD",
-                "assets": [{"asset_slug": "usdc"}]
+                "tokens": {"asset_slugs": ["usdc"], "contract_addresses": []}
             }),
         )
         .await;
@@ -488,23 +483,23 @@ mod tests {
             ),
             (
                 Some("application/json"),
-                br#"{"as_of":{"kind":"latest"},"account":{},"quote_currency":"USD","assets":[]}"#
+                br#"{"as_of":{"kind":"latest"},"account":{},"quote_currency":"USD","tokens":{"asset_slugs":["ethereum"],"contract_addresses":[]}}"#
                     .as_slice(),
             ),
             (
                 Some("application/json"),
-                br#"{"as_of":{"kind":"latest"},"account":[],"quote_currency":"USD","assets":[]}"#
+                br#"{"as_of":{"kind":"latest"},"account":[],"quote_currency":"USD","tokens":{"asset_slugs":["ethereum"],"contract_addresses":[]}}"#
                     .as_slice(),
             ),
             (Some("application/json"), br#"[]"#.as_slice()),
             (
                 None,
-                br#"{"as_of":{"kind":"latest"},"account":{"network_slug":"eth-mainnet","address":"0x1111111111111111111111111111111111111111"},"quote_currency":"USD","assets":[{"asset_slug":"ethereum"}]}"#
+                br#"{"as_of":{"kind":"latest"},"account":{"network_slug":"eth-mainnet","address":"0x1111111111111111111111111111111111111111"},"quote_currency":"USD","tokens":{"asset_slugs":["ethereum"],"contract_addresses":[]}}"#
                     .as_slice(),
             ),
             (
                 Some("text/plain"),
-                br#"{"as_of":{"kind":"latest"},"account":{"network_slug":"eth-mainnet","address":"0x1111111111111111111111111111111111111111"},"quote_currency":"USD","assets":[{"asset_slug":"ethereum"}]}"#
+                br#"{"as_of":{"kind":"latest"},"account":{"network_slug":"eth-mainnet","address":"0x1111111111111111111111111111111111111111"},"quote_currency":"USD","tokens":{"asset_slugs":["ethereum"],"contract_addresses":[]}}"#
                     .as_slice(),
             ),
         ];
@@ -542,7 +537,12 @@ mod tests {
             },
             {
                 let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
-                body["assets"][0]["symbol"] = json!("ETH");
+                body["tokens"]["symbol"] = json!("ETH");
+                body
+            },
+            {
+                let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+                body["assets"] = json!([{"asset_slug": "ethereum"}]);
                 body
             },
         ];
@@ -570,7 +570,12 @@ mod tests {
             },
             {
                 let mut body = bulk_body("eth-mainnet", ACCOUNT_A, "ethereum");
-                body["assets"][0]["symbol"] = json!("ETH");
+                body["tokens"]["symbol"] = json!("ETH");
+                body
+            },
+            {
+                let mut body = bulk_body("eth-mainnet", ACCOUNT_A, "ethereum");
+                body["assets"] = json!([{"asset_slug": "ethereum"}]);
                 body
             },
         ];
@@ -631,7 +636,7 @@ mod tests {
 
         for field in ["chain", "chain_id", "chain_slug"] {
             let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
-            body["assets"][0][field] = json!("eth-mainnet");
+            body["tokens"][field] = json!("eth-mainnet");
 
             let (status, response) = post_json(app.clone(), "/v1/balances", body).await;
             assert_public_error(
@@ -660,7 +665,7 @@ mod tests {
                     {"network_slug": "eth-mainnet", "address": ACCOUNT_A}
                 ],
                 "quote_currency": "USD",
-                "assets": [{"asset_slug": "ethereum"}]
+                "tokens": {"asset_slugs": ["ethereum"], "contract_addresses": []}
             });
             body["accounts"][0][field] = json!("eth-mainnet");
 
@@ -678,14 +683,38 @@ mod tests {
     async fn semantic_validation_codes_are_stable_and_ordered() {
         let app = balance_app(None, None);
         let valid_account = json!({"network_slug": "eth-mainnet", "address": ACCOUNT_A});
-        let valid_asset = json!({"asset_slug": "ethereum"});
+        let valid_tokens = json!({"asset_slugs": ["ethereum"], "contract_addresses": []});
         let cases = [
             (
                 json!({
                     "as_of": {"kind": "historical"},
                     "accounts": [],
                     "quote_currency": "NOPE",
-                    "assets": []
+                    "tokens": valid_tokens.clone()
+                }),
+                "unsupported_as_of",
+            ),
+            (
+                json!({
+                    "as_of": {
+                        "kind": "timestamp",
+                        "timestamp": "2026-07-03T00:00:00Z"
+                    },
+                    "accounts": [valid_account.clone()],
+                    "quote_currency": "USD",
+                    "tokens": valid_tokens.clone()
+                }),
+                "unsupported_as_of",
+            ),
+            (
+                json!({
+                    "as_of": {
+                        "kind": "block_number",
+                        "block_number": "19000000"
+                    },
+                    "accounts": [valid_account.clone()],
+                    "quote_currency": "USD",
+                    "tokens": valid_tokens.clone()
                 }),
                 "unsupported_as_of",
             ),
@@ -694,7 +723,7 @@ mod tests {
                     "as_of": {"kind": "latest"},
                     "accounts": [],
                     "quote_currency": "USD",
-                    "assets": [valid_asset.clone()]
+                    "tokens": valid_tokens.clone()
                 }),
                 "empty_accounts",
             ),
@@ -703,16 +732,48 @@ mod tests {
                     "as_of": {"kind": "latest"},
                     "accounts": [valid_account.clone()],
                     "quote_currency": "USD",
-                    "assets": []
+                    "tokens": {"asset_slugs": [], "contract_addresses": []}
                 }),
-                "empty_assets",
+                "empty_tokens",
+            ),
+            (
+                json!({
+                    "as_of": {"kind": "latest"},
+                    "accounts": [valid_account.clone()],
+                    "quote_currency": "USD"
+                }),
+                "empty_tokens",
+            ),
+            (
+                json!({
+                    "as_of": {"kind": "latest"},
+                    "accounts": [valid_account.clone()],
+                    "quote_currency": "USD",
+                    "tokens": {
+                        "asset_slugs": [],
+                        "contract_addresses": ["0x1234"]
+                    }
+                }),
+                "invalid_contract_address",
+            ),
+            (
+                json!({
+                    "as_of": {"kind": "latest"},
+                    "accounts": [valid_account.clone()],
+                    "quote_currency": "USD",
+                    "tokens": {
+                        "asset_slugs": [],
+                        "contract_addresses": ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]
+                    }
+                }),
+                "unsupported_token_selector",
             ),
             (
                 json!({
                     "as_of": {"kind": "latest"},
                     "accounts": [valid_account.clone()],
                     "quote_currency": "EUR",
-                    "assets": [valid_asset.clone()]
+                    "tokens": valid_tokens.clone()
                 }),
                 "unsupported_quote_currency",
             ),
@@ -724,7 +785,7 @@ mod tests {
                         "address": "0x1234"
                     }],
                     "quote_currency": "USD",
-                    "assets": [valid_asset.clone()]
+                    "tokens": valid_tokens.clone()
                 }),
                 "invalid_account",
             ),
@@ -742,7 +803,7 @@ mod tests {
                         }
                     ],
                     "quote_currency": "USD",
-                    "assets": [valid_asset.clone()]
+                    "tokens": valid_tokens.clone()
                 }),
                 "duplicate_account",
             ),
@@ -751,7 +812,10 @@ mod tests {
                     "as_of": {"kind": "latest"},
                     "accounts": [valid_account],
                     "quote_currency": "USD",
-                    "assets": [valid_asset.clone(), valid_asset]
+                    "tokens": {
+                        "asset_slugs": ["ethereum", "ethereum"],
+                        "contract_addresses": []
+                    }
                 }),
                 "duplicate_asset",
             ),
@@ -775,7 +839,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let too_many_assets = (0..=MAX_ASSETS)
-            .map(|index| json!({"asset_slug": format!("asset-{index}")}))
+            .map(|index| format!("asset-{index}"))
             .collect::<Vec<_>>();
 
         for body in [
@@ -783,7 +847,7 @@ mod tests {
                 "as_of": {"kind": "latest"},
                 "accounts": too_many_accounts,
                 "quote_currency": "USD",
-                "assets": [{"asset_slug": "ethereum"}]
+                "tokens": {"asset_slugs": ["ethereum"], "contract_addresses": []}
             }),
             json!({
                 "as_of": {"kind": "latest"},
@@ -792,7 +856,7 @@ mod tests {
                     "address": ACCOUNT_A
                 }],
                 "quote_currency": "USD",
-                "assets": too_many_assets
+                "tokens": {"asset_slugs": too_many_assets, "contract_addresses": []}
             }),
         ] {
             let (status, response) = post_json(app.clone(), "/v1/balances/bulk", body).await;
@@ -832,7 +896,22 @@ mod tests {
             );
         }
 
-        for asset_slug in ["ETHEREUM", " ethereum ", "missing-asset"] {
+        for asset_slug in ["ETHEREUM", " ethereum "] {
+            let (status, response) = post_json(
+                app.clone(),
+                "/v1/balances",
+                single_body("eth-mainnet", ACCOUNT_A, asset_slug),
+            )
+            .await;
+            assert_public_error(
+                status,
+                &response,
+                StatusCode::BAD_REQUEST,
+                "invalid_asset_slug",
+            );
+        }
+
+        for asset_slug in ["missing-asset"] {
             let (status, response) = post_json(
                 app.clone(),
                 "/v1/balances",
@@ -905,7 +984,7 @@ mod tests {
                     {"network_slug": "base-mainnet", "address": ACCOUNT_A}
                 ],
                 "quote_currency": "USD",
-                "assets": [{"asset_slug": "usdc"}]
+                "tokens": {"asset_slugs": ["usdc"], "contract_addresses": []}
             }),
         )
         .await;
@@ -969,9 +1048,22 @@ mod tests {
         }
     }
 
-    fn asset(asset_slug: &str) -> BalanceAssetRequest {
-        BalanceAssetRequest {
-            asset_slug: asset_slug.to_string(),
+    fn latest_as_of() -> BalanceAsOfRequest {
+        BalanceAsOfRequest {
+            kind: "latest".to_string(),
+            timestamp: None,
+            block_number: None,
+        }
+    }
+
+    fn tokens<const N: usize>(asset_slugs: [&str; N]) -> BalanceTokenSelectorRequest {
+        token_vec(asset_slugs.into_iter().map(str::to_string).collect())
+    }
+
+    fn token_vec(asset_slugs: Vec<String>) -> BalanceTokenSelectorRequest {
+        BalanceTokenSelectorRequest {
+            asset_slugs,
+            contract_addresses: Vec::new(),
         }
     }
 
@@ -1003,7 +1095,10 @@ mod tests {
                 "address": address
             },
             "quote_currency": "USD",
-            "assets": [{"asset_slug": asset_slug}]
+            "tokens": {
+                "asset_slugs": [asset_slug],
+                "contract_addresses": []
+            }
         })
     }
 
@@ -1015,7 +1110,10 @@ mod tests {
                 "address": address
             }],
             "quote_currency": "USD",
-            "assets": [{"asset_slug": asset_slug}]
+            "tokens": {
+                "asset_slugs": [asset_slug],
+                "contract_addresses": []
+            }
         })
     }
 

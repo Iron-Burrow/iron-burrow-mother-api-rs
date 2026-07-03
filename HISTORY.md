@@ -296,3 +296,15 @@ implementation, and documentation changes.
   before the API service is recreated.
 - Passed `PUBLIC_API_SURFACE` through Compose so production deployments can
   explicitly run the protected Beta surface instead of falling back to Alpha.
+
+## 2026-07-03
+
+- Began SPEC-012 balance request implementation by switching private-Beta
+  balance request DTOs, examples, route validation, and OpenAPI schemas from
+  legacy `assets[]` to required `tokens.asset_slugs`.
+- Kept balance orchestration latest-only and catalog-asset-only for this
+  slice: historical `as_of` forms remain `unsupported_as_of`, and valid
+  `tokens.contract_addresses` selectors return `unsupported_token_selector`
+  until explicit contract balance resolution is implemented.
+- Updated `CONTRACTS.md` and README examples for the breaking private-Beta
+  request-shape change, including new `empty_tokens` validation behavior.

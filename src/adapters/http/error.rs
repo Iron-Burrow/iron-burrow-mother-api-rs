@@ -216,11 +216,11 @@ impl ApiError {
         }
     }
 
-    pub fn empty_assets() -> Self {
+    pub fn empty_tokens() -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
-            code: "empty_assets",
-            message: "At least one asset is required.".to_string(),
+            code: "empty_tokens",
+            message: "At least one token selector is required.".to_string(),
         }
     }
 
@@ -237,6 +237,14 @@ impl ApiError {
             status: StatusCode::BAD_REQUEST,
             code: "duplicate_asset",
             message: "Each asset slug must be unique.".to_string(),
+        }
+    }
+
+    pub fn unsupported_token_selector() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "unsupported_token_selector",
+            message: "This token selector is not supported for balance resolution yet.".to_string(),
         }
     }
 

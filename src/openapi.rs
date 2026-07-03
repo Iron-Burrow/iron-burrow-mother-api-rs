@@ -11,10 +11,10 @@ use utoipa::{
 
 use crate::adapters::http::dto::balances::{
     examples as balance_examples, BalanceAccountIdentityPayload, BalanceAccountPayload,
-    BalanceAccountRequest, BalanceAmountPayload, BalanceAsOfRequest, BalanceAssetRequest,
-    BalanceBlockPayload, BalanceErrorPayload, BalanceEvidencePayload, BalancePositionPayload,
-    BalanceQuotePayload, BalanceQuoteStatus, BalanceResponseStatus, BalanceSkippedPayload,
-    BalanceSummaryPayload, BulkAsOfPayload, BulkBalanceRequest, BulkBalanceResponse,
+    BalanceAccountRequest, BalanceAmountPayload, BalanceAsOfRequest, BalanceBlockPayload,
+    BalanceErrorPayload, BalanceEvidencePayload, BalancePositionPayload, BalanceQuotePayload,
+    BalanceQuoteStatus, BalanceResponseStatus, BalanceSkippedPayload, BalanceSummaryPayload,
+    BalanceTokenSelectorRequest, BulkAsOfPayload, BulkBalanceRequest, BulkBalanceResponse,
     SingleAsOfPayload, SingleBalanceRequest, SingleBalanceResponse,
 };
 use crate::adapters::http::dto::erc20_transfers::{
@@ -65,7 +65,7 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
         BalanceAccountRequest,
         BalanceAmountPayload,
         BalanceAsOfRequest,
-        BalanceAssetRequest,
+        BalanceTokenSelectorRequest,
         BalanceBlockPayload,
         BalanceErrorPayload,
         BalanceEvidencePayload,
@@ -120,7 +120,7 @@ struct BaseApiDoc;
         BalanceAccountRequest,
         BalanceAmountPayload,
         BalanceAsOfRequest,
-        BalanceAssetRequest,
+        BalanceTokenSelectorRequest,
         BalanceBlockPayload,
         BalanceErrorPayload,
         BalanceEvidencePayload,
@@ -163,7 +163,7 @@ struct Erc20TransfersApiDoc;
     path = "/v1/balances",
     tag = "balances",
     summary = "Resolve one latest balance snapshot",
-    description = "Resolves one latest EVM balance snapshot for a canonical network_slug and explicit asset slugs. Requests use network_slug, never chain or chain_id. Supported quote_currency values are USD, MXN, USDC, and BTC. The single endpoint accepts exactly one account and up to 20 assets, for at most 20 account-asset resolution items.",
+    description = "Resolves one latest EVM balance snapshot for a canonical network_slug and explicit tokens.asset_slugs. Requests use network_slug, never chain or chain_id. Supported quote_currency values are USD, MXN, USDC, and BTC. The single endpoint accepts exactly one account and up to 20 asset_slug selectors, for at most 20 account-token resolution items. tokens.contract_addresses and historical as_of forms are reserved for later SPEC-012 slices and are rejected by this implementation.",
     request_body(
         content = SingleBalanceRequest,
         content_type = "application/json"
@@ -209,7 +209,7 @@ async fn resolve_single_balance_operation() {}
     path = "/v1/balances/bulk",
     tag = "balances",
     summary = "Resolve latest balance snapshots in bulk",
-    description = "Resolves latest EVM balance snapshots for explicit canonical network_slug accounts and asset slugs. Requests use network_slug, never chain or chain_id. Supported quote_currency values are USD, MXN, USDC, and BTC. Bulk accepts 1 to 50 accounts, up to 20 assets, and up to 1,000 account-asset resolution items.",
+    description = "Resolves latest EVM balance snapshots for explicit canonical network_slug accounts and tokens.asset_slugs. Requests use network_slug, never chain or chain_id. Supported quote_currency values are USD, MXN, USDC, and BTC. Bulk accepts 1 to 50 accounts, up to 20 asset_slug selectors, and up to 1,000 account-token resolution items. tokens.contract_addresses and historical as_of forms are reserved for later SPEC-012 slices and are rejected by this implementation.",
     request_body(
         content = BulkBalanceRequest,
         content_type = "application/json"
@@ -776,7 +776,7 @@ mod tests {
             "BulkBalanceRequest",
             "BalanceAsOfRequest",
             "BalanceAccountRequest",
-            "BalanceAssetRequest",
+            "BalanceTokenSelectorRequest",
             "SingleBalanceResponse",
             "BulkBalanceResponse",
             "BalanceResponseStatus",
@@ -858,14 +858,14 @@ mod tests {
             "/v1/balances",
             "SingleBalanceRequest",
             "SingleBalanceResponse",
-            ["one account", "20 assets", "20 account-asset"],
+            ["one account", "20 asset_slug selectors", "20 account-token"],
         );
         assert_balance_operation(
             &json,
             "/v1/balances/bulk",
             "BulkBalanceRequest",
             "BulkBalanceResponse",
-            ["50 accounts", "20 assets", "1,000"],
+            ["50 accounts", "20 asset_slug selectors", "1,000"],
         );
     }
 
@@ -877,20 +877,28 @@ mod tests {
         assert_schema_properties(
             schemas,
             "SingleBalanceRequest",
-            &["account", "as_of", "assets", "quote_currency"],
+            &["account", "as_of", "quote_currency", "tokens"],
         );
         assert_schema_properties(
             schemas,
             "BulkBalanceRequest",
-            &["accounts", "as_of", "assets", "quote_currency"],
+            &["accounts", "as_of", "quote_currency", "tokens"],
         );
-        assert_schema_properties(schemas, "BalanceAsOfRequest", &["kind"]);
+        assert_schema_properties(
+            schemas,
+            "BalanceAsOfRequest",
+            &["block_number", "kind", "timestamp"],
+        );
         assert_schema_properties(
             schemas,
             "BalanceAccountRequest",
             &["address", "client_ref", "network_slug"],
         );
-        assert_schema_properties(schemas, "BalanceAssetRequest", &["asset_slug"]);
+        assert_schema_properties(
+            schemas,
+            "BalanceTokenSelectorRequest",
+            &["asset_slugs", "contract_addresses"],
+        );
         assert_schema_properties(
             schemas,
             "SingleBalanceResponse",

@@ -3,7 +3,11 @@ use serde_json::Value;
 use utoipa::ToSchema;
 
 use crate::{
-    adapters::http::{error::ApiError, types::JsonObject, validation::reject_unknown_fields},
+    adapters::http::{
+        error::ApiError,
+        types::JsonObject,
+        validation::{reject_unknown_fields, validate_asset_slugs, validate_contract_addresses},
+    },
     application::balances::service::{
         BalanceAccountResult, BalanceEvidence, BalanceItemErrorCode, BalanceItemOutcome,
         BalanceQuoteOutcome, BalanceSnapshotAccount, BalanceSnapshotResult,
@@ -15,11 +19,11 @@ use crate::{
 pub(crate) mod examples;
 
 const RESERVED_NETWORK_ALIAS_FIELDS: [&str; 3] = ["chain", "chain_id", "chain_slug"];
-const SINGLE_BALANCE_FIELDS: [&str; 4] = ["as_of", "account", "quote_currency", "assets"];
-const BULK_BALANCE_FIELDS: [&str; 4] = ["as_of", "accounts", "quote_currency", "assets"];
-const AS_OF_FIELDS: [&str; 1] = ["kind"];
+const SINGLE_BALANCE_FIELDS: [&str; 4] = ["as_of", "account", "quote_currency", "tokens"];
+const BULK_BALANCE_FIELDS: [&str; 4] = ["as_of", "accounts", "quote_currency", "tokens"];
+const AS_OF_FIELDS: [&str; 3] = ["kind", "timestamp", "block_number"];
 const ACCOUNT_FIELDS: [&str; 3] = ["network_slug", "address", "client_ref"];
-const ASSET_FIELDS: [&str; 1] = ["asset_slug"];
+const TOKEN_FIELDS: [&str; 2] = ["asset_slugs", "contract_addresses"];
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -27,7 +31,7 @@ pub struct SingleBalanceRequest {
     pub(crate) as_of: BalanceAsOfRequest,
     pub(crate) account: BalanceAccountRequest,
     pub(crate) quote_currency: String,
-    pub(crate) assets: Vec<BalanceAssetRequest>,
+    pub(crate) tokens: BalanceTokenSelectorRequest,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
@@ -36,13 +40,17 @@ pub struct BulkBalanceRequest {
     pub(crate) as_of: BalanceAsOfRequest,
     pub(crate) accounts: Vec<BalanceAccountRequest>,
     pub(crate) quote_currency: String,
-    pub(crate) assets: Vec<BalanceAssetRequest>,
+    pub(crate) tokens: BalanceTokenSelectorRequest,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BalanceAsOfRequest {
     pub(crate) kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) timestamp: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) block_number: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
@@ -53,10 +61,13 @@ pub struct BalanceAccountRequest {
     pub(crate) client_ref: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct BalanceAssetRequest {
-    pub(crate) asset_slug: String,
+pub struct BalanceTokenSelectorRequest {
+    #[serde(default)]
+    pub(crate) asset_slugs: Vec<String>,
+    #[serde(default)]
+    pub(crate) contract_addresses: Vec<String>,
 }
 
 impl TryFrom<JsonObject> for SingleBalanceRequest {
@@ -67,7 +78,7 @@ impl TryFrom<JsonObject> for SingleBalanceRequest {
         reject_unknown_fields(&request, &SINGLE_BALANCE_FIELDS)?;
         validate_as_of_object(request.get("as_of"))?;
         validate_account_object(request.get("account"))?;
-        validate_asset_array(request.get("assets"))?;
+        validate_tokens_object(request.get("tokens"))?;
 
         serde_json::from_value(Value::Object(request)).map_err(|_| ApiError::invalid_request())
     }
@@ -81,7 +92,7 @@ impl TryFrom<JsonObject> for BulkBalanceRequest {
         reject_unknown_fields(&request, &BULK_BALANCE_FIELDS)?;
         validate_as_of_object(request.get("as_of"))?;
         validate_account_array(request.get("accounts"))?;
-        validate_asset_array(request.get("assets"))?;
+        validate_tokens_object(request.get("tokens"))?;
 
         serde_json::from_value(Value::Object(request)).map_err(|_| ApiError::invalid_request())
     }
@@ -144,24 +155,24 @@ fn validate_account_array(value: Option<&Value>) -> Result<(), ApiError> {
     Ok(())
 }
 
-fn validate_asset_array(value: Option<&Value>) -> Result<(), ApiError> {
-    let Some(Value::Array(assets)) = value else {
+fn validate_tokens_object(value: Option<&Value>) -> Result<(), ApiError> {
+    let Some(value) = value else {
+        return Err(ApiError::empty_tokens());
+    };
+    let Value::Object(tokens) = value else {
         return Err(ApiError::invalid_request());
     };
 
-    for asset in assets {
-        validate_asset_object(asset)?;
+    reject_unknown_fields(tokens, &TOKEN_FIELDS)?;
+
+    let asset_slugs = validate_asset_slugs(tokens.get("asset_slugs"))?;
+    let contract_addresses = validate_contract_addresses(tokens.get("contract_addresses"))?;
+
+    if asset_slugs.is_empty() && contract_addresses.is_empty() {
+        return Err(ApiError::empty_tokens());
     }
 
     Ok(())
-}
-
-fn validate_asset_object(value: &Value) -> Result<(), ApiError> {
-    let Value::Object(asset) = value else {
-        return Err(ApiError::invalid_request());
-    };
-
-    reject_unknown_fields(asset, &ASSET_FIELDS)
 }
 
 #[derive(Clone, Copy, Debug, Default)]

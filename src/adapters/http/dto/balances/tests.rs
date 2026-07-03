@@ -41,7 +41,12 @@ async fn request_validation_rejects_unknown_fields_with_unknown_field() {
         },
         {
             let mut body = examples::single_request();
-            body["assets"][0]["symbol"] = json!("ETH");
+            body["tokens"]["symbol"] = json!("ETH");
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["assets"] = json!([{"asset_slug": "ethereum"}]);
             body
         },
     ] {
@@ -65,7 +70,12 @@ async fn request_validation_rejects_unknown_fields_with_unknown_field() {
         },
         {
             let mut body = examples::bulk_request();
-            body["assets"][0]["symbol"] = json!("USDC");
+            body["tokens"]["symbol"] = json!("USDC");
+            body
+        },
+        {
+            let mut body = examples::bulk_request();
+            body["assets"] = json!([{"asset_slug": "usdc"}]);
             body
         },
     ] {
@@ -97,7 +107,7 @@ async fn request_validation_rejects_reserved_aliases_with_invalid_request() {
         },
         {
             let mut body = examples::single_request();
-            body["assets"][0]["chain"] = json!("eth-mainnet");
+            body["tokens"]["chain"] = json!("eth-mainnet");
             body
         },
         {
@@ -128,6 +138,81 @@ async fn request_validation_rejects_reserved_aliases_with_invalid_request() {
         assert_api_error_code(
             BulkBalanceRequest::try_from(json_object(body)),
             "invalid_request",
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn request_validation_rejects_empty_missing_and_invalid_tokens() {
+    for body in [
+        {
+            let mut body = examples::single_request();
+            body.as_object_mut().unwrap().remove("tokens");
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["tokens"] = json!({});
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["tokens"] = json!({"asset_slugs": [], "contract_addresses": []});
+            body
+        },
+    ] {
+        assert_api_error_code(
+            SingleBalanceRequest::try_from(json_object(body)),
+            "empty_tokens",
+        )
+        .await;
+    }
+
+    for body in [
+        {
+            let mut body = examples::bulk_request();
+            body["tokens"]["asset_slugs"] = json!(["USDC"]);
+            body
+        },
+        {
+            let mut body = examples::bulk_request();
+            body["tokens"]["asset_slugs"] = json!([""]);
+            body
+        },
+        {
+            let mut body = examples::bulk_request();
+            body["tokens"]["asset_slugs"] = json!(null);
+            body
+        },
+    ] {
+        assert_api_error_code(
+            BulkBalanceRequest::try_from(json_object(body)),
+            "invalid_asset_slug",
+        )
+        .await;
+    }
+
+    for body in [
+        {
+            let mut body = examples::single_request();
+            body["tokens"]["contract_addresses"] = json!(["0x1234"]);
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["tokens"]["contract_addresses"] = json!([""]);
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["tokens"]["contract_addresses"] = json!(null);
+            body
+        },
+    ] {
+        assert_api_error_code(
+            SingleBalanceRequest::try_from(json_object(body)),
+            "invalid_contract_address",
         )
         .await;
     }

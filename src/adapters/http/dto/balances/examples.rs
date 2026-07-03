@@ -16,11 +16,10 @@ pub(crate) fn single_request() -> Value {
             "client_ref": "main-safe"
         },
         "quote_currency": "MXN",
-        "assets": [
-            {
-                "asset_slug": "ethereum"
-            }
-        ]
+        "tokens": {
+            "asset_slugs": ["ethereum"],
+            "contract_addresses": []
+        }
     })
 }
 
@@ -42,14 +41,10 @@ pub(crate) fn bulk_request() -> Value {
             }
         ],
         "quote_currency": "USD",
-        "assets": [
-            {
-                "asset_slug": "usdc"
-            },
-            {
-                "asset_slug": "ethereum"
-            }
-        ]
+        "tokens": {
+            "asset_slugs": ["usdc", "ethereum"],
+            "contract_addresses": []
+        }
     })
 }
 
