@@ -750,13 +750,19 @@ confidence, warnings, and future informational field additions.
 ### `POST /v1/balances`
 
 Resolves the latest balances for one explicitly network-scoped EVM account
-across the requested canonical assets. The endpoint accepts JSON only.
+across the requested canonical token asset slugs. The endpoint accepts JSON
+only.
 
-The account's `network_slug` and each `asset_slug` are exact canonical
-identifiers. They are not trimmed or case-normalized. The address must be
-exactly `0x` followed by 40 ASCII hexadecimal characters; EIP-55 checksum
-validation is not required. The response preserves caller-provided address
-casing and `client_ref`.
+The account's `network_slug` and each `tokens.asset_slugs[]` value are exact
+canonical identifiers. They are not trimmed or case-normalized. The address
+must be exactly `0x` followed by 40 ASCII hexadecimal characters; EIP-55
+checksum validation is not required. The response preserves caller-provided
+address casing and `client_ref`.
+
+`tokens.contract_addresses[]` is reserved for a later SPEC-012 implementation
+slice. Syntactically valid contract-address selectors currently return
+`400 unsupported_token_selector`; malformed contract addresses return
+`400 invalid_contract_address`.
 
 Unknown JSON fields in balance request objects return `400 unknown_field`.
 Requests containing reserved network alias fields `chain`, `chain_id`, or
@@ -778,11 +784,10 @@ JSON, or a missing/non-JSON `Content-Type` also return
     "client_ref": "main-safe"
   },
   "quote_currency": "MXN",
-  "assets": [
-    {
-      "asset_slug": "ethereum"
-    }
-  ]
+  "tokens": {
+    "asset_slugs": ["ethereum"],
+    "contract_addresses": []
+  }
 }
 ```
 
@@ -795,8 +800,9 @@ Request fields:
 | `account.address` | string | Yes | `0x` plus 40 ASCII hex characters. |
 | `account.client_ref` | string | No | Opaque caller reference, echoed unchanged; `null` when omitted. |
 | `quote_currency` | string | Yes | Trimmed and uppercased; allowed values are `USD`, `MXN`, `USDC`, and `BTC`. |
-| `assets` | array | Yes | One to 20 unique canonical asset entries. |
-| `assets[].asset_slug` | string | Yes | Exact canonical global asset slug. Symbols and aliases are not accepted. |
+| `tokens` | object | Yes | Must include at least one non-empty selector array. |
+| `tokens.asset_slugs` | array of strings | Yes for this implementation slice | One to 20 unique exact canonical global asset slugs. Symbols and aliases are not accepted. |
+| `tokens.contract_addresses` | array of strings | No | Reserved for later balance orchestration; malformed values return `invalid_contract_address`, valid non-empty values return `unsupported_token_selector`. |
 
 **Response — `200 OK`:**
 
@@ -857,8 +863,8 @@ For this endpoint, `as_of.observed_at` equals `evidence.observed_at`. Both are
 
 Uses the same validation and resolution model as `/v1/balances`, but accepts
 one to 50 explicit network-scoped accounts. Resolution is the cartesian
-product `accounts[] x assets[]`; Mother API does not infer assets or expand an
-address to unrequested networks.
+product `accounts[] x tokens.asset_slugs[]`; Mother API does not infer assets
+or expand an address to unrequested networks.
 
 **Request:**
 
@@ -875,25 +881,25 @@ address to unrequested networks.
     }
   ],
   "quote_currency": "USD",
-  "assets": [
-    {
-      "asset_slug": "usdc"
-    }
-  ]
+  "tokens": {
+    "asset_slugs": ["usdc"],
+    "contract_addresses": []
+  }
 }
 ```
 
 Accounts are unique by `(network_slug, lowercase(address))`. The same address
-on different networks is allowed. Assets are unique by exact `asset_slug`.
-Caller account order and asset order are preserved in the response.
+on different networks is allowed. Asset-slug selectors are unique by exact
+`asset_slug`. Caller account order and asset-slug order are preserved in the
+response.
 
 Public limits are enforced before orchestration:
 
 | Limit | Maximum |
 | ----- | ------- |
 | Accounts | 50 |
-| Assets | 20 |
-| Account-asset resolution items | 1,000 |
+| Asset-slug selectors | 20 |
+| Account-token resolution items | 1,000 |
 
 Requests are rejected rather than split when a public or grouped Bigwig limit
 would be exceeded.
@@ -1104,20 +1110,26 @@ Request-wide errors:
 - `400 invalid_request` — malformed/non-JSON body, missing required field,
   wrong field type, or a reserved `chain`/`chain_id`/`chain_slug` alias field.
 - `400 unknown_field` — the request, `as_of`, `account`, `accounts[]`, or
-  `assets[]` object contains an unsupported field.
+  `tokens` object contains an unsupported field, including legacy `assets[]`.
 - `400 invalid_account` — an address is not exactly `0x` plus 40 ASCII hex
   characters.
 - `400 unsupported_network` — the network is unknown, non-EVM, legacy, or not
   an exact canonical slug.
 - `400 unsupported_asset` — an asset is unknown or not an exact canonical
   global asset slug.
+- `400 invalid_asset_slug` — a balance `tokens.asset_slugs[]` value has
+  invalid syntax.
+- `400 invalid_contract_address` — a balance
+  `tokens.contract_addresses[]` value is malformed.
 - `400 unsupported_quote_currency` — the normalized quote currency is not
   `USD`, `MXN`, `USDC`, or `BTC`.
 - `400 unsupported_as_of` — `as_of.kind` is not `"latest"`.
 - `400 empty_accounts` — the bulk account array is empty.
-- `400 empty_assets` — the asset array is empty.
+- `400 empty_tokens` — no token selector was provided.
 - `400 duplicate_account` — a network-scoped account is repeated.
 - `400 duplicate_asset` — an exact asset slug is repeated.
+- `400 unsupported_token_selector` — a syntactically valid token selector is
+  reserved for a later balance implementation slice.
 - `400 request_too_large` — a public or grouped provider limit is exceeded.
 - `503 asset_network_map_unavailable` — the Mother catalog is unconfigured or
   temporarily unavailable.
@@ -1966,9 +1978,10 @@ Fields:
 | 400  | `unsupported_quote_currency` | A balance request uses a quote currency outside `USD`, `MXN`, `USDC`, and `BTC`. |
 | 400  | `unsupported_as_of`     | A balance request asks for anything other than the latest snapshot. |
 | 400  | `empty_accounts`        | A bulk balance request contains no accounts. |
-| 400  | `empty_assets`          | A balance request contains no assets. |
+| 400  | `empty_tokens`          | A balance request contains no token selectors. |
 | 400  | `duplicate_account`     | A bulk balance request repeats a network-scoped account. |
 | 400  | `duplicate_asset`       | A balance request repeats an exact asset slug. |
+| 400  | `unsupported_token_selector` | A balance request uses a syntactically valid selector reserved for a later implementation slice. |
 | 400  | `request_too_large`     | A balance request exceeds a public or grouped provider limit. |
 | 400  | `invalid_limit`         | `limit` query parameter is not a positive integer.                     |
 | 400  | `invalid_json`          | A strict JSON endpoint receives malformed JSON, a non-object body, or missing/non-JSON content type and exposes that specific code; balance endpoints map these failures to `invalid_request`. |
@@ -1977,8 +1990,8 @@ Fields:
 | 400  | `invalid_address`       | A transfer search address is not an EVM address.                       |
 | 400  | `invalid_direction`     | A transfer search direction is not `any`, `from`, or `to`.             |
 | 400  | `invalid_window`        | A transfer search window is missing, malformed, or reversed.           |
-| 400  | `invalid_asset_slug`    | A transfer token `asset_slug` filter has invalid syntax.               |
-| 400  | `invalid_contract_address` | A transfer token `contract_addresses` filter is malformed.          |
+| 400  | `invalid_asset_slug`    | A balance or transfer token `asset_slug` filter has invalid syntax.     |
+| 400  | `invalid_contract_address` | A balance or transfer token `contract_addresses` filter is malformed. |
 | 400  | `missing_query`         | `q` query parameter is missing or empty after trimming.                |
 | 400  | `query_too_long`        | Trimmed `q` exceeds 128 characters.                                    |
 | 404  | `asset_not_found`       | Asset detail lookup failed, price-indexer has no requested signal, or a transfer asset slug is unknown. |
