@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use axum::{body::Bytes, extract::State, http::HeaderMap, Json};
 use tracing::warn;
 
+use crate::adapters::http::dto::accounts::OnchainAccountRequest;
 use crate::adapters::http::dto::assets::token_selector::TokenSelectorRequest;
 use crate::adapters::http::dto::onchain_time::as_of::AsOfRequest;
 use crate::domain::accounts::OnchainAccount;
@@ -10,8 +11,8 @@ use crate::domain::assets::token_selector::TokenSelector;
 use crate::{
     adapters::http::{
         dto::balances::{
-            BalanceAccountRequest, BalanceResponseAssembler, BalanceResponseAssemblerError,
-            BulkBalanceRequest, BulkBalanceResponse, SingleBalanceRequest, SingleBalanceResponse,
+            BalanceResponseAssembler, BalanceResponseAssemblerError, BulkBalanceRequest,
+            BulkBalanceResponse, SingleBalanceRequest, SingleBalanceResponse,
         },
         error::ApiError,
         json_body::parse_json_object_body,
@@ -89,7 +90,7 @@ fn parse_bulk_balance_request(
 
 fn validate_request(
     as_of: AsOfRequest,
-    accounts: Vec<BalanceAccountRequest>,
+    accounts: Vec<OnchainAccountRequest>,
     quote_currency: String,
     tokens: TokenSelectorRequest,
 ) -> Result<BalanceSnapshotRequest, ApiError> {
@@ -1220,8 +1221,8 @@ mod tests {
         assert_eq!(response_error_code(response).await, "internal_error");
     }
 
-    fn account(network_slug: &str, address: &str) -> BalanceAccountRequest {
-        BalanceAccountRequest {
+    fn account(network_slug: &str, address: &str) -> OnchainAccountRequest {
+        OnchainAccountRequest {
             network_slug: network_slug.to_string(),
             address: address.to_string(),
             client_ref: None,

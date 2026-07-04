@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
 
+use crate::adapters::http::dto::accounts::OnchainAccountRequest;
 use crate::adapters::http::dto::assets::token_selector::TokenSelectorRequest;
 use crate::adapters::http::dto::onchain_time::as_of::AsOfRequest;
 use crate::domain::accounts::OnchainAccount;
@@ -31,7 +32,7 @@ const TOKEN_FIELDS: [&str; 2] = ["asset_slugs", "contract_addresses"];
 #[serde(deny_unknown_fields)]
 pub struct SingleBalanceRequest {
     pub(crate) as_of: AsOfRequest,
-    pub(crate) account: BalanceAccountRequest,
+    pub(crate) account: OnchainAccountRequest,
     pub(crate) quote_currency: String,
     pub(crate) tokens: TokenSelectorRequest,
 }
@@ -40,17 +41,9 @@ pub struct SingleBalanceRequest {
 #[serde(deny_unknown_fields)]
 pub struct BulkBalanceRequest {
     pub(crate) as_of: AsOfRequest,
-    pub(crate) accounts: Vec<BalanceAccountRequest>,
+    pub(crate) accounts: Vec<OnchainAccountRequest>,
     pub(crate) quote_currency: String,
     pub(crate) tokens: TokenSelectorRequest,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct BalanceAccountRequest {
-    pub(crate) network_slug: String,
-    pub(crate) address: String,
-    pub(crate) client_ref: Option<String>,
 }
 
 impl TryFrom<JsonObject> for SingleBalanceRequest {

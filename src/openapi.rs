@@ -9,14 +9,15 @@ use utoipa::{
     OpenApi,
 };
 
+use crate::adapters::http::dto::accounts::OnchainAccountRequest;
 use crate::adapters::http::dto::assets::token_selector::TokenSelectorRequest;
 use crate::adapters::http::dto::balances::{
     examples as balance_examples, BalanceAccountIdentityPayload, BalanceAccountPayload,
-    BalanceAccountRequest, BalanceAmountPayload, BalanceBlockPayload, BalanceErrorPayload,
-    BalanceEvidencePayload, BalancePositionPayload, BalanceQuotePayload, BalanceQuoteStatus,
-    BalanceResponseStatus, BalanceSelectorPayload, BalanceSkippedPayload, BalanceSummaryPayload,
-    BulkAsOfPayload, BulkBalanceRequest, BulkBalanceResponse, SingleAsOfPayload,
-    SingleBalanceRequest, SingleBalanceResponse,
+    BalanceAmountPayload, BalanceBlockPayload, BalanceErrorPayload, BalanceEvidencePayload,
+    BalancePositionPayload, BalanceQuotePayload, BalanceQuoteStatus, BalanceResponseStatus,
+    BalanceSelectorPayload, BalanceSkippedPayload, BalanceSummaryPayload, BulkAsOfPayload,
+    BulkBalanceRequest, BulkBalanceResponse, SingleAsOfPayload, SingleBalanceRequest,
+    SingleBalanceResponse,
 };
 use crate::adapters::http::dto::erc20_transfers::{
     examples as erc20_transfer_examples, Erc20TransferAccount, Erc20TransferAmount,
@@ -64,7 +65,7 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
     components(schemas(
         BalanceAccountIdentityPayload,
         BalanceAccountPayload,
-        BalanceAccountRequest,
+        OnchainAccountRequest,
         BalanceAmountPayload,
         AsOfRequest,
         TokenSelectorRequest,
@@ -121,7 +122,7 @@ struct BaseApiDoc;
     components(schemas(
         BalanceAccountIdentityPayload,
         BalanceAccountPayload,
-        BalanceAccountRequest,
+        OnchainAccountRequest,
         BalanceAmountPayload,
         AsOfRequest,
         TokenSelectorRequest,
@@ -781,7 +782,7 @@ mod tests {
             "SingleBalanceRequest",
             "BulkBalanceRequest",
             "AsOfRequest",
-            "BalanceAccountRequest",
+            "OnchainAccountRequest",
             "TokenSelectorRequest",
             "SingleBalanceResponse",
             "BulkBalanceResponse",
@@ -902,7 +903,7 @@ mod tests {
         );
         assert_schema_properties(
             schemas,
-            "BalanceAccountRequest",
+            "OnchainAccountRequest",
             &["address", "client_ref", "network_slug"],
         );
         assert_schema_properties(
