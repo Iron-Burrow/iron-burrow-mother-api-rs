@@ -4,8 +4,8 @@ use utoipa::ToSchema;
 use crate::adapters::http::dto::assets::token_selector::{validate_tokens, TokenSelectorRequest};
 use crate::adapters::http::dto::{
     accounts::{validate_account_object, OnchainAccountRequest},
-    filters::transfer_direction::{validate_direction, TransferDirectionDTO},
     onchain_time::onchain_window::{validate_window, OnchainWindowDTO},
+    transfers::transfer_direction::{validate_direction, TransferDirectionDTO},
 };
 use crate::adapters::http::error::ApiError;
 use crate::adapters::http::types::JsonObject;

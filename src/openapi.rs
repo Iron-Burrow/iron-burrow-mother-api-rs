@@ -26,11 +26,11 @@ use crate::adapters::http::dto::erc20_transfers::{
     response::Erc20TransferSearchLimits, response::Erc20TransferSearchResponse,
     response::Erc20TransferToken,
 };
-use crate::adapters::http::dto::filters::transfer_direction::TransferDirectionDTO;
 use crate::adapters::http::dto::onchain_time::as_of::AsOfRequest;
 use crate::adapters::http::dto::onchain_time::onchain_window::{
     BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO, TimestampWindowDTO,
 };
+use crate::adapters::http::dto::transfers::transfer_direction::TransferDirectionDTO;
 use crate::adapters::http::dto::{
     accounts::OnchainAccountRequest, erc20_transfers::requests::Erc20TransferSearchRequest,
 };

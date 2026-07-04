@@ -16,10 +16,10 @@ use crate::adapters::http::dto::{
             Erc20TransferSearchResponse, Erc20TransferToken,
         },
     },
-    filters::transfer_direction::TransferDirectionDTO,
     onchain_time::onchain_window::{
         BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO, TimestampWindowDTO,
     },
+    transfers::transfer_direction::TransferDirectionDTO,
 };
 use crate::adapters::http::json_body::parse_json_object_body;
 use crate::adapters::http::validation::ensure_json_content_type;

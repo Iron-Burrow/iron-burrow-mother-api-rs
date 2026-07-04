@@ -3,8 +3,8 @@ use utoipa::ToSchema;
 
 use crate::adapters::http::dto::accounts::OnchainAccountResponse;
 use crate::adapters::http::dto::assets::token_selector::TokenFilterResolutionDTO;
-use crate::adapters::http::dto::filters::transfer_direction::TransferDirectionDTO;
 use crate::adapters::http::dto::onchain_time::onchain_window::OnchainWindowDTO;
+use crate::adapters::http::dto::transfers::transfer_direction::TransferDirectionDTO;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 pub struct Erc20TransferSearchResponse {

@@ -16,8 +16,8 @@ use crate::{
                 Erc20TransferSearchResponse, Erc20TransferToken,
             },
         },
-        filters::transfer_direction::TransferDirectionDTO,
         onchain_time::onchain_window::{BlockWindowDTO, OnchainWindowDTO},
+        transfers::transfer_direction::TransferDirectionDTO,
     },
     test_utils::{
         fixtures::erc20_transfers::{
