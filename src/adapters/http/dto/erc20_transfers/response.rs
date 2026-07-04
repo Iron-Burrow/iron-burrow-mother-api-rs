@@ -7,7 +7,7 @@ use crate::adapters::http::dto::onchain_time::onchain_window::OnchainWindowDTO;
 use crate::adapters::http::dto::transfers::transfer_direction::TransferDirectionResponse;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub struct Erc20TransferSearchResponse {
+pub(crate) struct Erc20TransferSearchResponse {
     pub ok: bool,
     #[serde(rename = "type")]
     pub response_type: String,
@@ -20,7 +20,7 @@ pub struct Erc20TransferSearchResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub struct Erc20TransferRow {
+pub(crate) struct Erc20TransferRow {
     pub block_number: u64,
     pub tx_hash: String,
     pub log_index: u64,
@@ -32,13 +32,13 @@ pub struct Erc20TransferRow {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub struct Erc20TransferSearchLimits {
+pub(crate) struct Erc20TransferSearchLimits {
     pub max_rows: u64,
     pub truncated: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub struct Erc20TransferToken {
+pub(crate) struct Erc20TransferToken {
     pub contract_address: String,
     pub asset_slug: Option<String>,
     pub symbol: Option<String>,
@@ -46,7 +46,7 @@ pub struct Erc20TransferToken {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub struct Erc20TransferAmount {
+pub(crate) struct Erc20TransferAmount {
     pub raw: String,
     pub decimal: Option<String>,
 }

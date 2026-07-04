@@ -17,7 +17,8 @@ use crate::adapters::http::dto::{
         },
     },
     onchain_time::onchain_window::{
-        BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO, TimestampWindowDTO,
+        BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO,
+        OnchainWindowRequest, TimestampWindowDTO,
     },
     transfers::transfer_direction::{TransferDirectionRequest, TransferDirectionResponse},
 };
@@ -102,19 +103,18 @@ fn transfer_direction_from_dto(direction: TransferDirectionRequest) -> TransferD
     }
 }
 
-fn onchain_window_from_dto(window: OnchainWindowDTO) -> Result<OnchainWindow, ApiError> {
+fn onchain_window_from_dto(window: OnchainWindowRequest) -> Result<OnchainWindow, ApiError> {
     match window {
-        OnchainWindowDTO::Block(window) => Ok(OnchainWindow::Block(BlockWindow::new(
+        OnchainWindowRequest::Block(window) => Ok(OnchainWindow::Block(BlockWindow::new(
             window.from_block,
             window.to_block,
         )?)),
-        OnchainWindowDTO::Timestamp(window) => Ok(OnchainWindow::Timestamp(TimestampWindow::new(
-            window.from_timestamp,
-            window.to_timestamp,
-        )?)),
-        OnchainWindowDTO::Lookback(window) => Ok(OnchainWindow::Lookback(LookbackWindow::latest(
-            window.lookback_seconds,
-        )?)),
+        OnchainWindowRequest::Timestamp(window) => Ok(OnchainWindow::Timestamp(
+            TimestampWindow::new(window.from_timestamp, window.to_timestamp)?,
+        )),
+        OnchainWindowRequest::Lookback(window) => Ok(OnchainWindow::Lookback(
+            LookbackWindow::latest(window.lookback_seconds)?,
+        )),
     }
 }
 

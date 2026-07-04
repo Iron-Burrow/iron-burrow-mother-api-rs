@@ -6,7 +6,7 @@ use crate::adapters::http::dto::assets::token_selector::{
 };
 use crate::adapters::http::dto::{
     accounts::{validate_account_object, OnchainAccountRequest},
-    onchain_time::onchain_window::{validate_window, OnchainWindowDTO},
+    onchain_time::onchain_window::{validate_window, OnchainWindowRequest},
     transfers::transfer_direction::{validate_direction, TransferDirectionRequest},
 };
 use crate::adapters::http::error::ApiError;
@@ -18,11 +18,11 @@ const TOP_LEVEL_FIELDS: [&str; 4] = ["account", "direction", "tokens", "window"]
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct Erc20TransferSearchRequest {
+pub(crate) struct Erc20TransferSearchRequest {
     pub account: OnchainAccountRequest,
     pub direction: TransferDirectionRequest,
     pub tokens: Option<TokenSelectorRequest>,
-    pub window: OnchainWindowDTO,
+    pub window: OnchainWindowRequest,
 }
 
 impl TryFrom<&JsonObject> for Erc20TransferSearchRequest {

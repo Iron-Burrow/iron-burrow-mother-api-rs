@@ -20,6 +20,14 @@ const LOOKBACK_WINDOW_FIELDS: [&str; 2] = ["lookback_seconds", "to"];
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(untagged)]
+pub(crate) enum OnchainWindowRequest {
+    Block(BlockWindowDTO),
+    Timestamp(TimestampWindowDTO),
+    Lookback(LookbackWindowDTO),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(untagged)]
 pub(crate) enum OnchainWindowDTO {
     Block(BlockWindowDTO),
     Timestamp(TimestampWindowDTO),
@@ -53,7 +61,7 @@ pub enum LookbackTargetDTO {
     Latest,
 }
 
-pub(crate) fn validate_window(value: Option<&Value>) -> Result<OnchainWindowDTO, ApiError> {
+pub(crate) fn validate_window(value: Option<&Value>) -> Result<OnchainWindowRequest, ApiError> {
     let Some(Value::Object(window)) = value else {
         return Err(ApiError::invalid_window());
     };
@@ -95,7 +103,7 @@ fn reject_unknown_window_fields(window: &JsonObject) -> Result<(), ApiError> {
     Ok(())
 }
 
-fn validate_block_window(window: &JsonObject) -> Result<OnchainWindowDTO, ApiError> {
+fn validate_block_window(window: &JsonObject) -> Result<OnchainWindowRequest, ApiError> {
     if window.len() != 2 {
         return Err(ApiError::invalid_window());
     }
@@ -111,13 +119,13 @@ fn validate_block_window(window: &JsonObject) -> Result<OnchainWindowDTO, ApiErr
         return Err(ApiError::invalid_window());
     }
 
-    Ok(OnchainWindowDTO::Block(BlockWindowDTO {
+    Ok(OnchainWindowRequest::Block(BlockWindowDTO {
         from_block,
         to_block,
     }))
 }
 
-fn validate_timestamp_window(window: &JsonObject) -> Result<OnchainWindowDTO, ApiError> {
+fn validate_timestamp_window(window: &JsonObject) -> Result<OnchainWindowRequest, ApiError> {
     if window.len() != 2 {
         return Err(ApiError::invalid_window());
     }
@@ -139,13 +147,13 @@ fn validate_timestamp_window(window: &JsonObject) -> Result<OnchainWindowDTO, Ap
         return Err(ApiError::invalid_window());
     }
 
-    Ok(OnchainWindowDTO::Timestamp(TimestampWindowDTO {
+    Ok(OnchainWindowRequest::Timestamp(TimestampWindowDTO {
         from_timestamp: from_timestamp.to_string(),
         to_timestamp: to_timestamp.to_string(),
     }))
 }
 
-fn validate_lookback_window(window: &JsonObject) -> Result<OnchainWindowDTO, ApiError> {
+fn validate_lookback_window(window: &JsonObject) -> Result<OnchainWindowRequest, ApiError> {
     if window.len() != LOOKBACK_WINDOW_FIELDS.len() {
         return Err(ApiError::invalid_window());
     }
@@ -161,7 +169,7 @@ fn validate_lookback_window(window: &JsonObject) -> Result<OnchainWindowDTO, Api
         return Err(ApiError::invalid_window());
     }
 
-    Ok(OnchainWindowDTO::Lookback(LookbackWindowDTO {
+    Ok(OnchainWindowRequest::Lookback(LookbackWindowDTO {
         lookback_seconds,
         to: LookbackTargetDTO::Latest,
     }))
