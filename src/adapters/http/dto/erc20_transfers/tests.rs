@@ -3,12 +3,16 @@ use serde_json::{json, Value};
 
 use super::*;
 use crate::{
-    adapters::http::dto::filters::{
-        onchain_window::{BlockWindowDTO, OnchainWindowDTO},
-        token_filters::{
-            ResolvedTokenFilterDTO, TokenFilterDTO, TokenFilterResolutionDTO, TokenFilterSourceDTO,
+    adapters::http::dto::{
+        erc20_transfers::requests::Erc20TransferSearchRequest,
+        filters::{
+            onchain_window::{BlockWindowDTO, OnchainWindowDTO},
+            token_filters::{
+                ResolvedTokenFilterDTO, TokenFilterDTO, TokenFilterResolutionDTO,
+                TokenFilterSourceDTO,
+            },
+            transfer_direction::TransferDirectionDTO,
         },
-        transfer_direction::TransferDirectionDTO,
     },
     test_utils::{
         fixtures::erc20_transfers::{
@@ -22,7 +26,7 @@ use crate::{
 #[test]
 fn request_serialization_snapshot_matches_public_shape() {
     let request = Erc20TransferSearchRequest {
-        account: Erc20TransferAccount {
+        account: OnchainAccountRequest {
             network_slug: "eth-mainnet".to_string(),
             address: "0xabc0000000000000000000000000000000000000".to_string(),
             client_ref: Some("treasury-main".to_string()),
@@ -69,7 +73,7 @@ fn response_serialization_snapshot_matches_public_shape() {
     let response = Erc20TransferSearchResponse {
         ok: true,
         response_type: "erc20_transfer_search".to_string(),
-        account: Erc20TransferAccount {
+        account: OnchainAccountResponse {
             network_slug: "eth-mainnet".to_string(),
             address: "0xabc0000000000000000000000000000000000000".to_string(),
             client_ref: Some("treasury-main".to_string()),

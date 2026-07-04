@@ -4,9 +4,10 @@ use axum::{body::Bytes, extract::State, http::HeaderMap, Json};
 use tracing::warn;
 
 use crate::adapters::http::dto::{
+    accounts::OnchainAccountResponse,
     erc20_transfers::{
-        Erc20TransferAccount, Erc20TransferAmount, Erc20TransferRow, Erc20TransferSearchLimits,
-        Erc20TransferSearchRequest, Erc20TransferSearchResponse, Erc20TransferToken,
+        requests::Erc20TransferSearchRequest, Erc20TransferAmount, Erc20TransferRow,
+        Erc20TransferSearchLimits, Erc20TransferSearchResponse, Erc20TransferToken,
     },
     filters::{
         onchain_window::{
@@ -134,7 +135,7 @@ fn erc20_transfer_search_response_from_result(
     Erc20TransferSearchResponse {
         ok: true,
         response_type: "erc20_transfer_search".to_string(),
-        account: Erc20TransferAccount {
+        account: OnchainAccountResponse {
             network_slug: request.network_slug,
             address: request.address.clone(),
             client_ref,

@@ -11,8 +11,8 @@ use crate::domain::assets::token_selector::TokenSelector;
 use crate::{
     adapters::http::{
         dto::balances::{
-            BalanceResponseAssembler, BalanceResponseAssemblerError, BulkBalanceRequest,
-            BulkBalanceResponse, SingleBalanceRequest, SingleBalanceResponse,
+            requests::BulkBalanceRequest, requests::SingleBalanceRequest, BalanceResponseAssembler,
+            BalanceResponseAssemblerError, BulkBalanceResponse, SingleBalanceResponse,
         },
         error::ApiError,
         json_body::parse_json_object_body,

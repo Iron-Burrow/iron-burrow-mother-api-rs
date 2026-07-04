@@ -2,46 +2,26 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 pub(crate) mod examples;
+pub(crate) mod requests;
 
-use super::filters::onchain_window::{validate_window, OnchainWindowDTO};
-use super::filters::transfer_direction::validate_direction;
-use crate::adapters::http::dto::filters::token_filters::{
-    validate_tokens, TokenFilterDTO, TokenFilterResolutionDTO,
-};
+use super::filters::onchain_window::OnchainWindowDTO;
+use crate::adapters::http::dto::accounts::{OnchainAccountRequest, OnchainAccountResponse};
+use crate::adapters::http::dto::filters::token_filters::TokenFilterResolutionDTO;
 use crate::adapters::http::dto::filters::transfer_direction::TransferDirectionDTO;
 use crate::adapters::http::error::ApiError;
-use crate::adapters::http::types::JsonObject;
 use crate::adapters::http::validation::{
     reject_unknown_fields, validate_address, validate_network_slug,
 };
 
 const SUPPORTED_NETWORKS_SLUG: [&str; 1] = ["eth-mainnet"];
-const TOP_LEVEL_FIELDS: [&str; 4] = ["account", "direction", "tokens", "window"];
 const ACCOUNT_FIELDS: [&str; 3] = ["network_slug", "address", "client_ref"];
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Erc20TransferSearchRequest {
-    pub account: Erc20TransferAccount,
-    pub direction: TransferDirectionDTO,
-    pub tokens: Option<TokenFilterDTO>,
-    pub window: OnchainWindowDTO,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Erc20TransferAccount {
-    pub network_slug: String,
-    pub address: String,
-    pub client_ref: Option<String>,
-}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 pub struct Erc20TransferSearchResponse {
     pub ok: bool,
     #[serde(rename = "type")]
     pub response_type: String,
-    pub account: Erc20TransferAccount,
+    pub account: OnchainAccountResponse,
     pub direction: TransferDirectionDTO,
     pub window: OnchainWindowDTO,
     pub token_filters: TokenFilterResolutionDTO,
@@ -81,30 +61,14 @@ pub struct Erc20TransferAmount {
     pub decimal: Option<String>,
 }
 
-impl TryFrom<&JsonObject> for Erc20TransferSearchRequest {
-    type Error = ApiError;
-
-    fn try_from(request: &JsonObject) -> Result<Self, Self::Error> {
-        reject_unknown_fields(request, &TOP_LEVEL_FIELDS)?;
-        let account = validate_account(request.get("account"))?;
-
-        Ok(Self {
-            account,
-            direction: validate_direction(request.get("direction"))?,
-            tokens: validate_tokens(request.get("tokens"))?,
-            window: validate_window(request.get("window"))?,
-        })
-    }
-}
-
-fn validate_account(value: Option<&serde_json::Value>) -> Result<Erc20TransferAccount, ApiError> {
+fn validate_account(value: Option<&serde_json::Value>) -> Result<OnchainAccountRequest, ApiError> {
     let Some(serde_json::Value::Object(account)) = value else {
         return Err(ApiError::missing_network_slug());
     };
 
     reject_unknown_fields(account, &ACCOUNT_FIELDS)?;
 
-    Ok(Erc20TransferAccount {
+    Ok(OnchainAccountRequest {
         network_slug: validate_network_slug(account.get("network_slug"), &SUPPORTED_NETWORKS_SLUG)?,
         address: validate_address(account.get("address"))?,
         client_ref: match account.get("client_ref") {
