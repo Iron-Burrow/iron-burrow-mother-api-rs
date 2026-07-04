@@ -4,6 +4,10 @@ use serde_json::{json, Value};
 use crate::{
     adapters::http::dto::{
         accounts::{OnchainAccountRequest, OnchainAccountResponse},
+        assets::token_selector::{
+            ResolvedTokenSelectorRequest, TokenFilterResolutionDTO, TokenFilterSourceDTO,
+            TokenSelectorRequest,
+        },
         erc20_transfers::{
             examples,
             requests::Erc20TransferSearchRequest,
@@ -12,13 +16,7 @@ use crate::{
                 Erc20TransferSearchResponse, Erc20TransferToken,
             },
         },
-        filters::{
-            token_filters::{
-                ResolvedTokenFilterDTO, TokenFilterDTO, TokenFilterResolutionDTO,
-                TokenFilterSourceDTO,
-            },
-            transfer_direction::TransferDirectionDTO,
-        },
+        filters::transfer_direction::TransferDirectionDTO,
         onchain_time::onchain_window::{BlockWindowDTO, OnchainWindowDTO},
     },
     test_utils::{
@@ -39,7 +37,7 @@ fn request_serialization_snapshot_matches_public_shape() {
             client_ref: Some("treasury-main".to_string()),
         },
         direction: TransferDirectionDTO::Any,
-        tokens: Some(TokenFilterDTO {
+        tokens: Some(TokenSelectorRequest {
             asset_slugs: vec!["usdc".to_string(), "usdt".to_string()],
             contract_addresses: vec!["0x1111111111111111111111111111111111111111".to_string()],
         }),
@@ -91,19 +89,19 @@ fn response_serialization_snapshot_matches_public_shape() {
             to_block: 18_600_500,
         }),
         token_filters: TokenFilterResolutionDTO {
-            requested: TokenFilterDTO {
+            requested: TokenSelectorRequest {
                 asset_slugs: vec!["usdc".to_string(), "usdt".to_string()],
                 contract_addresses: vec!["0x1111111111111111111111111111111111111111".to_string()],
             },
             resolved_contract_addresses: vec![
-                ResolvedTokenFilterDTO {
+                ResolvedTokenSelectorRequest {
                     contract_address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
                     asset_slug: Some("usdc".to_string()),
                     symbol: Some("USDC".to_string()),
                     decimals: Some(6),
                     source: TokenFilterSourceDTO::AssetSlug,
                 },
-                ResolvedTokenFilterDTO {
+                ResolvedTokenSelectorRequest {
                     contract_address: "0x1111111111111111111111111111111111111111".to_string(),
                     asset_slug: None,
                     symbol: None,
@@ -344,7 +342,7 @@ fn validation_accepts_omitted_null_and_empty_tokens() {
             .unwrap();
     assert_eq!(
         omitted_tokens.tokens.unwrap_or_default(),
-        TokenFilterDTO::default()
+        TokenSelectorRequest::default()
     );
 
     let mut null_tokens_body = valid_erc20_transfers_request_body();
@@ -352,7 +350,7 @@ fn validation_accepts_omitted_null_and_empty_tokens() {
     let null_tokens = Erc20TransferSearchRequest::try_from(&json_object(null_tokens_body)).unwrap();
     assert_eq!(
         null_tokens.tokens.unwrap_or_default(),
-        TokenFilterDTO::default()
+        TokenSelectorRequest::default()
     );
 
     let mut empty_tokens_body = valid_erc20_transfers_request_body();
@@ -361,7 +359,7 @@ fn validation_accepts_omitted_null_and_empty_tokens() {
         Erc20TransferSearchRequest::try_from(&json_object(empty_tokens_body)).unwrap();
     assert_eq!(
         empty_tokens.tokens.unwrap_or_default(),
-        TokenFilterDTO::default()
+        TokenSelectorRequest::default()
     );
 }
 
@@ -383,13 +381,13 @@ fn validation_accepts_minimal_asset_contract_and_mixed_token_filter_shapes() {
     let cases = [
         (
             erc20_transfers_without_tokens_body(),
-            TokenFilterDTO::default(),
+            TokenSelectorRequest::default(),
         ),
         (
             erc20_transfers_request_with_tokens_body(json!({
                 "asset_slugs": ["usdc", "wrapped-ether"]
             })),
-            TokenFilterDTO {
+            TokenSelectorRequest {
                 asset_slugs: vec!["usdc".to_string(), "wrapped-ether".to_string()],
                 contract_addresses: Vec::new(),
             },
@@ -401,7 +399,7 @@ fn validation_accepts_minimal_asset_contract_and_mixed_token_filter_shapes() {
                     "0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
                 ]
             })),
-            TokenFilterDTO {
+            TokenSelectorRequest {
                 asset_slugs: Vec::new(),
                 contract_addresses: vec![
                     "0x1111111111111111111111111111111111111111".to_string(),
@@ -411,7 +409,7 @@ fn validation_accepts_minimal_asset_contract_and_mixed_token_filter_shapes() {
         ),
         (
             valid_erc20_transfers_request_body(),
-            TokenFilterDTO {
+            TokenSelectorRequest {
                 asset_slugs: vec!["usdc".to_string()],
                 contract_addresses: vec!["0x1111111111111111111111111111111111111111".to_string()],
             },

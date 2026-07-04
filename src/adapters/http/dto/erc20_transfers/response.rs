@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::adapters::http::dto::accounts::OnchainAccountResponse;
-use crate::adapters::http::dto::filters::token_filters::TokenFilterResolutionDTO;
+use crate::adapters::http::dto::assets::token_selector::TokenFilterResolutionDTO;
 use crate::adapters::http::dto::filters::transfer_direction::TransferDirectionDTO;
 use crate::adapters::http::dto::onchain_time::onchain_window::OnchainWindowDTO;
 

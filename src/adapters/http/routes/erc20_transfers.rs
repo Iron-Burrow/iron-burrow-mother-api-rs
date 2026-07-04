@@ -5,17 +5,18 @@ use tracing::warn;
 
 use crate::adapters::http::dto::{
     accounts::OnchainAccountResponse,
+    assets::token_selector::{
+        ResolvedTokenSelectorRequest, TokenFilterResolutionDTO, TokenFilterSourceDTO,
+        TokenSelectorRequest,
+    },
     erc20_transfers::{
-        requests::Erc20TransferSearchRequest, response::Erc20TransferAmount,
-        response::Erc20TransferRow, response::Erc20TransferSearchLimits,
-        response::Erc20TransferSearchResponse, response::Erc20TransferToken,
-    },
-    filters::{
-        token_filters::{
-            ResolvedTokenFilterDTO, TokenFilterDTO, TokenFilterResolutionDTO, TokenFilterSourceDTO,
+        requests::Erc20TransferSearchRequest,
+        response::{
+            Erc20TransferAmount, Erc20TransferRow, Erc20TransferSearchLimits,
+            Erc20TransferSearchResponse, Erc20TransferToken,
         },
-        transfer_direction::TransferDirectionDTO,
     },
+    filters::transfer_direction::TransferDirectionDTO,
     onchain_time::onchain_window::{
         BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO, TimestampWindowDTO,
     },
@@ -85,7 +86,7 @@ pub(crate) fn erc20_transfer_search_input_from_request(
 }
 
 fn transfer_search_token_filters_from_dto(
-    tokens: TokenFilterDTO,
+    tokens: TokenSelectorRequest,
 ) -> Erc20TransferSearchTokenFilters {
     Erc20TransferSearchTokenFilters {
         asset_slugs: tokens.asset_slugs,
@@ -143,7 +144,7 @@ fn erc20_transfer_search_response_from_result(
         direction: transfer_direction_to_dto(request.direction),
         window: onchain_window_to_dto(&request.window),
         token_filters: TokenFilterResolutionDTO {
-            requested: TokenFilterDTO {
+            requested: TokenSelectorRequest {
                 asset_slugs: plan.requested_token_filters.asset_slugs,
                 contract_addresses: plan.requested_token_filters.contract_addresses,
             },
@@ -167,8 +168,8 @@ fn erc20_transfer_search_response_from_result(
 
 fn resolved_token_filter_to_dto(
     token_filter: ResolvedErc20TransferTokenFilter,
-) -> ResolvedTokenFilterDTO {
-    ResolvedTokenFilterDTO {
+) -> ResolvedTokenSelectorRequest {
+    ResolvedTokenSelectorRequest {
         contract_address: token_filter.contract_address,
         asset_slug: token_filter.asset_slug,
         symbol: token_filter.symbol,

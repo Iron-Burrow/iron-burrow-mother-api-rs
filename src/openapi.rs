@@ -9,7 +9,10 @@ use utoipa::{
     OpenApi,
 };
 
-use crate::adapters::http::dto::assets::token_selector::TokenSelectorRequest;
+use crate::adapters::http::dto::assets::token_selector::{
+    ResolvedTokenSelectorRequest, TokenFilterResolutionDTO, TokenFilterSourceDTO,
+    TokenSelectorRequest,
+};
 use crate::adapters::http::dto::balances::{
     examples as balance_examples, requests::BulkBalanceRequest, requests::SingleBalanceRequest,
     BalanceAccountIdentityPayload, BalanceAccountPayload, BalanceAmountPayload,
@@ -22,9 +25,6 @@ use crate::adapters::http::dto::erc20_transfers::{
     examples as erc20_transfer_examples, response::Erc20TransferAmount, response::Erc20TransferRow,
     response::Erc20TransferSearchLimits, response::Erc20TransferSearchResponse,
     response::Erc20TransferToken,
-};
-use crate::adapters::http::dto::filters::token_filters::{
-    ResolvedTokenFilterDTO, TokenFilterDTO, TokenFilterResolutionDTO, TokenFilterSourceDTO,
 };
 use crate::adapters::http::dto::filters::transfer_direction::TransferDirectionDTO;
 use crate::adapters::http::dto::onchain_time::as_of::AsOfRequest;
@@ -98,10 +98,9 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
         Erc20TransferToken,
         TokenFilterResolutionDTO,
         TokenFilterSourceDTO,
-        TokenFilterDTO,
         ErrorBody,
         ErrorResponse,
-        ResolvedTokenFilterDTO,
+        ResolvedTokenSelectorRequest,
         SingleAsOfPayload,
         SingleBalanceRequest,
         SingleBalanceResponse
@@ -154,10 +153,9 @@ struct BaseApiDoc;
         Erc20TransferToken,
         TokenFilterResolutionDTO,
         TokenFilterSourceDTO,
-        TokenFilterDTO,
         ErrorBody,
         ErrorResponse,
-        ResolvedTokenFilterDTO,
+        ResolvedTokenSelectorRequest,
         SingleAsOfPayload,
         SingleBalanceRequest,
         SingleBalanceResponse
@@ -1169,8 +1167,8 @@ mod tests {
             "Erc20TransferSearchResponse",
             "OnchainAccountRequest",
             "OnchainWindowDTO",
-            "TokenFilterDTO",
-            "ResolvedTokenFilterDTO",
+            "TokenSelectorRequest",
+            "ResolvedTokenSelectorRequest",
             "Erc20TransferRow",
             "Erc20TransferToken",
             "Erc20TransferAmount",

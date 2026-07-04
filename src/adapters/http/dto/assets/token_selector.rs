@@ -42,3 +42,42 @@ pub(crate) fn validate_tokens_object(
         contract_addresses,
     })
 }
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+pub struct TokenFilterResolutionDTO {
+    pub requested: TokenSelectorRequest,
+    pub resolved_contract_addresses: Vec<ResolvedTokenSelectorRequest>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+pub(crate) struct ResolvedTokenSelectorRequest {
+    pub contract_address: String,
+    pub asset_slug: Option<String>,
+    pub symbol: Option<String>,
+    pub decimals: Option<u8>,
+    pub source: TokenFilterSourceDTO,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum TokenFilterSourceDTO {
+    AssetSlug,
+    ContractAddress,
+}
+
+pub(crate) fn validate_tokens(
+    value: Option<&Value>,
+) -> Result<Option<TokenSelectorRequest>, ApiError> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Object(tokens)) => {
+            reject_unknown_fields(tokens, &TOKEN_FIELDS)?;
+
+            Ok(Some(TokenSelectorRequest {
+                asset_slugs: validate_asset_slugs(tokens.get("asset_slugs"))?,
+                contract_addresses: validate_contract_addresses(tokens.get("contract_addresses"))?,
+            }))
+        }
+        Some(_) => Err(ApiError::invalid_json()),
+    }
+}

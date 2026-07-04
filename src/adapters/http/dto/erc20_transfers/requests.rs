@@ -1,13 +1,10 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::adapters::http::dto::filters::token_filters::validate_tokens;
+use crate::adapters::http::dto::assets::token_selector::{validate_tokens, TokenSelectorRequest};
 use crate::adapters::http::dto::{
     accounts::{validate_account_object, OnchainAccountRequest},
-    filters::{
-        token_filters::TokenFilterDTO,
-        transfer_direction::{validate_direction, TransferDirectionDTO},
-    },
+    filters::transfer_direction::{validate_direction, TransferDirectionDTO},
     onchain_time::onchain_window::{validate_window, OnchainWindowDTO},
 };
 use crate::adapters::http::error::ApiError;
@@ -22,7 +19,7 @@ const TOP_LEVEL_FIELDS: [&str; 4] = ["account", "direction", "tokens", "window"]
 pub struct Erc20TransferSearchRequest {
     pub account: OnchainAccountRequest,
     pub direction: TransferDirectionDTO,
-    pub tokens: Option<TokenFilterDTO>,
+    pub tokens: Option<TokenSelectorRequest>,
     pub window: OnchainWindowDTO,
 }
 
