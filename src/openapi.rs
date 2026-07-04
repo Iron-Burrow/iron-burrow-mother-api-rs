@@ -19,8 +19,9 @@ use crate::adapters::http::dto::balances::{
     SingleAsOfPayload, SingleBalanceResponse,
 };
 use crate::adapters::http::dto::erc20_transfers::{
-    examples as erc20_transfer_examples, Erc20TransferAmount, Erc20TransferRow,
-    Erc20TransferSearchLimits, Erc20TransferSearchResponse, Erc20TransferToken,
+    examples as erc20_transfer_examples, response::Erc20TransferAmount, response::Erc20TransferRow,
+    response::Erc20TransferSearchLimits, response::Erc20TransferSearchResponse,
+    response::Erc20TransferToken,
 };
 use crate::adapters::http::dto::filters::onchain_window::{
     BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO, TimestampWindowDTO,

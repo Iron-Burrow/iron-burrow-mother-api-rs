@@ -3,8 +3,7 @@ use utoipa::ToSchema;
 
 use crate::adapters::http::dto::filters::token_filters::validate_tokens;
 use crate::adapters::http::dto::{
-    accounts::OnchainAccountRequest,
-    erc20_transfers::validate_account,
+    accounts::{validate_account_object, OnchainAccountRequest},
     filters::{
         onchain_window::{validate_window, OnchainWindowDTO},
         token_filters::TokenFilterDTO,
@@ -15,6 +14,7 @@ use crate::adapters::http::error::ApiError;
 use crate::adapters::http::types::JsonObject;
 use crate::adapters::http::validation::reject_unknown_fields;
 
+const SUPPORTED_ERC20_TRANSFER_NETWORK_SLUGS: [&str; 1] = ["eth-mainnet"];
 const TOP_LEVEL_FIELDS: [&str; 4] = ["account", "direction", "tokens", "window"];
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
@@ -31,7 +31,10 @@ impl TryFrom<&JsonObject> for Erc20TransferSearchRequest {
 
     fn try_from(request: &JsonObject) -> Result<Self, Self::Error> {
         reject_unknown_fields(request, &TOP_LEVEL_FIELDS)?;
-        let account = validate_account(request.get("account"))?;
+        let account = validate_account_object(
+            request.get("account"),
+            &SUPPORTED_ERC20_TRANSFER_NETWORK_SLUGS,
+        )?;
 
         Ok(Self {
             account,

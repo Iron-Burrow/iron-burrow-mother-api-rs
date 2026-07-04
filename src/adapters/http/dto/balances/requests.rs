@@ -15,6 +15,7 @@ use crate::adapters::http::{
 };
 
 const RESERVED_NETWORK_ALIAS_FIELDS: [&str; 3] = ["chain", "chain_id", "chain_slug"];
+const SUPPORTED_BALANCE_NETWORK_SLUGS: [&str; 2] = ["eth-mainnet", "base-mainnet"];
 const SINGLE_BALANCE_FIELDS: [&str; 4] = ["as_of", "account", "quote_currency", "tokens"];
 const BULK_BALANCE_FIELDS: [&str; 4] = ["as_of", "accounts", "quote_currency", "tokens"];
 
@@ -45,7 +46,10 @@ impl TryFrom<JsonObject> for SingleBalanceRequest {
 
         Ok(Self {
             as_of: validate_as_of_object(request.get("as_of"))?,
-            account: validate_account_object(request.get("account"))?,
+            account: validate_account_object(
+                request.get("account"),
+                &SUPPORTED_BALANCE_NETWORK_SLUGS,
+            )?,
             quote_currency: validate_required_string(request.get("quote_currency"))?,
             tokens: validate_tokens_object(request.get("tokens"))?,
         })
@@ -61,7 +65,10 @@ impl TryFrom<JsonObject> for BulkBalanceRequest {
 
         Ok(Self {
             as_of: validate_as_of_object(request.get("as_of"))?,
-            accounts: validate_account_array(request.get("accounts"))?,
+            accounts: validate_account_array(
+                request.get("accounts"),
+                &SUPPORTED_BALANCE_NETWORK_SLUGS,
+            )?,
             quote_currency: validate_required_string(request.get("quote_currency"))?,
             tokens: validate_tokens_object(request.get("tokens"))?,
         })

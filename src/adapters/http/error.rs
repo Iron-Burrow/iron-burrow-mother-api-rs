@@ -116,15 +116,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "unsupported_network",
-            message: "Network is not supported for balance resolution.".to_string(),
-        }
-    }
-
-    pub fn transfer_unsupported_network() -> Self {
-        Self {
-            status: StatusCode::NOT_FOUND,
-            code: "unsupported_network",
-            message: "Network is not supported for ERC-20 transfer search.".to_string(),
+            message: "Network is not supported.".to_string(),
         }
     }
 
@@ -480,10 +472,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn transfer_unsupported_network_uses_not_found_status() {
-        let response = ApiError::transfer_unsupported_network().into_response();
+    async fn unsupported_network_uses_bad_request_status() {
+        let response = ApiError::unsupported_network().into_response();
 
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[test]

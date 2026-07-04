@@ -1,10 +1,17 @@
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use super::*;
 use crate::{
     adapters::http::dto::{
-        erc20_transfers::requests::Erc20TransferSearchRequest,
+        accounts::{OnchainAccountRequest, OnchainAccountResponse},
+        erc20_transfers::{
+            examples,
+            requests::Erc20TransferSearchRequest,
+            response::{
+                Erc20TransferAmount, Erc20TransferRow, Erc20TransferSearchLimits,
+                Erc20TransferSearchResponse, Erc20TransferToken,
+            },
+        },
         filters::{
             onchain_window::{BlockWindowDTO, OnchainWindowDTO},
             token_filters::{

@@ -6,8 +6,9 @@ use tracing::warn;
 use crate::adapters::http::dto::{
     accounts::OnchainAccountResponse,
     erc20_transfers::{
-        requests::Erc20TransferSearchRequest, Erc20TransferAmount, Erc20TransferRow,
-        Erc20TransferSearchLimits, Erc20TransferSearchResponse, Erc20TransferToken,
+        requests::Erc20TransferSearchRequest, response::Erc20TransferAmount,
+        response::Erc20TransferRow, response::Erc20TransferSearchLimits,
+        response::Erc20TransferSearchResponse, response::Erc20TransferToken,
     },
     filters::{
         onchain_window::{

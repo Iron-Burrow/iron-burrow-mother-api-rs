@@ -368,7 +368,7 @@ mod tests {
             1,
             json!({"kind": "native"}),
             &[(
-                "0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD",
+                "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
                 "1000000000000000000",
             )],
         )) else {
@@ -399,7 +399,7 @@ mod tests {
         assert_eq!(response["quote_currency"], "MXN");
         assert_eq!(
             response["account"]["address"],
-            "0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD"
+            "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
         );
         assert_eq!(response["account"]["client_ref"], "primary");
         assert_eq!(response["evidence"]["network_slug"], "eth-mainnet");
@@ -427,7 +427,7 @@ mod tests {
             json!({
                 "network_slug": "eth-mainnet",
                 "accounts": [{
-                    "address": "0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD"
+                "address": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
                 }],
                 "targets": [{"kind": "native"}]
             })
@@ -663,11 +663,6 @@ mod tests {
             (
                 Some("application/json"),
                 br#"{"as_of":{"kind":"latest"}"#.as_slice(),
-            ),
-            (
-                Some("application/json"),
-                br#"{"as_of":{"kind":"latest"},"account":{},"quote_currency":"USD","tokens":{"asset_slugs":["ethereum"],"contract_addresses":[]}}"#
-                    .as_slice(),
             ),
             (
                 Some("application/json"),
@@ -962,13 +957,24 @@ mod tests {
                 json!({
                     "as_of": {"kind": "latest"},
                     "accounts": [{
+                        "address": "0x1111111111111111111111111111111111111111"
+                    }],
+                    "quote_currency": "USD",
+                    "tokens": valid_tokens.clone()
+                }),
+                "missing_network_slug",
+            ),
+            (
+                json!({
+                    "as_of": {"kind": "latest"},
+                    "accounts": [{
                         "network_slug": "eth-mainnet",
                         "address": "0x1234"
                     }],
                     "quote_currency": "USD",
                     "tokens": valid_tokens.clone()
                 }),
-                "invalid_account",
+                "invalid_address",
             ),
             (
                 json!({
@@ -1135,6 +1141,7 @@ mod tests {
     #[tokio::test]
     async fn provider_unavailability_remains_a_sanitized_item_level_200() {
         let address = "0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD";
+        let normalized_address = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd";
         let (status, response) = post_json(
             balance_app(None, None),
             "/v1/balances",
@@ -1144,7 +1151,7 @@ mod tests {
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(response["status"], "failed");
-        assert_eq!(response["account"]["address"], address);
+        assert_eq!(response["account"]["address"], normalized_address);
         assert_eq!(response["evidence"], Value::Null);
         assert_eq!(
             response["errors"][0]["code"],
