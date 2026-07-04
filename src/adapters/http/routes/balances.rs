@@ -4,6 +4,7 @@ use axum::{body::Bytes, extract::State, http::HeaderMap, Json};
 use tracing::warn;
 
 use crate::domain::accounts::OnchainAccount;
+use crate::domain::assets::token_selector::TokenSelector;
 use crate::{
     adapters::http::{
         dto::balances::{
@@ -18,10 +19,7 @@ use crate::{
     application::balances::{
         catalog::CatalogBalanceTargetResolver,
         quote::PriceQuoteClient,
-        service::{
-            BalanceSnapshotRequest, BalanceSnapshotService, BalanceSnapshotServiceError,
-            BalanceSnapshotTokens,
-        },
+        service::{BalanceSnapshotRequest, BalanceSnapshotService, BalanceSnapshotServiceError},
     },
     domain::assets::balance_catalog::CatalogResolverError,
     state::AppState,
@@ -161,7 +159,7 @@ fn validate_request(
                 client_ref: account.client_ref,
             })
             .collect(),
-        tokens: BalanceSnapshotTokens {
+        tokens: TokenSelector {
             asset_slugs: tokens.asset_slugs,
             contract_addresses,
         },

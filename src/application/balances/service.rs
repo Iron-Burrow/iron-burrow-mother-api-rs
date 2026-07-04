@@ -16,6 +16,7 @@ use crate::domain::accounts::OnchainAccount;
 use crate::domain::assets::balance_catalog::{
     BalanceTarget, BalanceTargetKind, CatalogResolverError,
 };
+use crate::domain::assets::token_selector::TokenSelector;
 
 use super::{
     catalog::{
@@ -172,20 +173,8 @@ impl BalanceSnapshotService {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BalanceSnapshotRequest {
     pub accounts: Vec<OnchainAccount>,
-    pub tokens: BalanceSnapshotTokens,
+    pub tokens: TokenSelector,
     pub quote_currency: String,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct BalanceSnapshotTokens {
-    pub asset_slugs: Vec<String>,
-    pub contract_addresses: Vec<String>,
-}
-
-impl BalanceSnapshotTokens {
-    pub fn len(&self) -> usize {
-        self.asset_slugs.len() + self.contract_addresses.len()
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -476,7 +465,7 @@ fn group_accounts(accounts: &[OnchainAccount]) -> Vec<GroupedAccounts> {
 
 fn plan_network_group(
     group: GroupedAccounts,
-    requested_tokens: &BalanceSnapshotTokens,
+    requested_tokens: &TokenSelector,
     network_resolution: Option<BalanceNetworkResolution>,
     asset_resolutions: Vec<BalanceTargetResolution>,
     contract_resolutions: Vec<ContractBalanceTargetResolution>,

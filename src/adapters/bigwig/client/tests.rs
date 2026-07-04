@@ -1,11 +1,12 @@
 use crate::domain::accounts::OnchainAccount;
+use crate::domain::assets::token_selector::TokenSelector;
 use crate::{
     application::balances::{
         catalog::CatalogBalanceTargetResolver,
         quote::PriceQuoteClient,
         service::{
             BalanceItemErrorCode, BalanceItemOutcome, BalanceSnapshotRequest,
-            BalanceSnapshotService, BalanceSnapshotTokens,
+            BalanceSnapshotService,
         },
     },
     test_utils::constants::INFRA_GATEWAY_URL,
@@ -37,7 +38,7 @@ async fn malformed_success_body_becomes_internal_item_failure() {
     let result = service(Some(bigwig_client(&base_url)))
         .resolve_latest(BalanceSnapshotRequest {
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
-            tokens: BalanceSnapshotTokens {
+            tokens: TokenSelector {
                 asset_slugs: vec!["usdc".to_string()],
                 contract_addresses: Vec::new(),
             },

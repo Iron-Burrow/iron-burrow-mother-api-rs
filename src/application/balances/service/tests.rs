@@ -304,15 +304,15 @@ fn account(network_slug: &str, address: &str, client_ref: Option<&str>) -> Oncha
     }
 }
 
-fn token_slugs<const N: usize>(asset_slugs: [&str; N]) -> BalanceSnapshotTokens {
-    BalanceSnapshotTokens {
+fn token_slugs<const N: usize>(asset_slugs: [&str; N]) -> TokenSelector {
+    TokenSelector {
         asset_slugs: asset_slugs.into_iter().map(str::to_string).collect(),
         contract_addresses: Vec::new(),
     }
 }
 
-fn mixed_tokens(asset_slugs: &[&str], contract_addresses: &[&str]) -> BalanceSnapshotTokens {
-    BalanceSnapshotTokens {
+fn mixed_tokens(asset_slugs: &[&str], contract_addresses: &[&str]) -> TokenSelector {
+    TokenSelector {
         asset_slugs: asset_slugs
             .iter()
             .map(|asset_slug| (*asset_slug).to_string())
@@ -540,7 +540,7 @@ fn plan_asset_group(
     asset_slugs: Vec<String>,
     resolutions: Vec<BalanceTargetResolution>,
 ) -> Result<NetworkGroupPlan, BalanceSnapshotServiceError> {
-    let tokens = BalanceSnapshotTokens {
+    let tokens = TokenSelector {
         asset_slugs,
         contract_addresses: Vec::new(),
     };
