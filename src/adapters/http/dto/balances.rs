@@ -3,6 +3,7 @@ use serde_json::Value;
 use utoipa::ToSchema;
 
 use crate::adapters::http::dto::assets::token_selector::TokenSelectorRequest;
+use crate::adapters::http::dto::onchain_time::as_of::AsOfRequest;
 use crate::domain::accounts::OnchainAccount;
 use crate::{
     adapters::http::{
@@ -29,7 +30,7 @@ const TOKEN_FIELDS: [&str; 2] = ["asset_slugs", "contract_addresses"];
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SingleBalanceRequest {
-    pub(crate) as_of: BalanceAsOfRequest,
+    pub(crate) as_of: AsOfRequest,
     pub(crate) account: BalanceAccountRequest,
     pub(crate) quote_currency: String,
     pub(crate) tokens: TokenSelectorRequest,
@@ -38,20 +39,10 @@ pub struct SingleBalanceRequest {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BulkBalanceRequest {
-    pub(crate) as_of: BalanceAsOfRequest,
+    pub(crate) as_of: AsOfRequest,
     pub(crate) accounts: Vec<BalanceAccountRequest>,
     pub(crate) quote_currency: String,
     pub(crate) tokens: TokenSelectorRequest,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct BalanceAsOfRequest {
-    pub(crate) kind: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) timestamp: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) block_number: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]

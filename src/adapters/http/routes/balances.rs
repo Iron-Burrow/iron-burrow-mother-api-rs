@@ -4,14 +4,14 @@ use axum::{body::Bytes, extract::State, http::HeaderMap, Json};
 use tracing::warn;
 
 use crate::adapters::http::dto::assets::token_selector::TokenSelectorRequest;
+use crate::adapters::http::dto::onchain_time::as_of::AsOfRequest;
 use crate::domain::accounts::OnchainAccount;
 use crate::domain::assets::token_selector::TokenSelector;
 use crate::{
     adapters::http::{
         dto::balances::{
-            BalanceAccountRequest, BalanceAsOfRequest, BalanceResponseAssembler,
-            BalanceResponseAssemblerError, BulkBalanceRequest, BulkBalanceResponse,
-            SingleBalanceRequest, SingleBalanceResponse,
+            BalanceAccountRequest, BalanceResponseAssembler, BalanceResponseAssemblerError,
+            BulkBalanceRequest, BulkBalanceResponse, SingleBalanceRequest, SingleBalanceResponse,
         },
         error::ApiError,
         json_body::parse_json_object_body,
@@ -88,7 +88,7 @@ fn parse_bulk_balance_request(
 }
 
 fn validate_request(
-    as_of: BalanceAsOfRequest,
+    as_of: AsOfRequest,
     accounts: Vec<BalanceAccountRequest>,
     quote_currency: String,
     tokens: TokenSelectorRequest,
@@ -1228,8 +1228,8 @@ mod tests {
         }
     }
 
-    fn latest_as_of() -> BalanceAsOfRequest {
-        BalanceAsOfRequest {
+    fn latest_as_of() -> AsOfRequest {
+        AsOfRequest {
             kind: "latest".to_string(),
             timestamp: None,
             block_number: None,

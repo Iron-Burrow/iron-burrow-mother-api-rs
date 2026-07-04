@@ -12,11 +12,11 @@ use utoipa::{
 use crate::adapters::http::dto::assets::token_selector::TokenSelectorRequest;
 use crate::adapters::http::dto::balances::{
     examples as balance_examples, BalanceAccountIdentityPayload, BalanceAccountPayload,
-    BalanceAccountRequest, BalanceAmountPayload, BalanceAsOfRequest, BalanceBlockPayload,
-    BalanceErrorPayload, BalanceEvidencePayload, BalancePositionPayload, BalanceQuotePayload,
-    BalanceQuoteStatus, BalanceResponseStatus, BalanceSelectorPayload, BalanceSkippedPayload,
-    BalanceSummaryPayload, BulkAsOfPayload, BulkBalanceRequest, BulkBalanceResponse,
-    SingleAsOfPayload, SingleBalanceRequest, SingleBalanceResponse,
+    BalanceAccountRequest, BalanceAmountPayload, BalanceBlockPayload, BalanceErrorPayload,
+    BalanceEvidencePayload, BalancePositionPayload, BalanceQuotePayload, BalanceQuoteStatus,
+    BalanceResponseStatus, BalanceSelectorPayload, BalanceSkippedPayload, BalanceSummaryPayload,
+    BulkAsOfPayload, BulkBalanceRequest, BulkBalanceResponse, SingleAsOfPayload,
+    SingleBalanceRequest, SingleBalanceResponse,
 };
 use crate::adapters::http::dto::erc20_transfers::{
     examples as erc20_transfer_examples, Erc20TransferAccount, Erc20TransferAmount,
@@ -30,6 +30,7 @@ use crate::adapters::http::dto::filters::token_filters::{
     ResolvedTokenFilterDTO, TokenFilterDTO, TokenFilterResolutionDTO, TokenFilterSourceDTO,
 };
 use crate::adapters::http::dto::filters::transfer_direction::TransferDirectionDTO;
+use crate::adapters::http::dto::onchain_time::as_of::AsOfRequest;
 use crate::adapters::http::error::{ErrorBody, ErrorResponse};
 use crate::config::Config;
 
@@ -65,7 +66,7 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
         BalanceAccountPayload,
         BalanceAccountRequest,
         BalanceAmountPayload,
-        BalanceAsOfRequest,
+        AsOfRequest,
         TokenSelectorRequest,
         BalanceBlockPayload,
         BalanceErrorPayload,
@@ -122,7 +123,7 @@ struct BaseApiDoc;
         BalanceAccountPayload,
         BalanceAccountRequest,
         BalanceAmountPayload,
-        BalanceAsOfRequest,
+        AsOfRequest,
         TokenSelectorRequest,
         BalanceBlockPayload,
         BalanceErrorPayload,
@@ -779,7 +780,7 @@ mod tests {
         for schema in [
             "SingleBalanceRequest",
             "BulkBalanceRequest",
-            "BalanceAsOfRequest",
+            "AsOfRequest",
             "BalanceAccountRequest",
             "TokenSelectorRequest",
             "SingleBalanceResponse",
@@ -896,7 +897,7 @@ mod tests {
         );
         assert_schema_properties(
             schemas,
-            "BalanceAsOfRequest",
+            "AsOfRequest",
             &["block_number", "kind", "timestamp"],
         );
         assert_schema_properties(
