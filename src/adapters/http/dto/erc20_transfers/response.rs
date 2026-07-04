@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::adapters::http::dto::accounts::OnchainAccountResponse;
-use crate::adapters::http::dto::filters::onchain_window::OnchainWindowDTO;
 use crate::adapters::http::dto::filters::token_filters::TokenFilterResolutionDTO;
 use crate::adapters::http::dto::filters::transfer_direction::TransferDirectionDTO;
+use crate::adapters::http::dto::onchain_time::onchain_window::OnchainWindowDTO;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 pub struct Erc20TransferSearchResponse {

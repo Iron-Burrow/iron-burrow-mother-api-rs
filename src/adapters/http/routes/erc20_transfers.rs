@@ -11,14 +11,13 @@ use crate::adapters::http::dto::{
         response::Erc20TransferSearchResponse, response::Erc20TransferToken,
     },
     filters::{
-        onchain_window::{
-            BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO,
-            TimestampWindowDTO,
-        },
         token_filters::{
             ResolvedTokenFilterDTO, TokenFilterDTO, TokenFilterResolutionDTO, TokenFilterSourceDTO,
         },
         transfer_direction::TransferDirectionDTO,
+    },
+    onchain_time::onchain_window::{
+        BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO, TimestampWindowDTO,
     },
 };
 use crate::adapters::http::json_body::parse_json_object_body;

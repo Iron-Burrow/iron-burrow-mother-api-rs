@@ -5,10 +5,10 @@ use crate::adapters::http::dto::filters::token_filters::validate_tokens;
 use crate::adapters::http::dto::{
     accounts::{validate_account_object, OnchainAccountRequest},
     filters::{
-        onchain_window::{validate_window, OnchainWindowDTO},
         token_filters::TokenFilterDTO,
         transfer_direction::{validate_direction, TransferDirectionDTO},
     },
+    onchain_time::onchain_window::{validate_window, OnchainWindowDTO},
 };
 use crate::adapters::http::error::ApiError;
 use crate::adapters::http::types::JsonObject;

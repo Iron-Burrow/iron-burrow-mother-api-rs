@@ -13,13 +13,13 @@ use crate::{
             },
         },
         filters::{
-            onchain_window::{BlockWindowDTO, OnchainWindowDTO},
             token_filters::{
                 ResolvedTokenFilterDTO, TokenFilterDTO, TokenFilterResolutionDTO,
                 TokenFilterSourceDTO,
             },
             transfer_direction::TransferDirectionDTO,
         },
+        onchain_time::onchain_window::{BlockWindowDTO, OnchainWindowDTO},
     },
     test_utils::{
         fixtures::erc20_transfers::{
