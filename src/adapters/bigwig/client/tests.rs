@@ -1,5 +1,16 @@
-use crate::domain::accounts::OnchainAccount;
-use crate::domain::assets::token_selector::TokenSelector;
+use std::{
+    io::{Read, Write},
+    net::TcpListener,
+    thread,
+};
+
+use reqwest::StatusCode;
+use serde_json::{json, Value};
+
+use super::*;
+use crate::adapters::postgres::global_assets::GlobalAssetRepository;
+use crate::domain::{accounts::OnchainAccount, assets::token_selector::TokenSelector};
+use crate::test_utils::fixtures::global_assets::sample_assets;
 use crate::{
     application::balances::{
         catalog::CatalogBalanceTargetResolver,
@@ -12,21 +23,7 @@ use crate::{
     test_utils::constants::INFRA_GATEWAY_URL,
 };
 
-use super::*;
-
-use std::{
-    io::{Read, Write},
-    net::TcpListener,
-    thread,
-};
-
-use reqwest::StatusCode;
-use serde_json::{json, Value};
-
 const ACCOUNT_A: &str = "0x1111111111111111111111111111111111111111";
-
-use crate::adapters::postgres::global_assets::GlobalAssetRepository;
-use crate::test_utils::fixtures::global_assets::sample_assets;
 
 #[tokio::test]
 async fn malformed_success_body_becomes_internal_item_failure() {

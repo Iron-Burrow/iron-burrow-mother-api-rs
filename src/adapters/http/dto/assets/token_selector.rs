@@ -9,7 +9,7 @@ use crate::adapters::http::{
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct TokenSelectorRequest {
+pub(crate) struct TokenSelectorRequest {
     #[serde(default)]
     pub(crate) asset_slugs: Vec<String>,
     #[serde(default)]
@@ -19,7 +19,7 @@ pub struct TokenSelectorRequest {
 const TOKEN_FIELDS: [&str; 2] = ["asset_slugs", "contract_addresses"];
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub struct TokenFilterResolutionDTO {
+pub(crate) struct TokenFilterResolutionDTO {
     pub requested: TokenSelectorRequest,
     pub resolved_contract_addresses: Vec<ResolvedTokenSelectorRequest>,
 }

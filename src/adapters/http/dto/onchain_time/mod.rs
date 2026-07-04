@@ -1,2 +1,2 @@
-pub mod as_of;
-pub mod onchain_window;
+pub(crate) mod as_of;
+pub(crate) mod onchain_window;

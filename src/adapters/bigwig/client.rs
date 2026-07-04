@@ -3,11 +3,10 @@ use std::time::Duration;
 use reqwest::{header::RETRY_AFTER, StatusCode, Url};
 use tracing::warn;
 
-use crate::adapters::bigwig::error::{map_error_response, BigwigClientInitError, BigwigError};
 use crate::adapters::bigwig::{
     balances::{BigwigRequest, BigwigResponse},
     erc20_transfers::{BigwigErc20TransferRequest, BigwigErc20TransferResponse},
-    error::map_reqwest_error,
+    error::{map_error_response, map_reqwest_error, BigwigClientInitError, BigwigError},
 };
 use crate::config::Config;
 
@@ -16,7 +15,7 @@ const LATEST_BALANCES_PATH: &str = "/internal/v1/primitives/evm/latest-balances"
 const ERC20_TRANSFERS_PATH: &str = "/internal/v1/extractions/erc20-transfers";
 
 #[derive(Clone)]
-pub struct BigwigClient {
+pub(crate) struct BigwigClient {
     client: reqwest::Client,
     base_url: Url,
     token: String,
