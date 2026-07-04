@@ -17,7 +17,7 @@ use crate::{
             },
         },
         onchain_time::onchain_window::{BlockWindowDTO, OnchainWindowDTO},
-        transfers::transfer_direction::{TransferDirectionDTO, TransferDirectionResponse},
+        transfers::transfer_direction::{TransferDirectionRequest, TransferDirectionResponse},
     },
     test_utils::{
         fixtures::erc20_transfers::{
@@ -36,7 +36,7 @@ fn request_serialization_snapshot_matches_public_shape() {
             address: "0xabc0000000000000000000000000000000000000".to_string(),
             client_ref: Some("treasury-main".to_string()),
         },
-        direction: TransferDirectionDTO::Any,
+        direction: TransferDirectionRequest::Any,
         tokens: Some(TokenSelectorRequest {
             asset_slugs: vec!["usdc".to_string(), "usdt".to_string()],
             contract_addresses: vec!["0x1111111111111111111111111111111111111111".to_string()],
@@ -440,7 +440,7 @@ fn validation_accepts_minimal_asset_contract_and_mixed_token_filter_shapes() {
             request.account.client_ref,
             Some("treasury-main".to_string())
         );
-        assert_eq!(request.direction, TransferDirectionDTO::Any);
+        assert_eq!(request.direction, TransferDirectionRequest::Any);
         assert_eq!(request.tokens.unwrap_or_default(), expected_tokens);
         assert!(matches!(
             request.window,

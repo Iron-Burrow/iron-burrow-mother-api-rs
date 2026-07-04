@@ -31,7 +31,7 @@ use crate::adapters::http::dto::onchain_time::onchain_window::{
     BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO, TimestampWindowDTO,
 };
 use crate::adapters::http::dto::transfers::transfer_direction::{
-    TransferDirectionDTO, TransferDirectionResponse,
+    TransferDirectionRequest, TransferDirectionResponse,
 };
 use crate::adapters::http::dto::{
     accounts::OnchainAccountRequest, erc20_transfers::requests::Erc20TransferSearchRequest,
@@ -88,7 +88,7 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
         BulkBalanceResponse,
         Erc20TransferAmount,
         BlockWindowDTO,
-        TransferDirectionDTO,
+        TransferDirectionRequest,
         TransferDirectionResponse,
         LookbackTargetDTO,
         LookbackWindowDTO,
@@ -144,7 +144,7 @@ struct BaseApiDoc;
         BulkBalanceResponse,
         Erc20TransferAmount,
         BlockWindowDTO,
-        TransferDirectionDTO,
+        TransferDirectionRequest,
         TransferDirectionResponse,
         LookbackTargetDTO,
         LookbackWindowDTO,
@@ -1362,7 +1362,7 @@ mod tests {
         let schemas = json["components"]["schemas"]
             .as_object()
             .expect("OpenAPI components.schemas should be an object");
-        let enum_values = schemas["TransferDirectionDTO"]["enum"]
+        let enum_values = schemas["TransferDirectionRequest"]["enum"]
             .as_array()
             .expect("direction schema should define enum values")
             .iter()

@@ -7,7 +7,7 @@ use crate::adapters::http::dto::assets::token_selector::{
 use crate::adapters::http::dto::{
     accounts::{validate_account_object, OnchainAccountRequest},
     onchain_time::onchain_window::{validate_window, OnchainWindowDTO},
-    transfers::transfer_direction::{validate_direction, TransferDirectionDTO},
+    transfers::transfer_direction::{validate_direction, TransferDirectionRequest},
 };
 use crate::adapters::http::error::ApiError;
 use crate::adapters::http::types::JsonObject;
@@ -20,7 +20,7 @@ const TOP_LEVEL_FIELDS: [&str; 4] = ["account", "direction", "tokens", "window"]
 #[serde(deny_unknown_fields)]
 pub struct Erc20TransferSearchRequest {
     pub account: OnchainAccountRequest,
-    pub direction: TransferDirectionDTO,
+    pub direction: TransferDirectionRequest,
     pub tokens: Option<TokenSelectorRequest>,
     pub window: OnchainWindowDTO,
 }

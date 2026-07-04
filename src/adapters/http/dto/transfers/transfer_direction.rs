@@ -6,7 +6,7 @@ use crate::adapters::http::error::ApiError;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum TransferDirectionDTO {
+pub(crate) enum TransferDirectionRequest {
     Any,
     From,
     To,
@@ -20,12 +20,14 @@ pub(crate) enum TransferDirectionResponse {
     To,
 }
 
-pub(crate) fn validate_direction(value: Option<&Value>) -> Result<TransferDirectionDTO, ApiError> {
+pub(crate) fn validate_direction(
+    value: Option<&Value>,
+) -> Result<TransferDirectionRequest, ApiError> {
     match value {
         Some(Value::String(direction)) => match direction.as_str() {
-            "any" => Ok(TransferDirectionDTO::Any),
-            "from" => Ok(TransferDirectionDTO::From),
-            "to" => Ok(TransferDirectionDTO::To),
+            "any" => Ok(TransferDirectionRequest::Any),
+            "from" => Ok(TransferDirectionRequest::From),
+            "to" => Ok(TransferDirectionRequest::To),
             _ => Err(ApiError::invalid_direction()),
         },
         _ => Err(ApiError::invalid_direction()),

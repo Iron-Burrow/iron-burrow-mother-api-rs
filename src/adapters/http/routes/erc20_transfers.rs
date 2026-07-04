@@ -19,7 +19,7 @@ use crate::adapters::http::dto::{
     onchain_time::onchain_window::{
         BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO, TimestampWindowDTO,
     },
-    transfers::transfer_direction::{TransferDirectionDTO, TransferDirectionResponse},
+    transfers::transfer_direction::{TransferDirectionRequest, TransferDirectionResponse},
 };
 use crate::adapters::http::json_body::parse_json_object_body;
 use crate::adapters::http::validation::ensure_json_content_type;
@@ -94,11 +94,11 @@ fn transfer_search_token_filters_from_dto(
     }
 }
 
-fn transfer_direction_from_dto(direction: TransferDirectionDTO) -> TransferDirection {
+fn transfer_direction_from_dto(direction: TransferDirectionRequest) -> TransferDirection {
     match direction {
-        TransferDirectionDTO::Any => TransferDirection::Any,
-        TransferDirectionDTO::From => TransferDirection::From,
-        TransferDirectionDTO::To => TransferDirection::To,
+        TransferDirectionRequest::Any => TransferDirection::Any,
+        TransferDirectionRequest::From => TransferDirection::From,
+        TransferDirectionRequest::To => TransferDirection::To,
     }
 }
 
