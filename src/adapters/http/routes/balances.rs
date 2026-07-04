@@ -3,14 +3,15 @@ use std::collections::HashSet;
 use axum::{body::Bytes, extract::State, http::HeaderMap, Json};
 use tracing::warn;
 
+use crate::adapters::http::dto::assets::token_selector::TokenSelectorRequest;
 use crate::domain::accounts::OnchainAccount;
 use crate::domain::assets::token_selector::TokenSelector;
 use crate::{
     adapters::http::{
         dto::balances::{
             BalanceAccountRequest, BalanceAsOfRequest, BalanceResponseAssembler,
-            BalanceResponseAssemblerError, BalanceTokenSelectorRequest, BulkBalanceRequest,
-            BulkBalanceResponse, SingleBalanceRequest, SingleBalanceResponse,
+            BalanceResponseAssemblerError, BulkBalanceRequest, BulkBalanceResponse,
+            SingleBalanceRequest, SingleBalanceResponse,
         },
         error::ApiError,
         json_body::parse_json_object_body,
@@ -90,7 +91,7 @@ fn validate_request(
     as_of: BalanceAsOfRequest,
     accounts: Vec<BalanceAccountRequest>,
     quote_currency: String,
-    tokens: BalanceTokenSelectorRequest,
+    tokens: TokenSelectorRequest,
 ) -> Result<BalanceSnapshotRequest, ApiError> {
     if as_of.kind != "latest" || as_of.timestamp.is_some() || as_of.block_number.is_some() {
         return Err(ApiError::unsupported_as_of());
@@ -342,7 +343,7 @@ mod tests {
             latest_as_of(),
             vec![account("eth-mainnet", ACCOUNT_A)],
             "USD".to_string(),
-            BalanceTokenSelectorRequest {
+            TokenSelectorRequest {
                 asset_slugs: Vec::new(),
                 contract_addresses: vec![
                     "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
@@ -1235,12 +1236,12 @@ mod tests {
         }
     }
 
-    fn tokens<const N: usize>(asset_slugs: [&str; N]) -> BalanceTokenSelectorRequest {
+    fn tokens<const N: usize>(asset_slugs: [&str; N]) -> TokenSelectorRequest {
         token_vec(asset_slugs.into_iter().map(str::to_string).collect())
     }
 
-    fn token_vec(asset_slugs: Vec<String>) -> BalanceTokenSelectorRequest {
-        BalanceTokenSelectorRequest {
+    fn token_vec(asset_slugs: Vec<String>) -> TokenSelectorRequest {
+        TokenSelectorRequest {
             asset_slugs,
             contract_addresses: Vec::new(),
         }

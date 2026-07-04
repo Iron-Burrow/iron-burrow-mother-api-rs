@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
 
+use crate::adapters::http::dto::assets::token_selector::TokenSelectorRequest;
 use crate::domain::accounts::OnchainAccount;
 use crate::{
     adapters::http::{
@@ -31,7 +32,7 @@ pub struct SingleBalanceRequest {
     pub(crate) as_of: BalanceAsOfRequest,
     pub(crate) account: BalanceAccountRequest,
     pub(crate) quote_currency: String,
-    pub(crate) tokens: BalanceTokenSelectorRequest,
+    pub(crate) tokens: TokenSelectorRequest,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
@@ -40,7 +41,7 @@ pub struct BulkBalanceRequest {
     pub(crate) as_of: BalanceAsOfRequest,
     pub(crate) accounts: Vec<BalanceAccountRequest>,
     pub(crate) quote_currency: String,
-    pub(crate) tokens: BalanceTokenSelectorRequest,
+    pub(crate) tokens: TokenSelectorRequest,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
@@ -59,15 +60,6 @@ pub struct BalanceAccountRequest {
     pub(crate) network_slug: String,
     pub(crate) address: String,
     pub(crate) client_ref: Option<String>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct BalanceTokenSelectorRequest {
-    #[serde(default)]
-    pub(crate) asset_slugs: Vec<String>,
-    #[serde(default)]
-    pub(crate) contract_addresses: Vec<String>,
 }
 
 impl TryFrom<JsonObject> for SingleBalanceRequest {
