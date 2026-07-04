@@ -680,7 +680,7 @@ Recommended Rust DTO names:
 Erc20TransferSearchRequest
 Erc20TransferSearchResponse
 OnchainWindowRequest
-OnchainWindowDTO
+OnchainWindowResponse
 ResolvedTokenSelectorRequest
 Erc20TransferRow
 Erc20TransferToken

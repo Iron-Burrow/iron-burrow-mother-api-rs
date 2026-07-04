@@ -3,7 +3,7 @@ use utoipa::ToSchema;
 
 use crate::adapters::http::dto::accounts::OnchainAccountResponse;
 use crate::adapters::http::dto::assets::token_selector::TokenFilterResolutionDTO;
-use crate::adapters::http::dto::onchain_time::onchain_window::OnchainWindowDTO;
+use crate::adapters::http::dto::onchain_time::onchain_window::OnchainWindowResponse;
 use crate::adapters::http::dto::transfers::transfer_direction::TransferDirectionResponse;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
@@ -13,7 +13,7 @@ pub(crate) struct Erc20TransferSearchResponse {
     pub response_type: String,
     pub account: OnchainAccountResponse,
     pub direction: TransferDirectionResponse,
-    pub window: OnchainWindowDTO,
+    pub window: OnchainWindowResponse,
     pub token_filters: TokenFilterResolutionDTO,
     pub transfers: Vec<Erc20TransferRow>,
     pub limits: Erc20TransferSearchLimits,

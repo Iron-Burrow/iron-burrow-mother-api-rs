@@ -28,7 +28,7 @@ pub(crate) enum OnchainWindowRequest {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(untagged)]
-pub(crate) enum OnchainWindowDTO {
+pub(crate) enum OnchainWindowResponse {
     Block(BlockWindowDTO),
     Timestamp(TimestampWindowDTO),
     Lookback(LookbackWindowDTO),

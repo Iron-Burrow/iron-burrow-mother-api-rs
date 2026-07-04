@@ -16,7 +16,9 @@ use crate::{
                 Erc20TransferSearchResponse, Erc20TransferToken,
             },
         },
-        onchain_time::onchain_window::{BlockWindowDTO, OnchainWindowDTO, OnchainWindowRequest},
+        onchain_time::onchain_window::{
+            BlockWindowDTO, OnchainWindowRequest, OnchainWindowResponse,
+        },
         transfers::transfer_direction::{TransferDirectionRequest, TransferDirectionResponse},
     },
     test_utils::{
@@ -84,7 +86,7 @@ fn response_serialization_snapshot_matches_public_shape() {
             client_ref: Some("treasury-main".to_string()),
         },
         direction: TransferDirectionResponse::Any,
-        window: OnchainWindowDTO::Block(BlockWindowDTO {
+        window: OnchainWindowResponse::Block(BlockWindowDTO {
             from_block: 18_600_000,
             to_block: 18_600_500,
         }),
