@@ -12,6 +12,14 @@ pub(crate) enum TransferDirectionDTO {
     To,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum TransferDirectionResponse {
+    Any,
+    From,
+    To,
+}
+
 pub(crate) fn validate_direction(value: Option<&Value>) -> Result<TransferDirectionDTO, ApiError> {
     match value {
         Some(Value::String(direction)) => match direction.as_str() {

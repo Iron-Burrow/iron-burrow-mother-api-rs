@@ -17,7 +17,7 @@ use crate::{
             },
         },
         onchain_time::onchain_window::{BlockWindowDTO, OnchainWindowDTO},
-        transfers::transfer_direction::TransferDirectionDTO,
+        transfers::transfer_direction::{TransferDirectionDTO, TransferDirectionResponse},
     },
     test_utils::{
         fixtures::erc20_transfers::{
@@ -83,7 +83,7 @@ fn response_serialization_snapshot_matches_public_shape() {
             address: "0xabc0000000000000000000000000000000000000".to_string(),
             client_ref: Some("treasury-main".to_string()),
         },
-        direction: TransferDirectionDTO::Any,
+        direction: TransferDirectionResponse::Any,
         window: OnchainWindowDTO::Block(BlockWindowDTO {
             from_block: 18_600_000,
             to_block: 18_600_500,
@@ -127,7 +127,7 @@ fn response_serialization_snapshot_matches_public_shape() {
                 raw: "12500000".to_string(),
                 decimal: Some("12.5".to_string()),
             },
-            direction: TransferDirectionDTO::From,
+            direction: TransferDirectionResponse::From,
         }],
         limits: Erc20TransferSearchLimits {
             max_rows: 5_000,

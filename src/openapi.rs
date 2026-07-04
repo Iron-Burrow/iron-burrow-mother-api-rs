@@ -30,7 +30,9 @@ use crate::adapters::http::dto::onchain_time::as_of::AsOfRequest;
 use crate::adapters::http::dto::onchain_time::onchain_window::{
     BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO, TimestampWindowDTO,
 };
-use crate::adapters::http::dto::transfers::transfer_direction::TransferDirectionDTO;
+use crate::adapters::http::dto::transfers::transfer_direction::{
+    TransferDirectionDTO, TransferDirectionResponse,
+};
 use crate::adapters::http::dto::{
     accounts::OnchainAccountRequest, erc20_transfers::requests::Erc20TransferSearchRequest,
 };
@@ -87,6 +89,7 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
         Erc20TransferAmount,
         BlockWindowDTO,
         TransferDirectionDTO,
+        TransferDirectionResponse,
         LookbackTargetDTO,
         LookbackWindowDTO,
         Erc20TransferRow,
@@ -142,6 +145,7 @@ struct BaseApiDoc;
         Erc20TransferAmount,
         BlockWindowDTO,
         TransferDirectionDTO,
+        TransferDirectionResponse,
         LookbackTargetDTO,
         LookbackWindowDTO,
         Erc20TransferRow,

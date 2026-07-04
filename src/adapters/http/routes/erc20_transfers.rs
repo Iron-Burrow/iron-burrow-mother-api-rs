@@ -19,7 +19,7 @@ use crate::adapters::http::dto::{
     onchain_time::onchain_window::{
         BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO, TimestampWindowDTO,
     },
-    transfers::transfer_direction::TransferDirectionDTO,
+    transfers::transfer_direction::{TransferDirectionDTO, TransferDirectionResponse},
 };
 use crate::adapters::http::json_body::parse_json_object_body;
 use crate::adapters::http::validation::ensure_json_content_type;
@@ -234,21 +234,21 @@ fn trim_trailing_fractional_zeros(amount: String) -> String {
 fn transfer_row_direction(
     row: &Erc20TransferExtractionRow,
     watched_address: &str,
-) -> TransferDirectionDTO {
+) -> TransferDirectionResponse {
     if row.from.eq_ignore_ascii_case(watched_address) {
-        TransferDirectionDTO::From
+        TransferDirectionResponse::From
     } else if row.to.eq_ignore_ascii_case(watched_address) {
-        TransferDirectionDTO::To
+        TransferDirectionResponse::To
     } else {
-        TransferDirectionDTO::Any
+        TransferDirectionResponse::Any
     }
 }
 
-fn transfer_direction_to_dto(direction: TransferDirection) -> TransferDirectionDTO {
+fn transfer_direction_to_dto(direction: TransferDirection) -> TransferDirectionResponse {
     match direction {
-        TransferDirection::Any => TransferDirectionDTO::Any,
-        TransferDirection::From => TransferDirectionDTO::From,
-        TransferDirection::To => TransferDirectionDTO::To,
+        TransferDirection::Any => TransferDirectionResponse::Any,
+        TransferDirection::From => TransferDirectionResponse::From,
+        TransferDirection::To => TransferDirectionResponse::To,
     }
 }
 
