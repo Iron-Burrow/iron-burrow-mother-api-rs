@@ -18,7 +18,34 @@ pub struct TokenSelectorRequest {
 
 const TOKEN_FIELDS: [&str; 2] = ["asset_slugs", "contract_addresses"];
 
-pub(crate) fn validate_tokens_object(
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+pub struct TokenFilterResolutionDTO {
+    pub requested: TokenSelectorRequest,
+    pub resolved_contract_addresses: Vec<ResolvedTokenSelectorRequest>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+pub(crate) struct ResolvedTokenSelectorRequest {
+    pub contract_address: String,
+    pub asset_slug: Option<String>,
+    pub symbol: Option<String>,
+    pub decimals: Option<u8>,
+    pub source: TokenFilterSourceDTO,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum TokenFilterSourceDTO {
+    AssetSlug,
+    ContractAddress,
+}
+
+/// Validates the required `tokens` selector object for balance requests.
+///
+/// The balances endpoint requires a present JSON object containing at least one
+/// token selector, either `asset_slugs` or `contract_addresses`. Missing,
+/// non-object, unknown-field, or fully empty selectors are rejected.
+pub(crate) fn validate_required_non_empty_tokens_object(
     value: Option<&Value>,
 ) -> Result<TokenSelectorRequest, ApiError> {
     let Some(value) = value else {
@@ -43,29 +70,13 @@ pub(crate) fn validate_tokens_object(
     })
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub struct TokenFilterResolutionDTO {
-    pub requested: TokenSelectorRequest,
-    pub resolved_contract_addresses: Vec<ResolvedTokenSelectorRequest>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub(crate) struct ResolvedTokenSelectorRequest {
-    pub contract_address: String,
-    pub asset_slug: Option<String>,
-    pub symbol: Option<String>,
-    pub decimals: Option<u8>,
-    pub source: TokenFilterSourceDTO,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum TokenFilterSourceDTO {
-    AssetSlug,
-    ContractAddress,
-}
-
-pub(crate) fn validate_tokens(
+/// Validates the optional `tokens` filter for ERC-20 transfer searches.
+///
+/// Unlike the balances endpoint, ERC-20 transfer search does not require token
+/// selectors. A missing, `null`, or empty filter means "search transfers without
+/// token filtering." If a filter object is provided, unknown fields and malformed
+/// selector values are still rejected.
+pub(crate) fn validate_optional_token_filters(
     value: Option<&Value>,
 ) -> Result<Option<TokenSelectorRequest>, ApiError> {
     match value {
@@ -73,6 +84,8 @@ pub(crate) fn validate_tokens(
         Some(Value::Object(tokens)) => {
             reject_unknown_fields(tokens, &TOKEN_FIELDS)?;
 
+            // For ERC-20 transfer search, empty token filters mean an
+            // unfiltered transfer-log search, not an invalid request.
             Ok(Some(TokenSelectorRequest {
                 asset_slugs: validate_asset_slugs(tokens.get("asset_slugs"))?,
                 contract_addresses: validate_contract_addresses(tokens.get("contract_addresses"))?,

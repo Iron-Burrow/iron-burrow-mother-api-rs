@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::adapters::http::dto::assets::token_selector::{validate_tokens, TokenSelectorRequest};
+use crate::adapters::http::dto::assets::token_selector::{
+    validate_optional_token_filters, TokenSelectorRequest,
+};
 use crate::adapters::http::dto::{
     accounts::{validate_account_object, OnchainAccountRequest},
     onchain_time::onchain_window::{validate_window, OnchainWindowDTO},
@@ -36,7 +38,7 @@ impl TryFrom<&JsonObject> for Erc20TransferSearchRequest {
         Ok(Self {
             account,
             direction: validate_direction(request.get("direction"))?,
-            tokens: validate_tokens(request.get("tokens"))?,
+            tokens: validate_optional_token_filters(request.get("tokens"))?,
             window: validate_window(request.get("window"))?,
         })
     }

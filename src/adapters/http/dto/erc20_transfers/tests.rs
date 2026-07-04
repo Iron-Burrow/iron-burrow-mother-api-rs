@@ -361,6 +361,18 @@ fn validation_accepts_omitted_null_and_empty_tokens() {
         empty_tokens.tokens.unwrap_or_default(),
         TokenSelectorRequest::default()
     );
+
+    let mut empty_token_arrays_body = valid_erc20_transfers_request_body();
+    empty_token_arrays_body["tokens"] = json!({
+        "asset_slugs": [],
+        "contract_addresses": []
+    });
+    let empty_token_arrays =
+        Erc20TransferSearchRequest::try_from(&json_object(empty_token_arrays_body)).unwrap();
+    assert_eq!(
+        empty_token_arrays.tokens.unwrap_or_default(),
+        TokenSelectorRequest::default()
+    );
 }
 
 #[test]

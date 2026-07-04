@@ -6,7 +6,7 @@ use crate::adapters::http::dto::accounts::{
     validate_account_array, validate_account_object, OnchainAccountRequest,
 };
 use crate::adapters::http::dto::assets::token_selector::{
-    validate_tokens_object, TokenSelectorRequest,
+    validate_required_non_empty_tokens_object, TokenSelectorRequest,
 };
 use crate::adapters::http::dto::onchain_time::as_of::{validate_as_of_object, AsOfRequest};
 use crate::adapters::http::validation::validate_required_string;
@@ -51,7 +51,7 @@ impl TryFrom<JsonObject> for SingleBalanceRequest {
                 &SUPPORTED_BALANCE_NETWORK_SLUGS,
             )?,
             quote_currency: validate_required_string(request.get("quote_currency"))?,
-            tokens: validate_tokens_object(request.get("tokens"))?,
+            tokens: validate_required_non_empty_tokens_object(request.get("tokens"))?,
         })
     }
 }
@@ -70,7 +70,7 @@ impl TryFrom<JsonObject> for BulkBalanceRequest {
                 &SUPPORTED_BALANCE_NETWORK_SLUGS,
             )?,
             quote_currency: validate_required_string(request.get("quote_currency"))?,
-            tokens: validate_tokens_object(request.get("tokens"))?,
+            tokens: validate_required_non_empty_tokens_object(request.get("tokens"))?,
         })
     }
 }
