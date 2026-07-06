@@ -750,19 +750,16 @@ confidence, warnings, and future informational field additions.
 ### `POST /v1/balances`
 
 Resolves the latest balances for one explicitly network-scoped EVM account
-across the requested canonical token asset slugs. The endpoint accepts JSON
-only.
+across requested token selectors. The endpoint accepts JSON only.
 
 The account's `network_slug` and each `tokens.asset_slugs[]` value are exact
-canonical identifiers. They are not trimmed or case-normalized. The address
-must be exactly `0x` followed by 40 ASCII hexadecimal characters; EIP-55
-checksum validation is not required. The response preserves caller-provided
-address casing and `client_ref`.
-
-`tokens.contract_addresses[]` is reserved for a later SPEC-012 implementation
-slice. Syntactically valid contract-address selectors currently return
-`400 unsupported_token_selector`; malformed contract addresses return
-`400 invalid_contract_address`.
+canonical identifiers. Asset slugs are not trimmed or case-normalized.
+`tokens.contract_addresses[]` values are explicit ERC-20 contract addresses
+and are normalized to lowercase. Unknown explicit contracts are valid balance
+targets, but their quotes are `unsupported` unless Mother API can resolve them
+to catalog metadata. The account address must be exactly `0x` followed by 40
+ASCII hexadecimal characters; EIP-55 checksum validation is not required. The
+response preserves caller-provided address casing and `client_ref`.
 
 Unknown JSON fields in balance request objects return `400 unknown_field`.
 Requests containing reserved network alias fields `chain`, `chain_id`, or
@@ -801,8 +798,8 @@ Request fields:
 | `account.client_ref` | string | No | Opaque caller reference, echoed unchanged; `null` when omitted. |
 | `quote_currency` | string | Yes | Trimmed and uppercased; allowed values are `USD`, `MXN`, `USDC`, and `BTC`. |
 | `tokens` | object | Yes | Must include at least one non-empty selector array. |
-| `tokens.asset_slugs` | array of strings | Yes for this implementation slice | One to 20 unique exact canonical global asset slugs. Symbols and aliases are not accepted. |
-| `tokens.contract_addresses` | array of strings | No | Reserved for later balance orchestration; malformed values return `invalid_contract_address`, valid non-empty values return `unsupported_token_selector`. |
+| `tokens.asset_slugs` | array of strings | No | Exact canonical global asset slugs. Symbols and aliases are not accepted. Duplicate asset slugs return `duplicate_asset`. |
+| `tokens.contract_addresses` | array of strings | No | ERC-20 contract addresses. Malformed values return `invalid_contract_address`; duplicate normalized contract addresses are deduplicated before orchestration and limit checks. Unknown contracts remain eligible for raw balance results with `quote.status="unsupported"`. |
 
 **Response — `200 OK`:**
 
@@ -832,7 +829,12 @@ Request fields:
   },
   "positions": [
     {
+      "selector": {
+        "kind": "asset_slug",
+        "value": "ethereum"
+      },
       "network_slug": "eth-mainnet",
+      "contract_address": null,
       "asset_slug": "ethereum",
       "symbol": "ETH",
       "balance": {
@@ -863,8 +865,8 @@ For this endpoint, `as_of.observed_at` equals `evidence.observed_at`. Both are
 
 Uses the same validation and resolution model as `/v1/balances`, but accepts
 one to 50 explicit network-scoped accounts. Resolution is the cartesian
-product `accounts[] x tokens.asset_slugs[]`; Mother API does not infer assets
-or expand an address to unrequested networks.
+product `accounts[] x requested token selectors`; Mother API does not infer
+assets or expand an address to unrequested networks.
 
 **Request:**
 
@@ -890,15 +892,15 @@ or expand an address to unrequested networks.
 
 Accounts are unique by `(network_slug, lowercase(address))`. The same address
 on different networks is allowed. Asset-slug selectors are unique by exact
-`asset_slug`. Caller account order and asset-slug order are preserved in the
-response.
+`asset_slug`; contract-address selectors are normalized and deduplicated.
+Caller account order and token-selector order are preserved in the response.
 
 Public limits are enforced before orchestration:
 
 | Limit | Maximum |
 | ----- | ------- |
 | Accounts | 50 |
-| Asset-slug selectors | 20 |
+| Total token selectors | 20 |
 | Account-token resolution items | 1,000 |
 
 Requests are rejected rather than split when a public or grouped Bigwig limit
@@ -942,7 +944,12 @@ would be exceeded.
       },
       "positions": [
         {
+          "selector": {
+            "kind": "asset_slug",
+            "value": "usdc"
+          },
           "network_slug": "base-mainnet",
+          "contract_address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
           "asset_slug": "usdc",
           "symbol": "USDC",
           "balance": {
@@ -983,12 +990,20 @@ Balance response rules shared by both endpoints:
 - `failed` means supported balance items existed but none resolved.
 - A skipped item has `network_slug`, `asset_slug`, and reason
   `asset_not_supported_on_network`.
+- A position has `selector.kind` (`asset_slug` or `contract_address`) and
+  `selector.value` identifying the selector that produced it.
+- `contract_address` is the concrete ERC-20 address for ERC-20 positions and
+  `null` for native positions.
+- `asset_slug` and `symbol` are strings for catalog-resolved positions and
+  `null` for unresolved explicit contracts.
 - `evidence` is an object or `null`. It may expose Bigwig block number, block
   hash, and observation time, but makes no finality claim.
 - Public evidence never exposes chain IDs, route IDs, providers, URLs,
   authentication details, capabilities, or other Bigwig internals.
 - `balance.raw_amount`, `balance.amount`, quote prices, and quote values are
-  exact JSON strings. `balance.decimals` is an integer.
+  exact JSON strings. `balance.amount` is `null` when decimals are unavailable
+  for an unresolved explicit contract. `balance.decimals` is an integer or
+  `null` when unknown.
 - Quote `status` is `available`, `unavailable`, or `unsupported`. Non-available
   quote fields (`currency`, `unit_price`, `value`, `price_as_of`) are `null`.
 
@@ -1043,7 +1058,12 @@ Bigwig and Price Indexer runtime failures are represented inside a
       },
       "positions": [
         {
+          "selector": {
+            "kind": "asset_slug",
+            "value": "usdc"
+          },
           "network_slug": "base-mainnet",
+          "contract_address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
           "asset_slug": "usdc",
           "symbol": "USDC",
           "balance": {
@@ -1097,6 +1117,11 @@ Bigwig and Price Indexer runtime failures are represented inside a
   "errors": [
     {
       "network_slug": "eth-mainnet",
+      "selector": {
+        "kind": "asset_slug",
+        "value": "ethereum"
+      },
+      "contract_address": null,
       "asset_slug": "ethereum",
       "code": "balance_provider_unavailable",
       "message": "Balance is temporarily unavailable for this asset on this network."
@@ -1128,8 +1153,6 @@ Request-wide errors:
 - `400 empty_tokens` — no token selector was provided.
 - `400 duplicate_account` — a network-scoped account is repeated.
 - `400 duplicate_asset` — an exact asset slug is repeated.
-- `400 unsupported_token_selector` — a syntactically valid token selector is
-  reserved for a later balance implementation slice.
 - `400 request_too_large` — a public or grouped provider limit is exceeded.
 - `503 asset_network_map_unavailable` — the Mother catalog is unconfigured or
   temporarily unavailable.
@@ -2021,7 +2044,6 @@ Fields:
 | 400  | `empty_tokens`          | A balance request contains no token selectors. |
 | 400  | `duplicate_account`     | A bulk balance request repeats a network-scoped account. |
 | 400  | `duplicate_asset`       | A balance request repeats an exact asset slug. |
-| 400  | `unsupported_token_selector` | A balance request uses a syntactically valid selector reserved for a later implementation slice. |
 | 400  | `request_too_large`     | A balance request exceeds a public or grouped provider limit. |
 | 400  | `invalid_limit`         | `limit` query parameter is not a positive integer.                     |
 | 400  | `invalid_json`          | A strict JSON endpoint receives malformed JSON, a non-object body, or missing/non-JSON content type and exposes that specific code; balance endpoints map these failures to `invalid_request`. |

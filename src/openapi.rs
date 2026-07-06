@@ -13,9 +13,9 @@ use crate::adapters::http::dto::balances::{
     examples as balance_examples, BalanceAccountIdentityPayload, BalanceAccountPayload,
     BalanceAccountRequest, BalanceAmountPayload, BalanceAsOfRequest, BalanceBlockPayload,
     BalanceErrorPayload, BalanceEvidencePayload, BalancePositionPayload, BalanceQuotePayload,
-    BalanceQuoteStatus, BalanceResponseStatus, BalanceSkippedPayload, BalanceSummaryPayload,
-    BalanceTokenSelectorRequest, BulkAsOfPayload, BulkBalanceRequest, BulkBalanceResponse,
-    SingleAsOfPayload, SingleBalanceRequest, SingleBalanceResponse,
+    BalanceQuoteStatus, BalanceResponseStatus, BalanceSelectorPayload, BalanceSkippedPayload,
+    BalanceSummaryPayload, BalanceTokenSelectorRequest, BulkAsOfPayload, BulkBalanceRequest,
+    BulkBalanceResponse, SingleAsOfPayload, SingleBalanceRequest, SingleBalanceResponse,
 };
 use crate::adapters::http::dto::erc20_transfers::{
     examples as erc20_transfer_examples, Erc20TransferAccount, Erc20TransferAmount,
@@ -73,6 +73,7 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
         BalanceQuotePayload,
         BalanceQuoteStatus,
         BalanceResponseStatus,
+        BalanceSelectorPayload,
         BalanceSkippedPayload,
         BalanceSummaryPayload,
         BulkAsOfPayload,
@@ -129,6 +130,7 @@ struct BaseApiDoc;
         BalanceQuotePayload,
         BalanceQuoteStatus,
         BalanceResponseStatus,
+        BalanceSelectorPayload,
         BalanceSkippedPayload,
         BalanceSummaryPayload,
         BulkAsOfPayload,
@@ -165,7 +167,7 @@ struct Erc20TransfersApiDoc;
     path = "/v1/balances",
     tag = "balances",
     summary = "Resolve one latest balance snapshot",
-    description = "Resolves one latest EVM balance snapshot for a canonical network_slug and explicit tokens.asset_slugs. Requests use network_slug, never chain or chain_id. Supported quote_currency values are USD, MXN, USDC, and BTC. The single endpoint accepts exactly one account and up to 20 asset_slug selectors, for at most 20 account-token resolution items. tokens.contract_addresses and historical as_of forms are reserved for later SPEC-012 slices and are rejected by this implementation.",
+    description = "Resolves one latest EVM balance snapshot for a canonical network_slug and explicit token selectors. Requests use network_slug, never chain or chain_id. Supported quote_currency values are USD, MXN, USDC, and BTC. The single endpoint accepts exactly one account and up to 20 total token selectors, including catalog tokens.asset_slugs and explicit ERC-20 tokens.contract_addresses, for at most 20 account-token resolution items. Unknown explicit contracts can return raw balances with unsupported quotes. Historical as_of forms are reserved for later SPEC-012 slices and are rejected by this implementation.",
     request_body(
         content = SingleBalanceRequest,
         content_type = "application/json"
@@ -211,7 +213,7 @@ async fn resolve_single_balance_operation() {}
     path = "/v1/balances/bulk",
     tag = "balances",
     summary = "Resolve latest balance snapshots in bulk",
-    description = "Resolves latest EVM balance snapshots for explicit canonical network_slug accounts and tokens.asset_slugs. Requests use network_slug, never chain or chain_id. Supported quote_currency values are USD, MXN, USDC, and BTC. Bulk accepts 1 to 50 accounts, up to 20 asset_slug selectors, and up to 1,000 account-token resolution items. tokens.contract_addresses and historical as_of forms are reserved for later SPEC-012 slices and are rejected by this implementation.",
+    description = "Resolves latest EVM balance snapshots for explicit canonical network_slug accounts and token selectors. Requests use network_slug, never chain or chain_id. Supported quote_currency values are USD, MXN, USDC, and BTC. Bulk accepts 1 to 50 accounts, up to 20 total token selectors across tokens.asset_slugs and tokens.contract_addresses, and up to 1,000 account-token resolution items. Unknown explicit contracts can return raw balances with unsupported quotes. Historical as_of forms are reserved for later SPEC-012 slices and are rejected by this implementation.",
     request_body(
         content = BulkBalanceRequest,
         content_type = "application/json"
@@ -785,6 +787,7 @@ mod tests {
             "BalanceQuoteStatus",
             "BalanceAccountPayload",
             "BalancePositionPayload",
+            "BalanceSelectorPayload",
             "BalanceErrorPayload",
             "ErrorResponse",
         ] {
@@ -860,14 +863,18 @@ mod tests {
             "/v1/balances",
             "SingleBalanceRequest",
             "SingleBalanceResponse",
-            ["one account", "20 asset_slug selectors", "20 account-token"],
+            [
+                "one account",
+                "20 total token selectors",
+                "20 account-token",
+            ],
         );
         assert_balance_operation(
             &json,
             "/v1/balances/bulk",
             "BulkBalanceRequest",
             "BulkBalanceResponse",
-            ["50 accounts", "20 asset_slug selectors", "1,000"],
+            ["50 accounts", "20 total token selectors", "1,000"],
         );
     }
 
@@ -971,8 +978,17 @@ mod tests {
         assert_schema_properties(
             schemas,
             "BalancePositionPayload",
-            &["asset_slug", "balance", "network_slug", "quote", "symbol"],
+            &[
+                "asset_slug",
+                "balance",
+                "contract_address",
+                "network_slug",
+                "quote",
+                "selector",
+                "symbol",
+            ],
         );
+        assert_schema_properties(schemas, "BalanceSelectorPayload", &["kind", "value"]);
         assert_schema_properties(
             schemas,
             "BalanceAmountPayload",
@@ -991,7 +1007,14 @@ mod tests {
         assert_schema_properties(
             schemas,
             "BalanceErrorPayload",
-            &["asset_slug", "code", "message", "network_slug"],
+            &[
+                "asset_slug",
+                "code",
+                "contract_address",
+                "message",
+                "network_slug",
+                "selector",
+            ],
         );
 
         for disallowed_field in [

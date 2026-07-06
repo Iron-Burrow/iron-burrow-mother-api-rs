@@ -20,9 +20,20 @@ pub(crate) struct BalanceCatalogRow {
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, Eq, FromRow, PartialEq)]
+pub(crate) struct BalanceNetworkCatalogRow {
+    pub network_slug: String,
+    pub network_family: String,
+    pub network_chain_id: Option<i64>,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, Eq, FromRow, PartialEq)]
 pub(crate) struct Erc20TokenCatalogRow {
     pub contract_address: String,
+    pub network_slug: String,
+    pub network_chain_id: Option<i64>,
     pub asset_slug: String,
     pub asset_symbol: String,
+    pub asset_name: String,
     pub decimals: Option<i32>,
 }

@@ -1,4 +1,4 @@
-use crate::adapters::postgres::balance_catalog::BalanceCatalogRow;
+use crate::adapters::postgres::balance_catalog::{BalanceCatalogRow, Erc20TokenCatalogRow};
 use crate::adapters::postgres::global_assets::GlobalAssetRepository;
 use crate::domain::balance_catalog::{
     BalanceTarget, BalanceTargetKind, CatalogIntegrityIssue, CatalogResolverError,
@@ -26,6 +26,49 @@ impl CatalogBalanceTargetResolver {
 
         resolve_catalog_rows(network_slug, ordered_asset_slugs, &rows)
     }
+
+    pub async fn resolve_evm_network(
+        &self,
+        network_slug: &str,
+    ) -> Result<Option<BalanceNetworkResolution>, CatalogResolverError> {
+        let Some(row) = self
+            .repository
+            .load_balance_network_catalog_row(network_slug)
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        if row.network_slug != network_slug || row.network_family != "evm" {
+            return Ok(None);
+        }
+
+        let Some(chain_id) = row.network_chain_id.filter(|chain_id| *chain_id > 0) else {
+            return Err(invalid_catalog(
+                network_slug,
+                None,
+                CatalogIntegrityIssue::InvalidChainId,
+            ));
+        };
+
+        Ok(Some(BalanceNetworkResolution {
+            network_slug: row.network_slug,
+            chain_id,
+        }))
+    }
+
+    pub async fn resolve_erc20_contracts(
+        &self,
+        network: &BalanceNetworkResolution,
+        ordered_contract_addresses: &[String],
+    ) -> Result<Vec<ContractBalanceTargetResolution>, CatalogResolverError> {
+        let rows = self
+            .repository
+            .load_erc20_token_catalog_rows(&network.network_slug, ordered_contract_addresses)
+            .await?;
+
+        resolve_contract_rows(network, ordered_contract_addresses, &rows)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -46,6 +89,22 @@ pub enum BalanceTargetResolution {
     UnsupportedTokenStandard {
         network_slug: String,
         asset_slug: String,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BalanceNetworkResolution {
+    pub network_slug: String,
+    pub chain_id: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ContractBalanceTargetResolution {
+    Resolved(BalanceTarget),
+    Unknown {
+        network_slug: String,
+        chain_id: i64,
+        contract_address: String,
     },
 }
 
@@ -259,6 +318,65 @@ fn resolve_catalog_rows(
     }
 
     Ok(resolutions)
+}
+
+fn resolve_contract_rows(
+    network: &BalanceNetworkResolution,
+    ordered_contract_addresses: &[String],
+    rows: &[Erc20TokenCatalogRow],
+) -> Result<Vec<ContractBalanceTargetResolution>, CatalogResolverError> {
+    let mut rows_by_contract = std::collections::HashMap::new();
+    for row in rows {
+        if row.network_slug != network.network_slug
+            || row.network_chain_id != Some(network.chain_id)
+            || !is_evm_address(&row.contract_address)
+        {
+            return Err(invalid_catalog(
+                &network.network_slug,
+                Some(&row.asset_slug),
+                CatalogIntegrityIssue::UnexpectedLookupRow,
+            ));
+        }
+        rows_by_contract
+            .entry(row.contract_address.to_ascii_lowercase())
+            .or_insert(row);
+    }
+
+    ordered_contract_addresses
+        .iter()
+        .map(|contract_address| {
+            let contract_address = contract_address.to_ascii_lowercase();
+            let Some(row) = rows_by_contract.get(&contract_address) else {
+                return Ok(ContractBalanceTargetResolution::Unknown {
+                    network_slug: network.network_slug.clone(),
+                    chain_id: network.chain_id,
+                    contract_address,
+                });
+            };
+
+            let decimals = row
+                .decimals
+                .and_then(|decimals| u8::try_from(decimals).ok())
+                .ok_or_else(|| {
+                    invalid_catalog(
+                        &network.network_slug,
+                        Some(&row.asset_slug),
+                        CatalogIntegrityIssue::InvalidDecimals,
+                    )
+                })?;
+
+            Ok(ContractBalanceTargetResolution::Resolved(BalanceTarget {
+                network_slug: network.network_slug.clone(),
+                chain_id: network.chain_id,
+                asset_slug: row.asset_slug.clone(),
+                symbol: row.asset_symbol.clone(),
+                name: row.asset_name.clone(),
+                decimals,
+                pricing_asset_slug: row.asset_slug.clone(),
+                kind: BalanceTargetKind::Erc20 { contract_address },
+            }))
+        })
+        .collect()
 }
 
 fn invalid_catalog(

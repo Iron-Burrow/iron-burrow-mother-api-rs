@@ -91,12 +91,7 @@ pub(crate) fn single_item_level_failure_response() -> Value {
         "positions": [],
         "skipped": [],
         "errors": [
-            {
-                "network_slug": ETH_NETWORK,
-                "asset_slug": "ethereum",
-                "code": "balance_provider_unavailable",
-                "message": "Balance is temporarily unavailable for this asset on this network."
-            }
+            balance_error(ETH_NETWORK, "ethereum", "balance_provider_unavailable")
         ]
     })
 }
@@ -229,12 +224,7 @@ pub(crate) fn item_level_failure_response() -> Value {
                 ],
                 "skipped": [],
                 "errors": [
-                    {
-                        "network_slug": BASE_NETWORK,
-                        "asset_slug": "ethereum",
-                        "code": "balance_provider_unavailable",
-                        "message": "Balance is temporarily unavailable for this asset on this network."
-                    }
+                    balance_error(BASE_NETWORK, "ethereum", "balance_provider_unavailable")
                 ]
             }
         ],
@@ -271,7 +261,12 @@ fn evidence(network_slug: &str, block_number: &str, block_hash: &str) -> Value {
 
 fn ethereum_position(currency: &str, unit_price: &str, value: &str) -> Value {
     json!({
+        "selector": {
+            "kind": "asset_slug",
+            "value": "ethereum"
+        },
         "network_slug": ETH_NETWORK,
+        "contract_address": null,
         "asset_slug": "ethereum",
         "symbol": "ETH",
         "balance": {
@@ -290,8 +285,19 @@ fn ethereum_position(currency: &str, unit_price: &str, value: &str) -> Value {
 }
 
 fn usdc_position(network_slug: &str, currency: &str, unit_price: &str, value: &str) -> Value {
+    let contract_address = match network_slug {
+        BASE_NETWORK => Some("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"),
+        ETH_NETWORK => Some("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+        _ => None,
+    };
+
     json!({
+        "selector": {
+            "kind": "asset_slug",
+            "value": "usdc"
+        },
         "network_slug": network_slug,
+        "contract_address": contract_address,
         "asset_slug": "usdc",
         "symbol": "USDC",
         "balance": {
@@ -314,6 +320,25 @@ fn skipped_item(network_slug: &str, asset_slug: &str) -> Value {
         "network_slug": network_slug,
         "asset_slug": asset_slug,
         "reason": "asset_not_supported_on_network"
+    })
+}
+
+fn balance_error(network_slug: &str, asset_slug: &str, code: &str) -> Value {
+    json!({
+        "network_slug": network_slug,
+        "selector": {
+            "kind": "asset_slug",
+            "value": asset_slug
+        },
+        "contract_address": null,
+        "asset_slug": asset_slug,
+        "code": code,
+        "message": match code {
+            "balance_provider_unavailable" => {
+                "Balance is temporarily unavailable for this asset on this network."
+            }
+            _ => "This balance item could not be processed.",
+        }
     })
 }
 

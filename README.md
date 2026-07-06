@@ -122,9 +122,10 @@ curl -sS "$IB_API/v1/balances/bulk" \
 ```
 
 Use balance endpoints when a caller needs deterministic, structured balance
-results for explicitly supported networks and token asset slugs. Responses are data
-results, not natural-language answers; applications and agents should inspect
-fields, timestamps, evidence, skipped items, and error states before presenting
+results for explicitly supported networks, catalog token asset slugs, or
+explicit ERC-20 contract addresses. Responses are data results, not
+natural-language answers; applications and agents should inspect fields,
+timestamps, evidence, skipped items, and error states before presenting
 conclusions to users.
 
 ## ERC-20 Transfer Search

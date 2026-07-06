@@ -10,7 +10,7 @@ use super::asset_chain_map::{
     demo_chain_maps_for_assets, map_chain_map_row, AssetChainMapRow, InMemoryAssetChainMap,
 };
 use super::asset_match::{map_match_row, AssetMatchRow};
-use super::balance_catalog::{BalanceCatalogRow, Erc20TokenCatalogRow};
+use super::balance_catalog::{BalanceCatalogRow, BalanceNetworkCatalogRow, Erc20TokenCatalogRow};
 use super::errors::RepositoryError;
 
 #[derive(FromRow)]
@@ -126,6 +126,20 @@ impl GlobalAssetRepository {
                 catalog,
                 network_slug,
                 ordered_asset_slugs,
+            )),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) async fn load_balance_network_catalog_row(
+        &self,
+        network_slug: &str,
+    ) -> Result<Option<BalanceNetworkCatalogRow>, RepositoryError> {
+        match self {
+            Self::Database(pool) => load_balance_network_catalog_row_db(pool, network_slug).await,
+            Self::InMemory(catalog) => Ok(load_balance_network_catalog_row_in_memory(
+                catalog,
+                network_slug,
             )),
         }
     }
@@ -436,6 +450,28 @@ async fn load_balance_catalog_rows_db(
 }
 
 #[allow(dead_code)]
+async fn load_balance_network_catalog_row_db(
+    pool: &PgPool,
+    network_slug: &str,
+) -> Result<Option<BalanceNetworkCatalogRow>, RepositoryError> {
+    sqlx::query_as::<_, BalanceNetworkCatalogRow>(
+        r#"
+        select
+          network.slug as network_slug,
+          network.family as network_family,
+          network.chain_id as network_chain_id
+        from mother_api.network network
+        where network.status = 'active'
+          and network.slug = $1
+        "#,
+    )
+    .bind(network_slug)
+    .fetch_optional(pool)
+    .await
+    .map_err(RepositoryError::new)
+}
+
+#[allow(dead_code)]
 async fn load_erc20_token_catalog_rows_db(
     pool: &PgPool,
     network_slug: &str,
@@ -450,8 +486,11 @@ async fn load_erc20_token_catalog_rows_db(
         )
         select
           requested_contracts.contract_address,
+          network.slug as network_slug,
+          network.chain_id as network_chain_id,
           global_asset.slug as asset_slug,
           global_asset.symbol as asset_symbol,
+          global_asset.name as asset_name,
           asset_chain_map.decimals
         from requested_contracts
         join mother_api.network network
@@ -640,6 +679,21 @@ fn in_memory_balance_catalog_row(
     }
 }
 
+fn load_balance_network_catalog_row_in_memory(
+    catalog: &InMemoryGlobalAssets,
+    network_slug: &str,
+) -> Option<BalanceNetworkCatalogRow> {
+    catalog
+        .chain_maps
+        .iter()
+        .find(|mapping| mapping.chain_map.network.slug == network_slug)
+        .map(|mapping| BalanceNetworkCatalogRow {
+            network_slug: mapping.chain_map.network.slug.clone(),
+            network_family: mapping.chain_map.network.family.clone(),
+            network_chain_id: mapping.chain_map.network.chain_id,
+        })
+}
+
 #[allow(dead_code)]
 fn load_erc20_token_catalog_rows_in_memory(
     catalog: &InMemoryGlobalAssets,
@@ -679,8 +733,11 @@ fn load_erc20_token_catalog_rows_in_memory(
             mapping.sort_order,
             Erc20TokenCatalogRow {
                 contract_address,
+                network_slug: chain_map.network.slug.clone(),
+                network_chain_id: chain_map.network.chain_id,
                 asset_slug: asset.slug.clone(),
                 asset_symbol: asset.symbol.clone(),
+                asset_name: asset.name.clone(),
                 decimals: chain_map.decimals,
             },
         ));
