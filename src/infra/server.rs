@@ -4,7 +4,6 @@ use tokio::net::TcpListener;
 use tracing::{info, warn};
 
 use crate::adapters::http::router::build_router;
-// use crate::cli::{Command, USAGE};
 use crate::config::Config;
 use crate::state::AppState;
 
