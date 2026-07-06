@@ -87,7 +87,14 @@ pub(super) fn validate_contract_addresses(value: Option<&Value>) -> Result<Vec<S
 
 pub(super) fn validate_required_string(value: Option<&Value>) -> Result<String, ApiError> {
     match value {
-        Some(Value::String(s)) => Ok(s.clone()),
+        Some(Value::String(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                Err(ApiError::invalid_request())
+            } else {
+                Ok(trimmed.to_string())
+            }
+        }
         _ => Err(ApiError::invalid_request()),
     }
 }
@@ -95,7 +102,14 @@ pub(super) fn validate_required_string(value: Option<&Value>) -> Result<String, 
 pub(super) fn validate_optional_string(value: Option<&Value>) -> Result<Option<String>, ApiError> {
     match value {
         None => Ok(None),
-        Some(Value::String(s)) => Ok(Some(s.clone())),
+        Some(Value::String(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                Err(ApiError::invalid_request())
+            } else {
+                Ok(Some(trimmed.to_string()))
+            }
+        }
         Some(_) => Err(ApiError::invalid_request()),
     }
 }

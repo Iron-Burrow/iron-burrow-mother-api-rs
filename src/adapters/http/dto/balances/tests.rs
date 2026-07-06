@@ -156,7 +156,17 @@ async fn request_validation_rejects_invalid_as_of_field_values_with_invalid_requ
         },
         {
             let mut body = examples::single_request();
+            body["as_of"]["kind"] = json!("   ");
+            body
+        },
+        {
+            let mut body = examples::single_request();
             body["as_of"]["timestamp"] = json!(null);
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["as_of"]["timestamp"] = json!("   ");
             body
         },
         {
@@ -167,6 +177,11 @@ async fn request_validation_rejects_invalid_as_of_field_values_with_invalid_requ
         {
             let mut body = examples::single_request();
             body["as_of"]["block_number"] = json!(null);
+            body
+        },
+        {
+            let mut body = examples::single_request();
+            body["as_of"]["block_number"] = json!("   ");
             body
         },
         {
@@ -192,6 +207,50 @@ async fn request_validation_rejects_invalid_as_of_field_values_with_invalid_requ
         request.as_of.timestamp.as_deref(),
         Some("2026-07-03T00:00:00Z")
     );
+}
+
+#[tokio::test]
+async fn request_validation_trims_string_fields_at_boundary() {
+    let mut latest = examples::single_request();
+    latest["as_of"]["kind"] = json!(" latest ");
+    latest["account"]["network_slug"] = json!(" eth-mainnet ");
+    latest["quote_currency"] = json!(" mxn ");
+
+    let request = SingleBalanceRequest::try_from(json_object(latest)).unwrap();
+    assert_eq!(request.as_of.kind, "latest");
+    assert_eq!(request.account.network_slug, "eth-mainnet");
+    assert_eq!(request.quote_currency, "mxn");
+
+    let mut historical = examples::single_request();
+    historical["as_of"] = json!({
+        "kind": " timestamp ",
+        "timestamp": " 2026-07-03T00:00:00Z "
+    });
+
+    let request = SingleBalanceRequest::try_from(json_object(historical)).unwrap();
+    assert_eq!(request.as_of.kind, "timestamp");
+    assert_eq!(
+        request.as_of.timestamp.as_deref(),
+        Some("2026-07-03T00:00:00Z")
+    );
+}
+
+#[tokio::test]
+async fn request_validation_rejects_blank_required_strings() {
+    for (body, code) in [
+        {
+            let mut body = examples::single_request();
+            body["quote_currency"] = json!("   ");
+            (body, "invalid_request")
+        },
+        {
+            let mut body = examples::single_request();
+            body["account"]["network_slug"] = json!("   ");
+            (body, "missing_network_slug")
+        },
+    ] {
+        assert_api_error_code(SingleBalanceRequest::try_from(json_object(body)), code).await;
+    }
 }
 
 #[tokio::test]

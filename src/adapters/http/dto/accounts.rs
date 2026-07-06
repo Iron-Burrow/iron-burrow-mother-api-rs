@@ -67,6 +67,7 @@ fn validate_account_network_slug(
         return Err(ApiError::missing_network_slug());
     };
 
+    let network_slug = network_slug.trim();
     if network_slug.is_empty() {
         return Err(ApiError::missing_network_slug());
     }
@@ -75,7 +76,7 @@ fn validate_account_network_slug(
         .iter()
         .any(|supported| *supported == network_slug)
     {
-        Ok(network_slug.clone())
+        Ok(network_slug.to_string())
     } else {
         Err(ApiError::unsupported_network())
     }

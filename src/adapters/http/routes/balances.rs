@@ -1067,7 +1067,6 @@ mod tests {
             "arbitrum-one",
             "bitcoin-mainnet",
             "unknown-mainnet",
-            "eth-mainnet ",
             "ETH-MAINNET",
         ] {
             let (status, response) = post_json(
