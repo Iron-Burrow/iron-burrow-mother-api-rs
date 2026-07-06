@@ -679,9 +679,9 @@ Recommended Rust DTO names:
 ```rust
 Erc20TransferSearchRequest
 Erc20TransferSearchResponse
-OnchainWindowDTO
-TokenFiltersDOT
-ResolvedTokenFilterDTO
+OnchainWindowRequest
+OnchainWindowResponse
+ResolvedTokenSelectorRequest
 Erc20TransferRow
 Erc20TransferToken
 Erc20TransferAmount

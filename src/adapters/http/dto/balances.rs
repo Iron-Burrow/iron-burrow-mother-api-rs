@@ -1,196 +1,15 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use utoipa::ToSchema;
 
-use crate::{
-    adapters::http::{
-        error::ApiError,
-        types::JsonObject,
-        validation::{reject_unknown_fields, validate_asset_slugs, validate_contract_addresses},
-    },
-    application::balances::service::{
-        BalanceAccountResult, BalanceEvidence, BalanceItemErrorCode, BalanceItemOutcome,
-        BalanceQuoteOutcome, BalanceSnapshotAccount, BalanceSnapshotResult, BalanceTokenSelector,
-        ResolvedBalanceTarget,
-    },
+use crate::application::balances::service::{
+    BalanceAccountResult, BalanceEvidence, BalanceItemErrorCode, BalanceItemOutcome,
+    BalanceQuoteOutcome, BalanceSnapshotResult, BalanceTokenSelector, ResolvedBalanceTarget,
 };
+use crate::domain::accounts::OnchainAccount;
 
 #[allow(dead_code)]
 pub(crate) mod examples;
-
-const RESERVED_NETWORK_ALIAS_FIELDS: [&str; 3] = ["chain", "chain_id", "chain_slug"];
-const SINGLE_BALANCE_FIELDS: [&str; 4] = ["as_of", "account", "quote_currency", "tokens"];
-const BULK_BALANCE_FIELDS: [&str; 4] = ["as_of", "accounts", "quote_currency", "tokens"];
-const AS_OF_FIELDS: [&str; 3] = ["kind", "timestamp", "block_number"];
-const ACCOUNT_FIELDS: [&str; 3] = ["network_slug", "address", "client_ref"];
-const TOKEN_FIELDS: [&str; 2] = ["asset_slugs", "contract_addresses"];
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct SingleBalanceRequest {
-    pub(crate) as_of: BalanceAsOfRequest,
-    pub(crate) account: BalanceAccountRequest,
-    pub(crate) quote_currency: String,
-    pub(crate) tokens: BalanceTokenSelectorRequest,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct BulkBalanceRequest {
-    pub(crate) as_of: BalanceAsOfRequest,
-    pub(crate) accounts: Vec<BalanceAccountRequest>,
-    pub(crate) quote_currency: String,
-    pub(crate) tokens: BalanceTokenSelectorRequest,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct BalanceAsOfRequest {
-    pub(crate) kind: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) timestamp: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) block_number: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct BalanceAccountRequest {
-    pub(crate) network_slug: String,
-    pub(crate) address: String,
-    pub(crate) client_ref: Option<String>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct BalanceTokenSelectorRequest {
-    #[serde(default)]
-    pub(crate) asset_slugs: Vec<String>,
-    #[serde(default)]
-    pub(crate) contract_addresses: Vec<String>,
-}
-
-impl TryFrom<JsonObject> for SingleBalanceRequest {
-    type Error = ApiError;
-
-    fn try_from(request: JsonObject) -> Result<Self, Self::Error> {
-        reject_reserved_alias_fields_in_object(&request)?;
-        reject_unknown_fields(&request, &SINGLE_BALANCE_FIELDS)?;
-        validate_as_of_object(request.get("as_of"))?;
-        validate_account_object(request.get("account"))?;
-        validate_tokens_object(request.get("tokens"))?;
-
-        serde_json::from_value(Value::Object(request)).map_err(|_| ApiError::invalid_request())
-    }
-}
-
-impl TryFrom<JsonObject> for BulkBalanceRequest {
-    type Error = ApiError;
-
-    fn try_from(request: JsonObject) -> Result<Self, Self::Error> {
-        reject_reserved_alias_fields_in_object(&request)?;
-        reject_unknown_fields(&request, &BULK_BALANCE_FIELDS)?;
-        validate_as_of_object(request.get("as_of"))?;
-        validate_account_array(request.get("accounts"))?;
-        validate_tokens_object(request.get("tokens"))?;
-
-        serde_json::from_value(Value::Object(request)).map_err(|_| ApiError::invalid_request())
-    }
-}
-
-fn reject_reserved_alias_fields_in_object(object: &JsonObject) -> Result<(), ApiError> {
-    if RESERVED_NETWORK_ALIAS_FIELDS
-        .iter()
-        .any(|field| object.contains_key(*field))
-    {
-        return Err(ApiError::invalid_request());
-    }
-
-    for value in object.values() {
-        reject_reserved_alias_fields(value)?;
-    }
-
-    Ok(())
-}
-
-fn reject_reserved_alias_fields(value: &Value) -> Result<(), ApiError> {
-    match value {
-        Value::Object(object) => reject_reserved_alias_fields_in_object(object),
-        Value::Array(values) => {
-            for value in values {
-                reject_reserved_alias_fields(value)?;
-            }
-
-            Ok(())
-        }
-        _ => Ok(()),
-    }
-}
-
-fn validate_as_of_object(value: Option<&Value>) -> Result<(), ApiError> {
-    let Some(Value::Object(as_of)) = value else {
-        return Err(ApiError::invalid_request());
-    };
-
-    reject_unknown_fields(as_of, &AS_OF_FIELDS)?;
-    validate_required_string(as_of.get("kind"))?;
-    validate_optional_string(as_of.get("timestamp"))?;
-    validate_optional_string(as_of.get("block_number"))
-}
-
-fn validate_required_string(value: Option<&Value>) -> Result<(), ApiError> {
-    match value {
-        Some(Value::String(_)) => Ok(()),
-        _ => Err(ApiError::invalid_request()),
-    }
-}
-
-fn validate_optional_string(value: Option<&Value>) -> Result<(), ApiError> {
-    match value {
-        None | Some(Value::String(_)) => Ok(()),
-        Some(_) => Err(ApiError::invalid_request()),
-    }
-}
-
-fn validate_account_object(value: Option<&Value>) -> Result<(), ApiError> {
-    let Some(Value::Object(account)) = value else {
-        return Err(ApiError::invalid_request());
-    };
-
-    reject_unknown_fields(account, &ACCOUNT_FIELDS)
-}
-
-fn validate_account_array(value: Option<&Value>) -> Result<(), ApiError> {
-    let Some(Value::Array(accounts)) = value else {
-        return Err(ApiError::invalid_request());
-    };
-
-    for account in accounts {
-        validate_account_object(Some(account))?;
-    }
-
-    Ok(())
-}
-
-fn validate_tokens_object(value: Option<&Value>) -> Result<(), ApiError> {
-    let Some(value) = value else {
-        return Err(ApiError::empty_tokens());
-    };
-    let Value::Object(tokens) = value else {
-        return Err(ApiError::invalid_request());
-    };
-
-    reject_unknown_fields(tokens, &TOKEN_FIELDS)?;
-
-    let asset_slugs = validate_asset_slugs(tokens.get("asset_slugs"))?;
-    let contract_addresses = validate_contract_addresses(tokens.get("contract_addresses"))?;
-
-    if asset_slugs.is_empty() && contract_addresses.is_empty() {
-        return Err(ApiError::empty_tokens());
-    }
-
-    Ok(())
-}
+pub(crate) mod requests;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct BalanceResponseAssembler;
@@ -353,8 +172,8 @@ pub(crate) struct BalanceAccountIdentityPayload {
     client_ref: Option<String>,
 }
 
-impl From<BalanceSnapshotAccount> for BalanceAccountIdentityPayload {
-    fn from(account: BalanceSnapshotAccount) -> Self {
+impl From<OnchainAccount> for BalanceAccountIdentityPayload {
+    fn from(account: OnchainAccount) -> Self {
         Self {
             network_slug: account.network_slug,
             address: account.address,
@@ -632,8 +451,8 @@ fn selector_payload(selector: &BalanceTokenSelector) -> BalanceSelectorPayload {
 
 fn contract_address(target: &ResolvedBalanceTarget) -> Option<String> {
     match &target.kind {
-        crate::domain::balance_catalog::BalanceTargetKind::Native => None,
-        crate::domain::balance_catalog::BalanceTargetKind::Erc20 { contract_address } => {
+        crate::domain::assets::balance_catalog::BalanceTargetKind::Native => None,
+        crate::domain::assets::balance_catalog::BalanceTargetKind::Erc20 { contract_address } => {
             Some(contract_address.clone())
         }
     }

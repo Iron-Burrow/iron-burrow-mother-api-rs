@@ -12,7 +12,11 @@ use crate::adapters::bigwig::balances::{
 };
 use crate::adapters::bigwig::client::BigwigClient;
 use crate::adapters::bigwig::error::BigwigError;
-use crate::domain::balance_catalog::{BalanceTarget, BalanceTargetKind, CatalogResolverError};
+use crate::domain::accounts::OnchainAccount;
+use crate::domain::assets::balance_catalog::{
+    BalanceTarget, BalanceTargetKind, CatalogResolverError,
+};
+use crate::domain::assets::token_selector::TokenSelector;
 
 use super::{
     catalog::{
@@ -168,28 +172,9 @@ impl BalanceSnapshotService {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BalanceSnapshotRequest {
-    pub accounts: Vec<BalanceSnapshotAccount>,
-    pub tokens: BalanceSnapshotTokens,
+    pub accounts: Vec<OnchainAccount>,
+    pub tokens: TokenSelector,
     pub quote_currency: String,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct BalanceSnapshotTokens {
-    pub asset_slugs: Vec<String>,
-    pub contract_addresses: Vec<String>,
-}
-
-impl BalanceSnapshotTokens {
-    pub fn len(&self) -> usize {
-        self.asset_slugs.len() + self.contract_addresses.len()
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BalanceSnapshotAccount {
-    pub network_slug: String,
-    pub address: String,
-    pub client_ref: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -201,7 +186,7 @@ pub struct BalanceSnapshotResult {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BalanceAccountResult {
-    pub account: BalanceSnapshotAccount,
+    pub account: OnchainAccount,
     pub evidence: Option<BalanceEvidence>,
     pub items: Vec<BalanceItemOutcome>,
 }
@@ -276,7 +261,7 @@ pub enum BalanceQuoteOutcome {
 
 #[derive(Clone, Debug)]
 struct RawBalanceAccountResult {
-    account: BalanceSnapshotAccount,
+    account: OnchainAccount,
     evidence: Option<BalanceEvidence>,
     items: Vec<RawBalanceItemOutcome>,
 }
@@ -375,7 +360,7 @@ struct GroupedAccounts {
 #[derive(Clone, Debug)]
 struct GroupAccount {
     original_index: usize,
-    account: BalanceSnapshotAccount,
+    account: OnchainAccount,
 }
 
 #[derive(Clone, Debug)]
@@ -451,7 +436,7 @@ impl TargetKey {
     }
 }
 
-fn group_accounts(accounts: &[BalanceSnapshotAccount]) -> Vec<GroupedAccounts> {
+fn group_accounts(accounts: &[OnchainAccount]) -> Vec<GroupedAccounts> {
     let mut group_indexes = HashMap::new();
     let mut groups = Vec::<GroupedAccounts>::new();
 
@@ -480,7 +465,7 @@ fn group_accounts(accounts: &[BalanceSnapshotAccount]) -> Vec<GroupedAccounts> {
 
 fn plan_network_group(
     group: GroupedAccounts,
-    requested_tokens: &BalanceSnapshotTokens,
+    requested_tokens: &TokenSelector,
     network_resolution: Option<BalanceNetworkResolution>,
     asset_resolutions: Vec<BalanceTargetResolution>,
     contract_resolutions: Vec<ContractBalanceTargetResolution>,

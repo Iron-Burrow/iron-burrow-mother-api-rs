@@ -1,17 +1,13 @@
 use std::sync::Mutex;
 
+use crate::domain::onchain_time::{onchain_window::BlockWindow, onchain_window::OnchainWindow};
+use crate::domain::transfers::transfer_direction::TransferDirection;
 use crate::{
-    application::{
-        erc20_transfers::service::{
-            build_search_plan, search_erc20_transfers, Erc20TransferExtractionError,
-            Erc20TransferExtractionRequest, Erc20TransferExtractionResult,
-            Erc20TransferExtractionRow, Erc20TransferExtractor, Erc20TransferSearchError,
-            Erc20TransferSearchInput, Erc20TransferTokenFilterSource,
-        },
-        filters::{
-            onchain_window::{BlockWindow, OnchainWindow},
-            transfer_direction::TransferDirection,
-        },
+    application::erc20_transfers::service::{
+        build_search_plan, search_erc20_transfers, Erc20TransferExtractionError,
+        Erc20TransferExtractionRequest, Erc20TransferExtractionResult, Erc20TransferExtractionRow,
+        Erc20TransferExtractor, Erc20TransferSearchError, Erc20TransferSearchInput,
+        Erc20TransferTokenFilterSource,
     },
     test_utils::fixtures::global_assets::global_assets_repository,
 };

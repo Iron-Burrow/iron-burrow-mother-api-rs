@@ -43,30 +43,6 @@ pub(super) fn reject_unknown_fields(
     Ok(())
 }
 
-pub(super) fn validate_network_slug<S: AsRef<str>>(
-    value: Option<&Value>,
-    allowed_network_slugs: &[S],
-) -> Result<String, ApiError> {
-    let Some(Value::String(network_slug)) = value else {
-        return Err(ApiError::missing_network_slug());
-    };
-
-    let network_slug = network_slug.trim();
-
-    if network_slug.is_empty() {
-        return Err(ApiError::missing_network_slug());
-    }
-
-    if allowed_network_slugs
-        .iter()
-        .any(|allowed| allowed.as_ref() == network_slug)
-    {
-        Ok(network_slug.to_owned())
-    } else {
-        Err(ApiError::transfer_unsupported_network())
-    }
-}
-
 pub(super) fn validate_address(value: Option<&Value>) -> Result<String, ApiError> {
     let Some(Value::String(address)) = value else {
         return Err(ApiError::invalid_address());
@@ -106,5 +82,34 @@ pub(super) fn validate_contract_addresses(value: Option<&Value>) -> Result<Vec<S
             })
             .collect(),
         Some(_) => Err(ApiError::invalid_contract_address()),
+    }
+}
+
+pub(super) fn validate_required_string(value: Option<&Value>) -> Result<String, ApiError> {
+    match value {
+        Some(Value::String(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                Err(ApiError::invalid_request())
+            } else {
+                Ok(trimmed.to_string())
+            }
+        }
+        _ => Err(ApiError::invalid_request()),
+    }
+}
+
+pub(super) fn validate_optional_string(value: Option<&Value>) -> Result<Option<String>, ApiError> {
+    match value {
+        None => Ok(None),
+        Some(Value::String(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                Err(ApiError::invalid_request())
+            } else {
+                Ok(Some(trimmed.to_string()))
+            }
+        }
+        Some(_) => Err(ApiError::invalid_request()),
     }
 }

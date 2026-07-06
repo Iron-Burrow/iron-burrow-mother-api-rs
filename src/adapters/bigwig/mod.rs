@@ -1,6 +1,6 @@
-pub mod balances;
-pub mod client;
-pub mod erc20_transfers;
-pub mod error;
+pub(crate) mod balances;
+pub(crate) mod client;
+pub(crate) mod erc20_transfers;
+pub(crate) mod error;
 
-pub use client::BigwigClient;
+pub(crate) use client::BigwigClient;

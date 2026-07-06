@@ -1,17 +1,3 @@
-use crate::{
-    application::balances::{
-        catalog::CatalogBalanceTargetResolver,
-        quote::PriceQuoteClient,
-        service::{
-            BalanceItemErrorCode, BalanceItemOutcome, BalanceSnapshotAccount,
-            BalanceSnapshotRequest, BalanceSnapshotService, BalanceSnapshotTokens,
-        },
-    },
-    test_utils::constants::INFRA_GATEWAY_URL,
-};
-
-use super::*;
-
 use std::{
     io::{Read, Write},
     net::TcpListener,
@@ -21,10 +7,23 @@ use std::{
 use reqwest::StatusCode;
 use serde_json::{json, Value};
 
-const ACCOUNT_A: &str = "0x1111111111111111111111111111111111111111";
-
+use super::*;
 use crate::adapters::postgres::global_assets::GlobalAssetRepository;
+use crate::domain::{accounts::OnchainAccount, assets::token_selector::TokenSelector};
 use crate::test_utils::fixtures::global_assets::sample_assets;
+use crate::{
+    application::balances::{
+        catalog::CatalogBalanceTargetResolver,
+        quote::PriceQuoteClient,
+        service::{
+            BalanceItemErrorCode, BalanceItemOutcome, BalanceSnapshotRequest,
+            BalanceSnapshotService,
+        },
+    },
+    test_utils::constants::INFRA_GATEWAY_URL,
+};
+
+const ACCOUNT_A: &str = "0x1111111111111111111111111111111111111111";
 
 #[tokio::test]
 async fn malformed_success_body_becomes_internal_item_failure() {
@@ -36,7 +35,7 @@ async fn malformed_success_body_becomes_internal_item_failure() {
     let result = service(Some(bigwig_client(&base_url)))
         .resolve_latest(BalanceSnapshotRequest {
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
-            tokens: BalanceSnapshotTokens {
+            tokens: TokenSelector {
                 asset_slugs: vec!["usdc".to_string()],
                 contract_addresses: Vec::new(),
             },
@@ -56,8 +55,8 @@ async fn malformed_success_body_becomes_internal_item_failure() {
     ));
 }
 
-fn account(network_slug: &str, address: &str, client_ref: Option<&str>) -> BalanceSnapshotAccount {
-    BalanceSnapshotAccount {
+fn account(network_slug: &str, address: &str, client_ref: Option<&str>) -> OnchainAccount {
+    OnchainAccount {
         network_slug: network_slug.to_string(),
         address: address.to_string(),
         client_ref: client_ref.map(str::to_string),

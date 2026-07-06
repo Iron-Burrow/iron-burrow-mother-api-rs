@@ -4,20 +4,23 @@ use axum::{body::Bytes, extract::State, http::HeaderMap, Json};
 use tracing::warn;
 
 use crate::adapters::http::dto::{
+    accounts::OnchainAccountResponse,
+    assets::token_selector::{
+        ResolvedTokenSelectorRequest, TokenFilterResolutionDTO, TokenFilterSourceDTO,
+        TokenSelectorRequest,
+    },
     erc20_transfers::{
-        Erc20TransferAccount, Erc20TransferAmount, Erc20TransferRow, Erc20TransferSearchLimits,
-        Erc20TransferSearchRequest, Erc20TransferSearchResponse, Erc20TransferToken,
-    },
-    filters::{
-        onchain_window::{
-            BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO,
-            TimestampWindowDTO,
+        requests::Erc20TransferSearchRequest,
+        response::{
+            Erc20TransferAmount, Erc20TransferRow, Erc20TransferSearchLimits,
+            Erc20TransferSearchResponse, Erc20TransferToken,
         },
-        token_filters::{
-            ResolvedTokenFilterDTO, TokenFilterDTO, TokenFilterResolutionDTO, TokenFilterSourceDTO,
-        },
-        transfer_direction::TransferDirectionDTO,
     },
+    onchain_time::onchain_window::{
+        BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowRequest,
+        OnchainWindowResponse, TimestampWindowDTO,
+    },
+    transfers::transfer_direction::{TransferDirectionRequest, TransferDirectionResponse},
 };
 use crate::adapters::http::json_body::parse_json_object_body;
 use crate::adapters::http::validation::ensure_json_content_type;
@@ -28,11 +31,11 @@ use crate::application::erc20_transfers::service::{
     Erc20TransferSearchResult, Erc20TransferSearchTokenFilters, Erc20TransferTokenCatalogMetadata,
     Erc20TransferTokenFilterSource, ResolvedErc20TransferTokenFilter,
 };
-use crate::application::filters::{
-    onchain_window::{BlockWindow, LookbackTarget, LookbackWindow, OnchainWindow, TimestampWindow},
-    transfer_direction::TransferDirection,
+use crate::domain::assets::balance_catalog::{CatalogIntegrityIssue, CatalogResolverError};
+use crate::domain::onchain_time::onchain_window::{
+    BlockWindow, LookbackTarget, LookbackWindow, OnchainWindow, TimestampWindow,
 };
-use crate::domain::balance_catalog::{CatalogIntegrityIssue, CatalogResolverError};
+use crate::domain::transfers::transfer_direction::TransferDirection;
 use crate::{adapters::http::error::ApiError, state::AppState};
 
 const ERC20_TRANSFER_SEARCH_MAX_ROWS: u64 = 5_000;
@@ -84,7 +87,7 @@ pub(crate) fn erc20_transfer_search_input_from_request(
 }
 
 fn transfer_search_token_filters_from_dto(
-    tokens: TokenFilterDTO,
+    tokens: TokenSelectorRequest,
 ) -> Erc20TransferSearchTokenFilters {
     Erc20TransferSearchTokenFilters {
         asset_slugs: tokens.asset_slugs,
@@ -92,27 +95,26 @@ fn transfer_search_token_filters_from_dto(
     }
 }
 
-fn transfer_direction_from_dto(direction: TransferDirectionDTO) -> TransferDirection {
+fn transfer_direction_from_dto(direction: TransferDirectionRequest) -> TransferDirection {
     match direction {
-        TransferDirectionDTO::Any => TransferDirection::Any,
-        TransferDirectionDTO::From => TransferDirection::From,
-        TransferDirectionDTO::To => TransferDirection::To,
+        TransferDirectionRequest::Any => TransferDirection::Any,
+        TransferDirectionRequest::From => TransferDirection::From,
+        TransferDirectionRequest::To => TransferDirection::To,
     }
 }
 
-fn onchain_window_from_dto(window: OnchainWindowDTO) -> Result<OnchainWindow, ApiError> {
+fn onchain_window_from_dto(window: OnchainWindowRequest) -> Result<OnchainWindow, ApiError> {
     match window {
-        OnchainWindowDTO::Block(window) => Ok(OnchainWindow::Block(BlockWindow::new(
+        OnchainWindowRequest::Block(window) => Ok(OnchainWindow::Block(BlockWindow::new(
             window.from_block,
             window.to_block,
         )?)),
-        OnchainWindowDTO::Timestamp(window) => Ok(OnchainWindow::Timestamp(TimestampWindow::new(
-            window.from_timestamp,
-            window.to_timestamp,
-        )?)),
-        OnchainWindowDTO::Lookback(window) => Ok(OnchainWindow::Lookback(LookbackWindow::latest(
-            window.lookback_seconds,
-        )?)),
+        OnchainWindowRequest::Timestamp(window) => Ok(OnchainWindow::Timestamp(
+            TimestampWindow::new(window.from_timestamp, window.to_timestamp)?,
+        )),
+        OnchainWindowRequest::Lookback(window) => Ok(OnchainWindow::Lookback(
+            LookbackWindow::latest(window.lookback_seconds)?,
+        )),
     }
 }
 
@@ -134,7 +136,7 @@ fn erc20_transfer_search_response_from_result(
     Erc20TransferSearchResponse {
         ok: true,
         response_type: "erc20_transfer_search".to_string(),
-        account: Erc20TransferAccount {
+        account: OnchainAccountResponse {
             network_slug: request.network_slug,
             address: request.address.clone(),
             client_ref,
@@ -142,7 +144,7 @@ fn erc20_transfer_search_response_from_result(
         direction: transfer_direction_to_dto(request.direction),
         window: onchain_window_to_dto(&request.window),
         token_filters: TokenFilterResolutionDTO {
-            requested: TokenFilterDTO {
+            requested: TokenSelectorRequest {
                 asset_slugs: plan.requested_token_filters.asset_slugs,
                 contract_addresses: plan.requested_token_filters.contract_addresses,
             },
@@ -166,8 +168,8 @@ fn erc20_transfer_search_response_from_result(
 
 fn resolved_token_filter_to_dto(
     token_filter: ResolvedErc20TransferTokenFilter,
-) -> ResolvedTokenFilterDTO {
-    ResolvedTokenFilterDTO {
+) -> ResolvedTokenSelectorRequest {
+    ResolvedTokenSelectorRequest {
         contract_address: token_filter.contract_address,
         asset_slug: token_filter.asset_slug,
         symbol: token_filter.symbol,
@@ -232,31 +234,31 @@ fn trim_trailing_fractional_zeros(amount: String) -> String {
 fn transfer_row_direction(
     row: &Erc20TransferExtractionRow,
     watched_address: &str,
-) -> TransferDirectionDTO {
+) -> TransferDirectionResponse {
     if row.from.eq_ignore_ascii_case(watched_address) {
-        TransferDirectionDTO::From
+        TransferDirectionResponse::From
     } else if row.to.eq_ignore_ascii_case(watched_address) {
-        TransferDirectionDTO::To
+        TransferDirectionResponse::To
     } else {
-        TransferDirectionDTO::Any
+        TransferDirectionResponse::Any
     }
 }
 
-fn transfer_direction_to_dto(direction: TransferDirection) -> TransferDirectionDTO {
+fn transfer_direction_to_dto(direction: TransferDirection) -> TransferDirectionResponse {
     match direction {
-        TransferDirection::Any => TransferDirectionDTO::Any,
-        TransferDirection::From => TransferDirectionDTO::From,
-        TransferDirection::To => TransferDirectionDTO::To,
+        TransferDirection::Any => TransferDirectionResponse::Any,
+        TransferDirection::From => TransferDirectionResponse::From,
+        TransferDirection::To => TransferDirectionResponse::To,
     }
 }
 
-fn onchain_window_to_dto(window: &OnchainWindow) -> OnchainWindowDTO {
+fn onchain_window_to_dto(window: &OnchainWindow) -> OnchainWindowResponse {
     match window {
-        OnchainWindow::Block(window) => OnchainWindowDTO::Block(BlockWindowDTO {
+        OnchainWindow::Block(window) => OnchainWindowResponse::Block(BlockWindowDTO {
             from_block: window.from_block,
             to_block: window.to_block,
         }),
-        OnchainWindow::Timestamp(window) => OnchainWindowDTO::Timestamp(TimestampWindowDTO {
+        OnchainWindow::Timestamp(window) => OnchainWindowResponse::Timestamp(TimestampWindowDTO {
             from_timestamp: window.from_timestamp.clone(),
             to_timestamp: window.to_timestamp.clone(),
         }),
@@ -265,7 +267,7 @@ fn onchain_window_to_dto(window: &OnchainWindow) -> OnchainWindowDTO {
                 LookbackTarget::Latest => LookbackTargetDTO::Latest,
             };
 
-            OnchainWindowDTO::Lookback(LookbackWindowDTO {
+            OnchainWindowResponse::Lookback(LookbackWindowDTO {
                 lookback_seconds: window.lookback_seconds,
                 to,
             })

@@ -719,7 +719,7 @@ async fn invalid_requests_return_stable_public_codes() {
                 body
             })
             .unwrap(),
-            StatusCode::NOT_FOUND,
+            StatusCode::BAD_REQUEST,
             "unsupported_network",
         ),
         (
@@ -730,7 +730,7 @@ async fn invalid_requests_return_stable_public_codes() {
                 body
             })
             .unwrap(),
-            StatusCode::NOT_FOUND,
+            StatusCode::BAD_REQUEST,
             "unsupported_network",
         ),
         (

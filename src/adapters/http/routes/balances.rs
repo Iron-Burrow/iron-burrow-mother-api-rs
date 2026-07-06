@@ -3,12 +3,16 @@ use std::collections::HashSet;
 use axum::{body::Bytes, extract::State, http::HeaderMap, Json};
 use tracing::warn;
 
+use crate::adapters::http::dto::accounts::OnchainAccountRequest;
+use crate::adapters::http::dto::assets::token_selector::TokenSelectorRequest;
+use crate::adapters::http::dto::onchain_time::as_of::AsOfRequest;
+use crate::domain::accounts::OnchainAccount;
+use crate::domain::assets::token_selector::TokenSelector;
 use crate::{
     adapters::http::{
         dto::balances::{
-            BalanceAccountRequest, BalanceAsOfRequest, BalanceResponseAssembler,
-            BalanceResponseAssemblerError, BalanceTokenSelectorRequest, BulkBalanceRequest,
-            BulkBalanceResponse, SingleBalanceRequest, SingleBalanceResponse,
+            requests::BulkBalanceRequest, requests::SingleBalanceRequest, BalanceResponseAssembler,
+            BalanceResponseAssemblerError, BulkBalanceResponse, SingleBalanceResponse,
         },
         error::ApiError,
         json_body::parse_json_object_body,
@@ -17,12 +21,9 @@ use crate::{
     application::balances::{
         catalog::CatalogBalanceTargetResolver,
         quote::PriceQuoteClient,
-        service::{
-            BalanceSnapshotAccount, BalanceSnapshotRequest, BalanceSnapshotService,
-            BalanceSnapshotServiceError, BalanceSnapshotTokens,
-        },
+        service::{BalanceSnapshotRequest, BalanceSnapshotService, BalanceSnapshotServiceError},
     },
-    domain::balance_catalog::CatalogResolverError,
+    domain::assets::balance_catalog::CatalogResolverError,
     state::AppState,
 };
 
@@ -88,10 +89,10 @@ fn parse_bulk_balance_request(
 }
 
 fn validate_request(
-    as_of: BalanceAsOfRequest,
-    accounts: Vec<BalanceAccountRequest>,
+    as_of: AsOfRequest,
+    accounts: Vec<OnchainAccountRequest>,
     quote_currency: String,
-    tokens: BalanceTokenSelectorRequest,
+    tokens: TokenSelectorRequest,
 ) -> Result<BalanceSnapshotRequest, ApiError> {
     if as_of.kind != "latest" || as_of.timestamp.is_some() || as_of.block_number.is_some() {
         return Err(ApiError::unsupported_as_of());
@@ -107,6 +108,7 @@ fn validate_request(
     let contract_addresses = tokens
         .contract_addresses
         .into_iter()
+        .map(|contract_address| contract_address.to_ascii_lowercase())
         .filter(|contract_address| seen_contracts.insert(contract_address.clone()))
         .collect::<Vec<_>>();
     let token_count = tokens.asset_slugs.len() + contract_addresses.len();
@@ -154,13 +156,13 @@ fn validate_request(
     Ok(BalanceSnapshotRequest {
         accounts: accounts
             .into_iter()
-            .map(|account| BalanceSnapshotAccount {
+            .map(|account| OnchainAccount {
                 network_slug: account.network_slug,
                 address: account.address,
                 client_ref: account.client_ref,
             })
             .collect(),
-        tokens: BalanceSnapshotTokens {
+        tokens: TokenSelector {
             asset_slugs: tokens.asset_slugs,
             contract_addresses,
         },
@@ -338,16 +340,16 @@ mod tests {
     }
 
     #[test]
-    fn validation_deduplicates_explicit_contracts_before_limits() {
+    fn validation_deduplicates_explicit_contracts_case_insensitively_before_limits() {
         let request = validate_request(
             latest_as_of(),
             vec![account("eth-mainnet", ACCOUNT_A)],
             "USD".to_string(),
-            BalanceTokenSelectorRequest {
+            TokenSelectorRequest {
                 asset_slugs: Vec::new(),
                 contract_addresses: vec![
                     "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
-                    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
+                    "0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48".to_string(),
                 ],
             },
         )
@@ -367,7 +369,7 @@ mod tests {
             1,
             json!({"kind": "native"}),
             &[(
-                "0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD",
+                "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
                 "1000000000000000000",
             )],
         )) else {
@@ -398,7 +400,7 @@ mod tests {
         assert_eq!(response["quote_currency"], "MXN");
         assert_eq!(
             response["account"]["address"],
-            "0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD"
+            "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
         );
         assert_eq!(response["account"]["client_ref"], "primary");
         assert_eq!(response["evidence"]["network_slug"], "eth-mainnet");
@@ -426,7 +428,7 @@ mod tests {
             json!({
                 "network_slug": "eth-mainnet",
                 "accounts": [{
-                    "address": "0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD"
+                "address": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
                 }],
                 "targets": [{"kind": "native"}]
             })
@@ -662,11 +664,6 @@ mod tests {
             (
                 Some("application/json"),
                 br#"{"as_of":{"kind":"latest"}"#.as_slice(),
-            ),
-            (
-                Some("application/json"),
-                br#"{"as_of":{"kind":"latest"},"account":{},"quote_currency":"USD","tokens":{"asset_slugs":["ethereum"],"contract_addresses":[]}}"#
-                    .as_slice(),
             ),
             (
                 Some("application/json"),
@@ -961,13 +958,24 @@ mod tests {
                 json!({
                     "as_of": {"kind": "latest"},
                     "accounts": [{
+                        "address": "0x1111111111111111111111111111111111111111"
+                    }],
+                    "quote_currency": "USD",
+                    "tokens": valid_tokens.clone()
+                }),
+                "missing_network_slug",
+            ),
+            (
+                json!({
+                    "as_of": {"kind": "latest"},
+                    "accounts": [{
                         "network_slug": "eth-mainnet",
                         "address": "0x1234"
                     }],
                     "quote_currency": "USD",
                     "tokens": valid_tokens.clone()
                 }),
-                "invalid_account",
+                "invalid_address",
             ),
             (
                 json!({
@@ -1059,7 +1067,6 @@ mod tests {
             "arbitrum-one",
             "bitcoin-mainnet",
             "unknown-mainnet",
-            "eth-mainnet ",
             "ETH-MAINNET",
         ] {
             let (status, response) = post_json(
@@ -1134,6 +1141,7 @@ mod tests {
     #[tokio::test]
     async fn provider_unavailability_remains_a_sanitized_item_level_200() {
         let address = "0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD";
+        let normalized_address = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd";
         let (status, response) = post_json(
             balance_app(None, None),
             "/v1/balances",
@@ -1143,7 +1151,7 @@ mod tests {
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(response["status"], "failed");
-        assert_eq!(response["account"]["address"], address);
+        assert_eq!(response["account"]["address"], normalized_address);
         assert_eq!(response["evidence"], Value::Null);
         assert_eq!(
             response["errors"][0]["code"],
@@ -1220,28 +1228,28 @@ mod tests {
         assert_eq!(response_error_code(response).await, "internal_error");
     }
 
-    fn account(network_slug: &str, address: &str) -> BalanceAccountRequest {
-        BalanceAccountRequest {
+    fn account(network_slug: &str, address: &str) -> OnchainAccountRequest {
+        OnchainAccountRequest {
             network_slug: network_slug.to_string(),
             address: address.to_string(),
             client_ref: None,
         }
     }
 
-    fn latest_as_of() -> BalanceAsOfRequest {
-        BalanceAsOfRequest {
+    fn latest_as_of() -> AsOfRequest {
+        AsOfRequest {
             kind: "latest".to_string(),
             timestamp: None,
             block_number: None,
         }
     }
 
-    fn tokens<const N: usize>(asset_slugs: [&str; N]) -> BalanceTokenSelectorRequest {
+    fn tokens<const N: usize>(asset_slugs: [&str; N]) -> TokenSelectorRequest {
         token_vec(asset_slugs.into_iter().map(str::to_string).collect())
     }
 
-    fn token_vec(asset_slugs: Vec<String>) -> BalanceTokenSelectorRequest {
-        BalanceTokenSelectorRequest {
+    fn token_vec(asset_slugs: Vec<String>) -> TokenSelectorRequest {
+        TokenSelectorRequest {
             asset_slugs,
             contract_addresses: Vec::new(),
         }

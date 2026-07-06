@@ -1,6 +1,6 @@
 use crate::adapters::postgres::balance_catalog::{BalanceCatalogRow, Erc20TokenCatalogRow};
 use crate::adapters::postgres::global_assets::GlobalAssetRepository;
-use crate::domain::balance_catalog::{
+use crate::domain::assets::balance_catalog::{
     BalanceTarget, BalanceTargetKind, CatalogIntegrityIssue, CatalogResolverError,
 };
 
@@ -337,9 +337,14 @@ fn resolve_contract_rows(
                 CatalogIntegrityIssue::UnexpectedLookupRow,
             ));
         }
-        rows_by_contract
-            .entry(row.contract_address.to_ascii_lowercase())
-            .or_insert(row);
+        let contract_address = row.contract_address.to_ascii_lowercase();
+        if rows_by_contract.insert(contract_address, row).is_some() {
+            return Err(invalid_catalog(
+                &network.network_slug,
+                Some(&row.asset_slug),
+                CatalogIntegrityIssue::AmbiguousMapping,
+            ));
+        }
     }
 
     ordered_contract_addresses
@@ -731,6 +736,32 @@ mod tests {
     }
 
     #[test]
+    fn reports_ambiguous_duplicate_contract_rows() {
+        let network = BalanceNetworkResolution {
+            network_slug: "base-mainnet".to_string(),
+            chain_id: 8453,
+        };
+        let requested_contracts = vec!["0x833589fcd6edb6e08f4c7c32d4f71b54bda02913".to_string()];
+        let error = resolve_contract_rows(
+            &network,
+            &requested_contracts,
+            &[
+                erc20_row("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", "usdc"),
+                erc20_row("0x833589FCD6EDB6E08F4C7C32D4F71B54BDA02913", "usdc"),
+            ],
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            CatalogResolverError::InvalidCatalog {
+                issue: CatalogIntegrityIssue::AmbiguousMapping,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn active_non_erc20_mapping_is_an_unsupported_token_standard() {
         let resolution = resolve_catalog_rows(
             "base-mainnet",
@@ -763,6 +794,18 @@ mod tests {
             deployment_address: Some("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913".to_string()),
             decimals: Some(6),
             token_standard: Some("erc20".to_string()),
+        }
+    }
+
+    fn erc20_row(contract_address: &str, asset_slug: &str) -> Erc20TokenCatalogRow {
+        Erc20TokenCatalogRow {
+            contract_address: contract_address.to_string(),
+            network_slug: "base-mainnet".to_string(),
+            network_chain_id: Some(8453),
+            asset_slug: asset_slug.to_string(),
+            asset_symbol: "USDC".to_string(),
+            asset_name: "USD Coin".to_string(),
+            decimals: Some(6),
         }
     }
 }

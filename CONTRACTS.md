@@ -1215,8 +1215,8 @@ Fields:
 | `window.from_timestamp` / `window.to_timestamp` | strings | Timestamp window alternative. |
 | `window.lookback_seconds` / `window.to` | integer/string | Lookback alternative. `to` is currently `latest`. |
 
-`tokens` may be omitted, `null`, or `{}` for an unfiltered ERC-20 transfer
-search.
+`tokens` may be omitted, `null`, `{}`, or contain empty `asset_slugs` and
+`contract_addresses` arrays for an unfiltered ERC-20 transfer search.
 
 Top-level public `network_slug` and `address` fields are not accepted as
 aliases. Account identity must be grouped under `account`.

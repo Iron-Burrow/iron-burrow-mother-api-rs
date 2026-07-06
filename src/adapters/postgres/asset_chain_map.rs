@@ -1,7 +1,7 @@
 use sqlx::FromRow;
 
-use crate::domain::asset_chain_map::AssetChainMap;
-use crate::domain::global_assets::GlobalAsset;
+use crate::domain::assets::asset_chain_map::AssetChainMap;
+use crate::domain::assets::global_assets::GlobalAsset;
 use crate::domain::networks::NetworkRef;
 
 #[derive(FromRow)]

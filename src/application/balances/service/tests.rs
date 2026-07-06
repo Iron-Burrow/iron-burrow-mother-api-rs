@@ -296,23 +296,23 @@ fn price_quote_client(base_url: &str) -> PriceQuoteClient {
     PriceQuoteClient::new(PriceIndexerClient::new(base_url, "test-token", 2_000).unwrap())
 }
 
-fn account(network_slug: &str, address: &str, client_ref: Option<&str>) -> BalanceSnapshotAccount {
-    BalanceSnapshotAccount {
+fn account(network_slug: &str, address: &str, client_ref: Option<&str>) -> OnchainAccount {
+    OnchainAccount {
         network_slug: network_slug.to_string(),
         address: address.to_string(),
         client_ref: client_ref.map(str::to_string),
     }
 }
 
-fn token_slugs<const N: usize>(asset_slugs: [&str; N]) -> BalanceSnapshotTokens {
-    BalanceSnapshotTokens {
+fn token_slugs<const N: usize>(asset_slugs: [&str; N]) -> TokenSelector {
+    TokenSelector {
         asset_slugs: asset_slugs.into_iter().map(str::to_string).collect(),
         contract_addresses: Vec::new(),
     }
 }
 
-fn mixed_tokens(asset_slugs: &[&str], contract_addresses: &[&str]) -> BalanceSnapshotTokens {
-    BalanceSnapshotTokens {
+fn mixed_tokens(asset_slugs: &[&str], contract_addresses: &[&str]) -> TokenSelector {
+    TokenSelector {
         asset_slugs: asset_slugs
             .iter()
             .map(|asset_slug| (*asset_slug).to_string())
@@ -540,7 +540,7 @@ fn plan_asset_group(
     asset_slugs: Vec<String>,
     resolutions: Vec<BalanceTargetResolution>,
 ) -> Result<NetworkGroupPlan, BalanceSnapshotServiceError> {
-    let tokens = BalanceSnapshotTokens {
+    let tokens = TokenSelector {
         asset_slugs,
         contract_addresses: Vec::new(),
     };

@@ -1,3 +1,3 @@
-pub mod client;
+pub(crate) mod client;
 
-pub use client::DisClient;
+pub(crate) use client::DisClient;

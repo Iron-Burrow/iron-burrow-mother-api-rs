@@ -9,26 +9,34 @@ use utoipa::{
     OpenApi,
 };
 
+use crate::adapters::http::dto::assets::token_selector::{
+    ResolvedTokenSelectorRequest, TokenFilterResolutionDTO, TokenFilterSourceDTO,
+    TokenSelectorRequest,
+};
 use crate::adapters::http::dto::balances::{
-    examples as balance_examples, BalanceAccountIdentityPayload, BalanceAccountPayload,
-    BalanceAccountRequest, BalanceAmountPayload, BalanceAsOfRequest, BalanceBlockPayload,
-    BalanceErrorPayload, BalanceEvidencePayload, BalancePositionPayload, BalanceQuotePayload,
-    BalanceQuoteStatus, BalanceResponseStatus, BalanceSelectorPayload, BalanceSkippedPayload,
-    BalanceSummaryPayload, BalanceTokenSelectorRequest, BulkAsOfPayload, BulkBalanceRequest,
-    BulkBalanceResponse, SingleAsOfPayload, SingleBalanceRequest, SingleBalanceResponse,
+    examples as balance_examples, requests::BulkBalanceRequest, requests::SingleBalanceRequest,
+    BalanceAccountIdentityPayload, BalanceAccountPayload, BalanceAmountPayload,
+    BalanceBlockPayload, BalanceErrorPayload, BalanceEvidencePayload, BalancePositionPayload,
+    BalanceQuotePayload, BalanceQuoteStatus, BalanceResponseStatus, BalanceSelectorPayload,
+    BalanceSkippedPayload, BalanceSummaryPayload, BulkAsOfPayload, BulkBalanceResponse,
+    SingleAsOfPayload, SingleBalanceResponse,
 };
 use crate::adapters::http::dto::erc20_transfers::{
-    examples as erc20_transfer_examples, Erc20TransferAccount, Erc20TransferAmount,
-    Erc20TransferRow, Erc20TransferSearchLimits, Erc20TransferSearchRequest,
-    Erc20TransferSearchResponse, Erc20TransferToken,
+    examples as erc20_transfer_examples, response::Erc20TransferAmount, response::Erc20TransferRow,
+    response::Erc20TransferSearchLimits, response::Erc20TransferSearchResponse,
+    response::Erc20TransferToken,
 };
-use crate::adapters::http::dto::filters::onchain_window::{
-    BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO, TimestampWindowDTO,
+use crate::adapters::http::dto::onchain_time::as_of::AsOfRequest;
+use crate::adapters::http::dto::onchain_time::onchain_window::{
+    BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowRequest,
+    OnchainWindowResponse, TimestampWindowDTO,
 };
-use crate::adapters::http::dto::filters::token_filters::{
-    ResolvedTokenFilterDTO, TokenFilterDTO, TokenFilterResolutionDTO, TokenFilterSourceDTO,
+use crate::adapters::http::dto::transfers::transfer_direction::{
+    TransferDirectionRequest, TransferDirectionResponse,
 };
-use crate::adapters::http::dto::filters::transfer_direction::TransferDirectionDTO;
+use crate::adapters::http::dto::{
+    accounts::OnchainAccountRequest, erc20_transfers::requests::Erc20TransferSearchRequest,
+};
 use crate::adapters::http::error::{ErrorBody, ErrorResponse};
 use crate::config::Config;
 
@@ -62,10 +70,10 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
     components(schemas(
         BalanceAccountIdentityPayload,
         BalanceAccountPayload,
-        BalanceAccountRequest,
+        OnchainAccountRequest,
         BalanceAmountPayload,
-        BalanceAsOfRequest,
-        BalanceTokenSelectorRequest,
+        AsOfRequest,
+        TokenSelectorRequest,
         BalanceBlockPayload,
         BalanceErrorPayload,
         BalanceEvidencePayload,
@@ -80,24 +88,24 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
         BulkBalanceRequest,
         BulkBalanceResponse,
         Erc20TransferAmount,
-        Erc20TransferAccount,
         BlockWindowDTO,
-        TransferDirectionDTO,
+        TransferDirectionRequest,
+        TransferDirectionResponse,
         LookbackTargetDTO,
         LookbackWindowDTO,
         Erc20TransferRow,
         Erc20TransferSearchLimits,
         Erc20TransferSearchRequest,
         Erc20TransferSearchResponse,
-        OnchainWindowDTO,
+        OnchainWindowResponse,
+        OnchainWindowRequest,
         TimestampWindowDTO,
         Erc20TransferToken,
         TokenFilterResolutionDTO,
         TokenFilterSourceDTO,
-        TokenFilterDTO,
         ErrorBody,
         ErrorResponse,
-        ResolvedTokenFilterDTO,
+        ResolvedTokenSelectorRequest,
         SingleAsOfPayload,
         SingleBalanceRequest,
         SingleBalanceResponse
@@ -119,10 +127,10 @@ struct BaseApiDoc;
     components(schemas(
         BalanceAccountIdentityPayload,
         BalanceAccountPayload,
-        BalanceAccountRequest,
+        OnchainAccountRequest,
         BalanceAmountPayload,
-        BalanceAsOfRequest,
-        BalanceTokenSelectorRequest,
+        AsOfRequest,
+        TokenSelectorRequest,
         BalanceBlockPayload,
         BalanceErrorPayload,
         BalanceEvidencePayload,
@@ -137,24 +145,24 @@ struct BaseApiDoc;
         BulkBalanceRequest,
         BulkBalanceResponse,
         Erc20TransferAmount,
-        Erc20TransferAccount,
         BlockWindowDTO,
-        TransferDirectionDTO,
+        TransferDirectionRequest,
+        TransferDirectionResponse,
         LookbackTargetDTO,
         LookbackWindowDTO,
         Erc20TransferRow,
         Erc20TransferSearchLimits,
         Erc20TransferSearchRequest,
         Erc20TransferSearchResponse,
-        OnchainWindowDTO,
+        OnchainWindowResponse,
+        OnchainWindowRequest,
         TimestampWindowDTO,
         Erc20TransferToken,
         TokenFilterResolutionDTO,
         TokenFilterSourceDTO,
-        TokenFilterDTO,
         ErrorBody,
         ErrorResponse,
-        ResolvedTokenFilterDTO,
+        ResolvedTokenSelectorRequest,
         SingleAsOfPayload,
         SingleBalanceRequest,
         SingleBalanceResponse
@@ -778,9 +786,9 @@ mod tests {
         for schema in [
             "SingleBalanceRequest",
             "BulkBalanceRequest",
-            "BalanceAsOfRequest",
-            "BalanceAccountRequest",
-            "BalanceTokenSelectorRequest",
+            "AsOfRequest",
+            "OnchainAccountRequest",
+            "TokenSelectorRequest",
             "SingleBalanceResponse",
             "BulkBalanceResponse",
             "BalanceResponseStatus",
@@ -895,17 +903,17 @@ mod tests {
         );
         assert_schema_properties(
             schemas,
-            "BalanceAsOfRequest",
+            "AsOfRequest",
             &["block_number", "kind", "timestamp"],
         );
         assert_schema_properties(
             schemas,
-            "BalanceAccountRequest",
+            "OnchainAccountRequest",
             &["address", "client_ref", "network_slug"],
         );
         assert_schema_properties(
             schemas,
-            "BalanceTokenSelectorRequest",
+            "TokenSelectorRequest",
             &["asset_slugs", "contract_addresses"],
         );
         assert_schema_properties(
@@ -1164,10 +1172,11 @@ mod tests {
         for schema in [
             "Erc20TransferSearchRequest",
             "Erc20TransferSearchResponse",
-            "Erc20TransferAccount",
-            "OnchainWindowDTO",
-            "TokenFilterDTO",
-            "ResolvedTokenFilterDTO",
+            "OnchainAccountRequest",
+            "OnchainWindowResponse",
+            "OnchainWindowRequest",
+            "TokenSelectorRequest",
+            "ResolvedTokenSelectorRequest",
             "Erc20TransferRow",
             "Erc20TransferToken",
             "Erc20TransferAmount",
@@ -1338,7 +1347,7 @@ mod tests {
         assert!(!required.contains(&"tokens"));
 
         let account_schema = schemas
-            .get("Erc20TransferAccount")
+            .get("OnchainAccountRequest")
             .expect("missing account schema");
         let account_properties = account_schema["properties"]
             .as_object()
@@ -1357,7 +1366,7 @@ mod tests {
         let schemas = json["components"]["schemas"]
             .as_object()
             .expect("OpenAPI components.schemas should be an object");
-        let enum_values = schemas["TransferDirectionDTO"]["enum"]
+        let enum_values = schemas["TransferDirectionRequest"]["enum"]
             .as_array()
             .expect("direction schema should define enum values")
             .iter()

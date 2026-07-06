@@ -1,7 +1,7 @@
 use sqlx::FromRow;
 
-use crate::domain::asset_match::{AssetMatch, ExactMatchConfidence};
-use crate::domain::global_assets::GlobalAsset;
+use crate::domain::assets::asset_match::{AssetMatch, ExactMatchConfidence};
+use crate::domain::assets::global_assets::GlobalAsset;
 
 #[derive(FromRow)]
 pub(super) struct AssetMatchRow {
