@@ -108,6 +108,7 @@ fn validate_request(
     let contract_addresses = tokens
         .contract_addresses
         .into_iter()
+        .map(|contract_address| contract_address.to_ascii_lowercase())
         .filter(|contract_address| seen_contracts.insert(contract_address.clone()))
         .collect::<Vec<_>>();
     let token_count = tokens.asset_slugs.len() + contract_addresses.len();
@@ -339,7 +340,7 @@ mod tests {
     }
 
     #[test]
-    fn validation_deduplicates_explicit_contracts_before_limits() {
+    fn validation_deduplicates_explicit_contracts_case_insensitively_before_limits() {
         let request = validate_request(
             latest_as_of(),
             vec![account("eth-mainnet", ACCOUNT_A)],
@@ -348,7 +349,7 @@ mod tests {
                 asset_slugs: Vec::new(),
                 contract_addresses: vec![
                     "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
-                    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
+                    "0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48".to_string(),
                 ],
             },
         )
