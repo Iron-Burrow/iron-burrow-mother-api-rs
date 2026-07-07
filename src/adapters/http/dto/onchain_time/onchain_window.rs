@@ -21,6 +21,14 @@ const WINDOW_FIELDS: [&str; 5] = [
 ];
 const LOOKBACK_WINDOW_FIELDS: [&str; 2] = ["lookback_seconds", "to"];
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum OnchainWindowKindDTO {
+    Block,
+    Timestamp,
+    Lookback,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 #[serde(untagged)]
 pub(crate) enum OnchainWindowDTO {
