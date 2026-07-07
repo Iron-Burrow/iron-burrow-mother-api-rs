@@ -14,18 +14,6 @@ pub(crate) enum TransferDirectionDTO {
     To,
 }
 
-pub(crate) fn validate_direction(value: Option<&Value>) -> Result<TransferDirectionDTO, ApiError> {
-    match value {
-        Some(Value::String(direction)) => match direction.as_str() {
-            "any" => Ok(TransferDirectionDTO::Any),
-            "from" => Ok(TransferDirectionDTO::From),
-            "to" => Ok(TransferDirectionDTO::To),
-            _ => Err(ApiError::invalid_direction()),
-        },
-        _ => Err(ApiError::invalid_direction()),
-    }
-}
-
 impl From<TransferDirection> for TransferDirectionDTO {
     fn from(direction: TransferDirection) -> Self {
         match direction {
@@ -42,6 +30,22 @@ impl From<TransferDirectionDTO> for TransferDirection {
             TransferDirectionDTO::Any => Self::Any,
             TransferDirectionDTO::From => Self::From,
             TransferDirectionDTO::To => Self::To,
+        }
+    }
+}
+
+impl TryFrom<Option<&Value>> for TransferDirectionDTO {
+    type Error = ApiError;
+
+    fn try_from(value: Option<&Value>) -> Result<Self, Self::Error> {
+        match value {
+            Some(Value::String(direction)) => match direction.as_str() {
+                "any" => Ok(TransferDirectionDTO::Any),
+                "from" => Ok(TransferDirectionDTO::From),
+                "to" => Ok(TransferDirectionDTO::To),
+                _ => Err(ApiError::invalid_direction()),
+            },
+            _ => Err(ApiError::invalid_direction()),
         }
     }
 }

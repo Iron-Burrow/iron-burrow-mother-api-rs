@@ -7,7 +7,7 @@ use crate::adapters::http::dto::assets::token_selector::{
 use crate::adapters::http::dto::{
     accounts::{validate_account_object, OnchainAccountRequest},
     onchain_time::onchain_window::{validate_window, OnchainWindowDTO},
-    transfers::transfer_direction::{validate_direction, TransferDirectionDTO},
+    transfers::transfer_direction::TransferDirectionDTO,
 };
 use crate::adapters::http::error::ApiError;
 use crate::adapters::http::types::JsonObject;
@@ -37,7 +37,7 @@ impl TryFrom<&JsonObject> for Erc20TransferSearchRequest {
 
         Ok(Self {
             account,
-            direction: validate_direction(request.get("direction"))?,
+            direction: TransferDirectionDTO::try_from(request.get("direction"))?,
             tokens: validate_optional_token_filters(request.get("tokens"))?,
             window: validate_window(request.get("window"))?,
         })
