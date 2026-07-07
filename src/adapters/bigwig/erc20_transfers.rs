@@ -1,29 +1,20 @@
 use serde::{Deserialize, Serialize};
 
 use crate::adapters::bigwig::{client::BigwigClient, error::BigwigError};
+use crate::adapters::http::dto::transfers::transfer_direction::TransferDirectionDTO;
 use crate::application::erc20_transfers::service::{
     Erc20TransferExtractionError, Erc20TransferExtractionRequest, Erc20TransferExtractionResult,
     Erc20TransferExtractionRow, Erc20TransferExtractor,
 };
-use crate::domain::{
-    onchain_time::onchain_window::OnchainWindow, transfers::transfer_direction::TransferDirection,
-};
+use crate::domain::onchain_time::onchain_window::OnchainWindow;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct BigwigErc20TransferRequest {
     pub network_slug: String,
     pub address: String,
-    pub direction: BigwigErc20TransferDirection,
+    pub direction: TransferDirectionDTO,
     pub contract_addresses: Vec<String>,
     pub window: BigwigErc20TransferWindow,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum BigwigErc20TransferDirection {
-    Any,
-    From,
-    To,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -54,7 +45,7 @@ pub(crate) struct BigwigErc20TransferResponse {
     pub extractor: BigwigErc20TransferExtractor,
     pub network_slug: String,
     pub address: String,
-    pub direction: BigwigErc20TransferDirection,
+    pub direction: TransferDirectionDTO,
     pub window_kind: BigwigErc20TransferWindowKind,
     #[serde(default)]
     pub from_block: Option<u64>,
@@ -102,23 +93,13 @@ impl From<Erc20TransferExtractionRequest> for BigwigErc20TransferRequest {
         Self {
             network_slug: request.network_slug,
             address: request.address.to_ascii_lowercase(),
-            direction: BigwigErc20TransferDirection::from(request.direction),
+            direction: TransferDirectionDTO::from(request.direction),
             contract_addresses: request
                 .contract_addresses
                 .into_iter()
                 .map(|contract_address| contract_address.to_ascii_lowercase())
                 .collect(),
             window: BigwigErc20TransferWindow::from(request.window),
-        }
-    }
-}
-
-impl From<TransferDirection> for BigwigErc20TransferDirection {
-    fn from(direction: TransferDirection) -> Self {
-        match direction {
-            TransferDirection::Any => Self::Any,
-            TransferDirection::From => Self::From,
-            TransferDirection::To => Self::To,
         }
     }
 }

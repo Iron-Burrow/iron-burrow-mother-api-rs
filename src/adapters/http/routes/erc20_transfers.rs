@@ -20,7 +20,7 @@ use crate::adapters::http::dto::{
         BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowRequest,
         OnchainWindowResponse, TimestampWindowDTO,
     },
-    transfers::transfer_direction::{TransferDirectionRequest, TransferDirectionResponse},
+    transfers::transfer_direction::TransferDirectionDTO,
 };
 use crate::adapters::http::json_body::parse_json_object_body;
 use crate::adapters::http::validation::ensure_json_content_type;
@@ -79,7 +79,7 @@ pub(crate) fn erc20_transfer_search_input_from_request(
     Ok(Erc20TransferSearchInput {
         network_slug: request.account.network_slug,
         address: request.account.address,
-        direction: transfer_direction_from_dto(request.direction),
+        direction: TransferDirection::from(request.direction),
         window: onchain_window_from_dto(request.window)?,
         asset_slugs: tokens.asset_slugs,
         contract_addresses: tokens.contract_addresses,
@@ -92,14 +92,6 @@ fn transfer_search_token_filters_from_dto(
     Erc20TransferSearchTokenFilters {
         asset_slugs: tokens.asset_slugs,
         contract_addresses: tokens.contract_addresses,
-    }
-}
-
-fn transfer_direction_from_dto(direction: TransferDirectionRequest) -> TransferDirection {
-    match direction {
-        TransferDirectionRequest::Any => TransferDirection::Any,
-        TransferDirectionRequest::From => TransferDirection::From,
-        TransferDirectionRequest::To => TransferDirection::To,
     }
 }
 
@@ -141,7 +133,7 @@ fn erc20_transfer_search_response_from_result(
             address: request.address.clone(),
             client_ref,
         },
-        direction: transfer_direction_to_dto(request.direction),
+        direction: TransferDirectionDTO::from(request.direction),
         window: onchain_window_to_dto(&request.window),
         token_filters: TokenFilterResolutionDTO {
             requested: TokenSelectorRequest {
@@ -234,21 +226,13 @@ fn trim_trailing_fractional_zeros(amount: String) -> String {
 fn transfer_row_direction(
     row: &Erc20TransferExtractionRow,
     watched_address: &str,
-) -> TransferDirectionResponse {
+) -> TransferDirectionDTO {
     if row.from.eq_ignore_ascii_case(watched_address) {
-        TransferDirectionResponse::From
+        TransferDirectionDTO::From
     } else if row.to.eq_ignore_ascii_case(watched_address) {
-        TransferDirectionResponse::To
+        TransferDirectionDTO::To
     } else {
-        TransferDirectionResponse::Any
-    }
-}
-
-fn transfer_direction_to_dto(direction: TransferDirection) -> TransferDirectionResponse {
-    match direction {
-        TransferDirection::Any => TransferDirectionResponse::Any,
-        TransferDirection::From => TransferDirectionResponse::From,
-        TransferDirection::To => TransferDirectionResponse::To,
+        TransferDirectionDTO::Any
     }
 }
 
