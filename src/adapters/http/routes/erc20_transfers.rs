@@ -16,10 +16,7 @@ use crate::adapters::http::dto::{
             Erc20TransferSearchResponse, Erc20TransferToken,
         },
     },
-    onchain_time::onchain_window::{
-        BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowRequest,
-        OnchainWindowResponse, TimestampWindowDTO,
-    },
+    onchain_time::onchain_window::OnchainWindowDTO,
     transfers::transfer_direction::TransferDirectionDTO,
 };
 use crate::adapters::http::json_body::parse_json_object_body;
@@ -32,9 +29,7 @@ use crate::application::erc20_transfers::service::{
     Erc20TransferTokenFilterSource, ResolvedErc20TransferTokenFilter,
 };
 use crate::domain::assets::balance_catalog::{CatalogIntegrityIssue, CatalogResolverError};
-use crate::domain::onchain_time::onchain_window::{
-    BlockWindow, LookbackTarget, LookbackWindow, OnchainWindow, TimestampWindow,
-};
+use crate::domain::onchain_time::onchain_window::OnchainWindow;
 use crate::domain::transfers::transfer_direction::TransferDirection;
 use crate::{adapters::http::error::ApiError, state::AppState};
 
@@ -80,7 +75,7 @@ pub(crate) fn erc20_transfer_search_input_from_request(
         network_slug: request.account.network_slug,
         address: request.account.address,
         direction: TransferDirection::from(request.direction),
-        window: onchain_window_from_dto(request.window)?,
+        window: OnchainWindow::try_from(request.window)?,
         asset_slugs: tokens.asset_slugs,
         contract_addresses: tokens.contract_addresses,
     })
@@ -92,21 +87,6 @@ fn transfer_search_token_filters_from_dto(
     Erc20TransferSearchTokenFilters {
         asset_slugs: tokens.asset_slugs,
         contract_addresses: tokens.contract_addresses,
-    }
-}
-
-fn onchain_window_from_dto(window: OnchainWindowRequest) -> Result<OnchainWindow, ApiError> {
-    match window {
-        OnchainWindowRequest::Block(window) => Ok(OnchainWindow::Block(BlockWindow::new(
-            window.from_block,
-            window.to_block,
-        )?)),
-        OnchainWindowRequest::Timestamp(window) => Ok(OnchainWindow::Timestamp(
-            TimestampWindow::new(window.from_timestamp, window.to_timestamp)?,
-        )),
-        OnchainWindowRequest::Lookback(window) => Ok(OnchainWindow::Lookback(
-            LookbackWindow::latest(window.lookback_seconds)?,
-        )),
     }
 }
 
@@ -134,7 +114,7 @@ fn erc20_transfer_search_response_from_result(
             client_ref,
         },
         direction: TransferDirectionDTO::from(request.direction),
-        window: onchain_window_to_dto(&request.window),
+        window: OnchainWindowDTO::from(request.window),
         token_filters: TokenFilterResolutionDTO {
             requested: TokenSelectorRequest {
                 asset_slugs: plan.requested_token_filters.asset_slugs,
@@ -233,29 +213,6 @@ fn transfer_row_direction(
         TransferDirectionDTO::To
     } else {
         TransferDirectionDTO::Any
-    }
-}
-
-fn onchain_window_to_dto(window: &OnchainWindow) -> OnchainWindowResponse {
-    match window {
-        OnchainWindow::Block(window) => OnchainWindowResponse::Block(BlockWindowDTO {
-            from_block: window.from_block,
-            to_block: window.to_block,
-        }),
-        OnchainWindow::Timestamp(window) => OnchainWindowResponse::Timestamp(TimestampWindowDTO {
-            from_timestamp: window.from_timestamp.clone(),
-            to_timestamp: window.to_timestamp.clone(),
-        }),
-        OnchainWindow::Lookback(window) => {
-            let to = match window.to {
-                LookbackTarget::Latest => LookbackTargetDTO::Latest,
-            };
-
-            OnchainWindowResponse::Lookback(LookbackWindowDTO {
-                lookback_seconds: window.lookback_seconds,
-                to,
-            })
-        }
     }
 }
 

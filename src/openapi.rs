@@ -28,8 +28,7 @@ use crate::adapters::http::dto::erc20_transfers::{
 };
 use crate::adapters::http::dto::onchain_time::as_of::AsOfRequest;
 use crate::adapters::http::dto::onchain_time::onchain_window::{
-    BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowRequest,
-    OnchainWindowResponse, TimestampWindowDTO,
+    BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO, TimestampWindowDTO,
 };
 use crate::adapters::http::dto::transfers::transfer_direction::TransferDirectionDTO;
 use crate::adapters::http::dto::{
@@ -94,8 +93,7 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
         Erc20TransferSearchLimits,
         Erc20TransferSearchRequest,
         Erc20TransferSearchResponse,
-        OnchainWindowResponse,
-        OnchainWindowRequest,
+        OnchainWindowDTO,
         TimestampWindowDTO,
         Erc20TransferToken,
         TokenFilterResolutionDTO,
@@ -150,8 +148,7 @@ struct BaseApiDoc;
         Erc20TransferSearchLimits,
         Erc20TransferSearchRequest,
         Erc20TransferSearchResponse,
-        OnchainWindowResponse,
-        OnchainWindowRequest,
+        OnchainWindowDTO,
         TimestampWindowDTO,
         Erc20TransferToken,
         TokenFilterResolutionDTO,
@@ -1169,8 +1166,7 @@ mod tests {
             "Erc20TransferSearchRequest",
             "Erc20TransferSearchResponse",
             "OnchainAccountRequest",
-            "OnchainWindowResponse",
-            "OnchainWindowRequest",
+            "OnchainWindowDTO",
             "TokenSelectorRequest",
             "ResolvedTokenSelectorRequest",
             "Erc20TransferRow",
