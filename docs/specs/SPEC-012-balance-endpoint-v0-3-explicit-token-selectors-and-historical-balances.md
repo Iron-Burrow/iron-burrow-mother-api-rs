@@ -1,7 +1,7 @@
 ---
 status: draft
 owner: iron-burrow
-last_reviewed: 2026-07-03
+last_reviewed: 2026-07-07
 agent_edit_policy: update_when_relevant
 ---
 
@@ -47,6 +47,35 @@ Mother API owns:
 Bigwig, or another accepted internal upstream contract, owns balance evidence,
 provider access, `eth_call` behavior, block selection, timestamp-to-block
 resolution, and historical balance availability.
+
+For SPEC-012 historical balances, Bigwig SPEC-009 is implemented and accepted.
+Mother API should use Bigwig's internal v2 primitive route:
+
+`POST /internal/v1/primitives/evm/balances`
+
+Requests to this route must include hub-only internal authentication and
+service identity:
+
+- `Authorization: Bearer <INFRA_GATEWAY_TOKEN>`
+- `X-Client-Service: mother-api`
+
+Current SPEC-009 historical coverage for this route is:
+
+- `eth-mainnet`
+- `base-mainnet`
+
+Bigwig accepts one network per request. Mother API should group balance work
+by `network_slug` before calling Bigwig.
+
+Bigwig accepts only concrete balance targets:
+
+- native token: `{ "kind": "native" }`
+- ERC-20 token: `{ "kind": "erc20", "contract_address": "0x..." }`
+
+Bigwig does not accept public selector forms or metadata such as `asset_slug`,
+symbol, decimals, quote currency, prices, or catalog annotations. Mother API
+must continue to own selector resolution, catalog and decimal enrichment,
+quote enrichment, and final public response shaping.
 
 Price Indexer owns quote availability, derivation, freshness, FX conversion,
 and historical price data. Mother API consumes it read-only.
@@ -158,10 +187,9 @@ V0.3 supports these public forms:
 { "kind": "block_number", "block_number": "19000000" }
 ```
 
-Historical implementation is gated on an accepted Bigwig or equivalent
-internal historical-balance contract. Until that upstream contract exists,
-SPEC-012 remains draft and historical requests must not be exposed as a public
-promise.
+Historical implementation is no longer blocked on upstream contract readiness:
+Bigwig SPEC-009 now provides accepted historical-balance evidence via
+`POST /internal/v1/primitives/evm/balances`.
 
 Historical requests must never silently fall back to latest balances. If the
 requested historical evidence is unavailable, the affected account or token
@@ -170,6 +198,53 @@ result must report explicit unavailability.
 For `block_number`, block numbers are network-local. The first v0.3
 implementation may reject mixed-network bulk requests for `block_number`
 unless the accepted upstream contract supports a network-to-block mapping.
+
+Bigwig `as_of` handling relevant to SPEC-012 is:
+
+- `latest`: Bigwig pins an observed head block before executing balances.
+- `block_number`: Bigwig executes at the exact requested block.
+- `timestamp`: Bigwig resolves to the highest block whose timestamp is less
+  than or equal to the requested timestamp, then executes at that block.
+
+Historical requests must never fall back to latest.
+
+Canonical Bigwig request shape for historical and latest evidence work:
+
+```json
+{
+  "network_slug": "eth-mainnet",
+  "as_of": {
+    "kind": "block_number",
+    "block_number": "19000000"
+  },
+  "accounts": [
+    "0x1234567890abcdef1234567890abcdef1234beef"
+  ],
+  "tokens": [
+    {
+      "kind": "native"
+    },
+    {
+      "kind": "erc20",
+      "contract_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+    }
+  ]
+}
+```
+
+Bigwig `as_of` variants consumed by Mother API:
+
+```json
+{ "kind": "latest" }
+```
+
+```json
+{ "kind": "block_number", "block_number": "19000000" }
+```
+
+```json
+{ "kind": "timestamp", "timestamp": "2026-07-03T00:00:00Z" }
+```
 
 ## Quote Semantics
 
@@ -215,6 +290,51 @@ resolved timestamps when upstream evidence provides them. It must not expose
 Bigwig routes, providers, URLs, chain IDs, authentication details, price
 internals, or operation-capability details.
 
+For this Bigwig primitive, Mother API should model and preserve Bigwig
+`resolved_evidence` internally (including resolved `block_number`,
+`block_hash`, and `block_timestamp`) so public responses can clearly describe
+the actual evidence block used for balance resolution.
+
+Canonical Bigwig response shape to model internally:
+
+```json
+{
+  "primitive": "evm_balances",
+  "status": "complete",
+  "network": {
+    "network_slug": "eth-mainnet",
+    "chain_id": 1
+  },
+  "requested_as_of": {
+    "kind": "block_number",
+    "block_number": "19000000"
+  },
+  "resolved_evidence": {
+    "kind": "exact_block",
+    "block_number": "19000000",
+    "block_hash": "0x...",
+    "block_timestamp": "2024-01-15T12:34:56Z"
+  },
+  "items": [
+    {
+      "account_address": "0x1234567890abcdef1234567890abcdef1234beef",
+      "requested_token": {
+        "kind": "erc20",
+        "contract_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+      },
+      "raw_balance": {
+        "status": "resolved",
+        "value": "123456789"
+      }
+    }
+  ]
+}
+```
+
+For this response family, top-level `status` is `complete`, `partial`, or
+`failed`. Item-level `raw_balance.status` is `resolved`, `failed`, or
+`unavailable`.
+
 ## Validation and Errors
 
 Request-level errors are for invalid input or impossible request shapes:
@@ -245,19 +365,48 @@ cannot be resolved:
 - timestamp-to-block resolution unavailable upstream;
 - quote unavailable or unsupported.
 
+When Bigwig reasons are available, Mother API should preserve/map at least:
+
+- `erc20_contract_code_absent_at_evidence_block`;
+- `erc20_balanceof_not_supported`;
+- `historical_evidence_unavailable`;
+- `native_balance_call_failed`;
+- `erc20_balance_call_failed`.
+
+Request-wide Bigwig errors should be mapped into sanitized Mother API public
+errors while preserving actionable semantics for operators, including:
+
+- `invalid_as_of`;
+- `unsupported_network`;
+- `network_not_enabled_for_operation`;
+- `no_route_satisfies_operation`;
+- `block_out_of_range`;
+- `timestamp_anchor_not_configured`;
+- `timestamp_out_of_range`;
+- `gateway_rate_limited`;
+- `provider_unavailable`;
+- `provider_timeout`.
+
 Public errors and item-level errors must remain sanitized Mother API errors.
 They must not leak upstream provider topology or pricing internals.
 
 ## Implementation Notes
 
 - Update balance DTOs and examples to use `tokens`, not `assets[]`.
+- Update Bigwig client DTOs for
+  `POST /internal/v1/primitives/evm/balances`.
 - Reuse the existing token-filter validation style from ERC-20 transfer
   search where it fits the balance contract.
 - Align future account-scoped public request and response shapes on
   `account.network_slug`, `account.address`, and optional
   `account.client_ref`.
+- Resolve SPEC-012 public token selectors (`tokens.asset_slugs` and
+  `tokens.contract_addresses`) into concrete Bigwig token targets before
+  calling Bigwig.
 - Reuse existing catalog helpers for resolving explicit ERC-20 contract
   addresses to known assets when possible.
+- Keep decimals, catalog metadata, and quote enrichment Mother-owned; do not
+  expect Bigwig to return them.
 - Extend balance orchestration only through accepted upstream balance evidence
   contracts.
 - Update `CONTRACTS.md`, README/private-Beta examples, generated OpenAPI,
@@ -282,8 +431,7 @@ They must not leak upstream provider topology or pricing internals.
 
 - Replace balance request DTOs and reusable examples with the `tokens` shape.
 - Reject legacy `assets[]`, unknown fields, reserved network aliases, empty
-  token selectors, invalid contract addresses, and unsupported `as_of` forms
-  not yet backed by upstream evidence.
+  token selectors, invalid contract addresses, and unsupported `as_of` forms.
 - Update the generated OpenAPI schema and examples behind the draft v0.3 contract
   so reviewers can inspect the intended public surface.
 - Add OpenAPI snapshot/contract tests proving:
@@ -352,10 +500,16 @@ They must not leak upstream provider topology or pricing internals.
 
 ### PR 6 - Historical Balances
 
-- Implement historical `as_of` only after Bigwig or another accepted upstream
-  contract exposes historical balance evidence.
+- Implement historical `as_of` using the accepted Bigwig primitive route
+  `POST /internal/v1/primitives/evm/balances`.
 - Add timestamp and block-number route coverage proving historical requests
   never fall back to latest balances.
+- Add latest-route coverage proving `as_of.kind=latest` pins a concrete
+  evidence block before balances execute.
+- Add coverage for partial item failures, including
+  `erc20_contract_code_absent_at_evidence_block`.
+- Add coverage for unavailable historical evidence and request-wide historical
+  range failures.
 - Add historical quote tests proving latest prices are not silently used for
   historical balance requests.
 
@@ -374,11 +528,11 @@ They must not leak upstream provider topology or pricing internals.
   - top-level public `network_slug` and `address` are rejected or absent;
   - Bigwig still receives its accepted internal top-level network and address
     fields.
-- Historical tests are added only after the accepted upstream historical
-  balance contract exists:
+- Historical tests for the accepted Bigwig upstream historical contract cover:
   - timestamp requests use upstream historical evidence;
   - block-number requests honor the requested block exactly;
   - unavailable historical evidence is explicit;
+  - partial Bigwig item failures are preserved/mapped;
   - latest-balance fallback is impossible.
 
 ## Assumptions
@@ -389,7 +543,9 @@ They must not leak upstream provider topology or pricing internals.
   change and will not keep top-level public `network_slug` or `address`
   compatibility aliases.
 - SPEC-012 remains draft until the replacement contract and upstream
-  historical support are ready.
+  historical support are fully shipped to the private Beta public contract.
+- Initial upstream historical network coverage for this SPEC-012 slice is
+  `eth-mainnet` and `base-mainnet`.
 - `account.client_ref` is Mother API public metadata only; it is not forwarded
   to Bigwig or used for extraction, catalog resolution, token filtering, or
   limits.
