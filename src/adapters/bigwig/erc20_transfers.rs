@@ -75,25 +75,6 @@ impl From<Erc20TransferExtractionRequest> for BigwigErc20TransferRequest {
     }
 }
 
-// impl From<OnchainWindow> for OnchainWindowDTO {
-//     fn from(window: OnchainWindow) -> Self {
-//         match window {
-//             OnchainWindow::Block(window) => Self::Block {
-//                 from_block: window.from_block,
-//                 to_block: window.to_block,
-//             },
-//             OnchainWindow::Timestamp(window) => Self::Timestamp {
-//                 from_timestamp: window.from_timestamp,
-//                 to_timestamp: window.to_timestamp,
-//             },
-//             OnchainWindow::Lookback(window) => Self::Lookback {
-//                 lookback_seconds: window.lookback_seconds,
-//                 to: BigwigErc20TransferLookbackTarget::Latest,
-//             },
-//         }
-//     }
-// }
-
 impl TryFrom<BigwigErc20TransferResponse> for Erc20TransferExtractionResult {
     type Error = Erc20TransferExtractionError;
 
