@@ -7,7 +7,7 @@ use tokio::task::JoinSet;
 use tracing::warn;
 
 use crate::adapters::bigwig::balances::{
-    BigwigAccount, BigwigEvidenceItem, BigwigEvidenceStatus, BigwigPrimitive, BigwigRequest,
+    BigwigAsOf, BigwigEvidenceItem, BigwigEvidenceStatus, BigwigPrimitive, BigwigRequest,
     BigwigResponse, BigwigTarget,
 };
 use crate::adapters::bigwig::client::BigwigClient;
@@ -51,7 +51,7 @@ impl BalanceSnapshotService {
         }
     }
 
-    pub async fn resolve_latest(
+    pub async fn resolve(
         &self,
         request: BalanceSnapshotRequest,
     ) -> Result<BalanceSnapshotResult, BalanceSnapshotServiceError> {
@@ -73,8 +73,7 @@ impl BalanceSnapshotService {
             };
 
             let bigwig_request = plan.bigwig_request();
-            calls
-                .spawn(async move { (group_index, client.latest_balances(&bigwig_request).await) });
+            calls.spawn(async move { (group_index, client.balances(&bigwig_request).await) });
         }
 
         while let Some(joined) = calls.join_next().await {
@@ -103,7 +102,7 @@ impl BalanceSnapshotService {
             .map(|result| result.expect("every requested account must belong to one group"))
             .collect::<Vec<_>>();
         let pricing_asset_slugs = collect_pricing_asset_slugs(&raw_account_results);
-        let quotes = if pricing_asset_slugs.is_empty() {
+        let quotes = if pricing_asset_slugs.is_empty() || request.as_of != BalanceAsOf::Latest {
             Ok(HashMap::new())
         } else {
             match &self.price_quote_client {
@@ -117,6 +116,7 @@ impl BalanceSnapshotService {
         };
 
         Ok(BalanceSnapshotResult {
+            as_of: request.as_of,
             quote_currency: request.quote_currency,
             requested_token_count: request.tokens.len(),
             accounts: enrich_account_results(raw_account_results, quotes),
@@ -159,6 +159,7 @@ impl BalanceSnapshotService {
             };
             plans.push(plan_network_group(
                 group,
+                &request.as_of,
                 &request.tokens,
                 network_resolution,
                 asset_resolutions,
@@ -172,13 +173,36 @@ impl BalanceSnapshotService {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BalanceSnapshotRequest {
+    pub as_of: BalanceAsOf,
     pub accounts: Vec<OnchainAccount>,
     pub tokens: TokenSelector,
     pub quote_currency: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BalanceAsOf {
+    Latest,
+    Timestamp { timestamp: String },
+    BlockNumber { block_number: String },
+}
+
+impl From<&BalanceAsOf> for BigwigAsOf {
+    fn from(as_of: &BalanceAsOf) -> Self {
+        match as_of {
+            BalanceAsOf::Latest => Self::Latest,
+            BalanceAsOf::Timestamp { timestamp } => Self::Timestamp {
+                timestamp: timestamp.clone(),
+            },
+            BalanceAsOf::BlockNumber { block_number } => Self::BlockNumber {
+                block_number: block_number.clone(),
+            },
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BalanceSnapshotResult {
+    pub as_of: BalanceAsOf,
     pub quote_currency: String,
     pub requested_token_count: usize,
     pub accounts: Vec<BalanceAccountResult>,
@@ -197,6 +221,7 @@ pub struct BalanceEvidence {
     pub observed_at: String,
     pub block_number: String,
     pub block_hash: String,
+    pub block_timestamp: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -366,6 +391,7 @@ struct GroupAccount {
 #[derive(Clone, Debug)]
 struct NetworkGroupPlan {
     network_slug: String,
+    as_of: BalanceAsOf,
     chain_id: Option<i64>,
     accounts: Vec<GroupAccount>,
     token_plans: Vec<TokenPlan>,
@@ -376,14 +402,13 @@ impl NetworkGroupPlan {
     fn bigwig_request(&self) -> BigwigRequest {
         BigwigRequest {
             network_slug: self.network_slug.clone(),
+            as_of: BigwigAsOf::from(&self.as_of),
             accounts: self
                 .accounts
                 .iter()
-                .map(|account| BigwigAccount {
-                    address: account.account.address.clone(),
-                })
+                .map(|account| account.account.address.clone())
                 .collect(),
-            targets: self
+            tokens: self
                 .targets
                 .iter()
                 .map(|target| target.wire_target.clone())
@@ -465,6 +490,7 @@ fn group_accounts(accounts: &[OnchainAccount]) -> Vec<GroupedAccounts> {
 
 fn plan_network_group(
     group: GroupedAccounts,
+    as_of: &BalanceAsOf,
     requested_tokens: &TokenSelector,
     network_resolution: Option<BalanceNetworkResolution>,
     asset_resolutions: Vec<BalanceTargetResolution>,
@@ -638,6 +664,7 @@ fn plan_network_group(
 
     Ok(NetworkGroupPlan {
         network_slug: group.network_slug,
+        as_of: as_of.clone(),
         chain_id,
         accounts: group.accounts,
         token_plans,
@@ -906,7 +933,7 @@ fn validate_response(
     plan: &NetworkGroupPlan,
     response: BigwigResponse,
 ) -> Result<ValidatedGroup, ResponseValidationIssue> {
-    if response.primitive != BigwigPrimitive::EvmLatestBalances {
+    if response.primitive != BigwigPrimitive::EvmBalances {
         return Err(ResponseValidationIssue::WrongPrimitive);
     }
     if response.network.network_slug != plan.network_slug {
@@ -930,16 +957,24 @@ fn validate_response(
     for (item_index, item) in response.items.into_iter().enumerate() {
         let expected_account = &plan.accounts[item_index / plan.targets.len()];
         let expected_target = &plan.targets[item_index % plan.targets.len()];
-        let (account, target) = match &item {
+        let (account_address, target) = match &item {
             BigwigEvidenceItem::Resolved {
-                account, target, ..
+                account_address,
+                target,
+                ..
             }
             | BigwigEvidenceItem::Failed {
-                account, target, ..
-            } => (account, target),
+                account_address,
+                target,
+                ..
+            }
+            | BigwigEvidenceItem::Unavailable {
+                account_address,
+                target,
+                ..
+            } => (account_address, target),
         };
 
-        let account_address = account.address.clone();
         let normalized_account = account_address.to_ascii_lowercase();
         let target_key = TargetKey::from_bigwig(target);
         if !correlations.insert((normalized_account.clone(), target_key.clone())) {
@@ -959,7 +994,16 @@ fn validate_response(
                 resolved_count += 1;
                 target_outcomes.push(TargetOutcome::Resolved(raw_amount));
             }
-            BigwigEvidenceItem::Failed { error, .. } => {
+            BigwigEvidenceItem::Failed {
+                account_address,
+                error,
+                ..
+            }
+            | BigwigEvidenceItem::Unavailable {
+                account_address,
+                error,
+                ..
+            } => {
                 failed_count += 1;
                 warn!(
                     network_slug = plan.network_slug,
@@ -984,9 +1028,10 @@ fn validate_response(
     Ok(ValidatedGroup {
         evidence: BalanceEvidence {
             network_slug: response.network.network_slug,
-            observed_at: response.observed_at,
-            block_number: response.block.number,
-            block_hash: response.block.hash,
+            observed_at: response.resolved_evidence.block_timestamp.clone(),
+            block_number: response.resolved_evidence.block_number,
+            block_hash: response.resolved_evidence.block_hash,
+            block_timestamp: response.resolved_evidence.block_timestamp,
         },
         target_outcomes,
     })
@@ -1117,6 +1162,9 @@ fn map_bigwig_error(error: &BigwigError) -> BalanceItemErrorCode {
         BigwigError::UnsupportedNetwork
         | BigwigError::NetworkNotEnabledForOperation
         | BigwigError::NoRouteSatisfiesOperation
+        | BigwigError::BlockOutOfRange
+        | BigwigError::TimestampAnchorNotConfigured
+        | BigwigError::TimestampOutOfRange
         | BigwigError::RpcError => BalanceItemErrorCode::BalanceResolutionFailed,
         BigwigError::Transport
         | BigwigError::Timeout
@@ -1131,10 +1179,9 @@ fn map_bigwig_error(error: &BigwigError) -> BalanceItemErrorCode {
         | BigwigError::InvalidContractAddress
         | BigwigError::InvalidDirection
         | BigwigError::InvalidWindowShape
+        | BigwigError::InvalidAsOf
         | BigwigError::ReversedBlockRange
-        | BigwigError::BlockOutOfRange
         | BigwigError::ReversedTimestampRange
-        | BigwigError::TimestampOutOfRange
         | BigwigError::LookbackTooLarge
         | BigwigError::RangeTooLarge
         | BigwigError::TooManyContractAddresses

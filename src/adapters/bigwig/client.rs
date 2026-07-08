@@ -11,7 +11,7 @@ use crate::adapters::bigwig::{
 use crate::config::Config;
 
 const CLIENT_SERVICE: &str = "mother-api";
-const LATEST_BALANCES_PATH: &str = "/internal/v1/primitives/evm/latest-balances";
+const BALANCES_PATH: &str = "/internal/v1/primitives/evm/balances";
 const ERC20_TRANSFERS_PATH: &str = "/internal/v1/extractions/erc20-transfers";
 
 #[derive(Clone)]
@@ -61,13 +61,10 @@ impl BigwigClient {
         self.timeout.as_millis()
     }
 
-    pub async fn latest_balances(
-        &self,
-        request: &BigwigRequest,
-    ) -> Result<BigwigResponse, BigwigError> {
+    pub async fn balances(&self, request: &BigwigRequest) -> Result<BigwigResponse, BigwigError> {
         let response = self
             .client
-            .post(self.latest_balances_url())
+            .post(self.balances_url())
             .bearer_auth(&self.token)
             .header("X-Client-Service", CLIENT_SERVICE)
             .timeout(self.timeout)
@@ -131,8 +128,8 @@ impl BigwigClient {
         Err(map_error_response(status, &body, retry_after_seconds))
     }
 
-    fn latest_balances_url(&self) -> Url {
-        self.url_for_path(LATEST_BALANCES_PATH)
+    fn balances_url(&self) -> Url {
+        self.url_for_path(BALANCES_PATH)
     }
 
     fn erc20_transfers_url(&self) -> Url {

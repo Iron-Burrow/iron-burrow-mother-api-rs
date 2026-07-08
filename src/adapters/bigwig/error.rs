@@ -25,9 +25,11 @@ pub enum BigwigError {
     InvalidContractAddress,
     InvalidDirection,
     InvalidWindowShape,
+    InvalidAsOf,
     ReversedBlockRange,
     BlockOutOfRange,
     ReversedTimestampRange,
+    TimestampAnchorNotConfigured,
     TimestampOutOfRange,
     LookbackTooLarge,
     RangeTooLarge,
@@ -123,6 +125,7 @@ pub(super) fn map_error_response(
         }
         (StatusCode::BAD_REQUEST, "invalid_direction") => BigwigError::InvalidDirection,
         (StatusCode::BAD_REQUEST, "invalid_window_shape") => BigwigError::InvalidWindowShape,
+        (StatusCode::BAD_REQUEST, "invalid_as_of") => BigwigError::InvalidAsOf,
         (StatusCode::UNAUTHORIZED, "unauthorized") => BigwigError::Unauthorized,
         (StatusCode::NOT_FOUND, "unsupported_network") => BigwigError::UnsupportedNetwork,
         (StatusCode::UNPROCESSABLE_ENTITY, "network_not_enabled_for_operation") => {
@@ -137,6 +140,9 @@ pub(super) fn map_error_response(
         (StatusCode::UNPROCESSABLE_ENTITY, "block_out_of_range") => BigwigError::BlockOutOfRange,
         (StatusCode::UNPROCESSABLE_ENTITY, "reversed_timestamp_range") => {
             BigwigError::ReversedTimestampRange
+        }
+        (StatusCode::UNPROCESSABLE_ENTITY, "timestamp_anchor_not_configured") => {
+            BigwigError::TimestampAnchorNotConfigured
         }
         (StatusCode::UNPROCESSABLE_ENTITY, "timestamp_out_of_range") => {
             BigwigError::TimestampOutOfRange

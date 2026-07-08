@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-02
+last_reviewed: 2026-07-08
 agent_edit_policy: update_when_relevant
 ---
 
@@ -144,6 +144,19 @@ jq -n \
     quote_currency: "USD",
     tokens: {asset_slugs: ["ethereum"], contract_addresses: []}
   }' > /tmp/mother-balance-single.json
+
+jq -n \
+  --arg address "$BALANCE_ACCOUNT_A" \
+  '{
+    as_of: {kind: "timestamp", timestamp: "2026-07-03T00:00:00Z"},
+    account: {
+      network_slug: "eth-mainnet",
+      address: $address,
+      client_ref: "single-historical-smoke"
+    },
+    quote_currency: "USD",
+    tokens: {asset_slugs: ["ethereum"], contract_addresses: []}
+  }' > /tmp/mother-balance-single-historical.json
 
 jq -n \
   --arg address_a "$BALANCE_ACCOUNT_A" \

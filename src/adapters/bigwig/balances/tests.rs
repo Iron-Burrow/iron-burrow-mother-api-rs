@@ -30,8 +30,9 @@ fn request_serializes_only_bigwig_owned_fields() {
         value,
         json!({
             "network_slug": "arbitrum-mainnet",
-            "accounts": [{ "address": ACCOUNT }],
-            "targets": [
+            "as_of": { "kind": "latest" },
+            "accounts": [ACCOUNT],
+            "tokens": [
                 { "kind": "erc20", "contract_address": CONTRACT },
                 { "kind": "native" }
             ]
@@ -73,12 +74,16 @@ fn complete_partial_and_failed_responses_decode() {
         let response: BigwigResponse =
             serde_json::from_value(response_body(status, items)).unwrap();
 
-        assert_eq!(response.primitive, BigwigPrimitive::EvmLatestBalances);
+        assert_eq!(response.primitive, BigwigPrimitive::EvmBalances);
         assert_eq!(response.status, expected_status);
         assert_eq!(response.network.network_slug, "arbitrum-mainnet");
         assert_eq!(response.network.chain_id, 42161);
-        assert_eq!(response.observed_at, "2026-06-16T15:04:30Z");
-        assert_eq!(response.block.number, "123456789");
+        assert_eq!(response.requested_as_of, BigwigAsOf::Latest);
+        assert_eq!(response.resolved_evidence.block_number, "123456789");
+        assert_eq!(
+            response.resolved_evidence.block_timestamp,
+            "2026-06-16T15:04:30Z"
+        );
         assert_eq!(response.items.len(), response_body_item_count(status));
     }
 }
@@ -89,7 +94,7 @@ fn response_preserves_decimal_strings_and_address_casing() {
         serde_json::from_value(response_body("complete", json!([resolved_item()]))).unwrap();
 
     let BigwigEvidenceItem::Resolved {
-        account,
+        account_address,
         target,
         raw_amount,
     } = &response.items[0]
@@ -97,7 +102,7 @@ fn response_preserves_decimal_strings_and_address_casing() {
         panic!("expected resolved item");
     };
 
-    assert_eq!(account.address, ACCOUNT);
+    assert_eq!(account_address, ACCOUNT);
     assert_eq!(raw_amount, "80001234560000000000000000000000000000");
     assert_eq!(
         target,
@@ -112,7 +117,7 @@ fn additive_response_fields_are_ignored() {
     let mut body = response_body("complete", json!([resolved_item()]));
     body["future_top_level"] = json!({ "provider": "must-not-be-retained" });
     body["items"][0]["future_item_field"] = json!(true);
-    body["items"][0]["target"]["future_target_field"] = json!("ignored");
+    body["items"][0]["requested_token"]["future_target_field"] = json!("ignored");
 
     let response: BigwigResponse = serde_json::from_value(body).unwrap();
 
@@ -126,23 +131,27 @@ fn malformed_success_shapes_are_rejected() {
         response_body(
             "complete",
             json!([{
-                "status": "resolved",
-                "account": { "address": ACCOUNT },
-                "target": { "kind": "native" },
-                "raw_amount": "1",
-                "error": {
-                    "code": "native_balance_call_failed",
-                    "message": "must not coexist"
+                "account_address": ACCOUNT,
+                "requested_token": { "kind": "native" },
+                "raw_balance": {
+                    "status": "resolved",
+                    "value": "1",
+                    "error": {
+                        "code": "native_balance_call_failed",
+                        "message": "must not coexist"
+                    }
                 }
             }]),
         ),
         response_body(
             "complete",
             json!([{
-                "status": "resolved",
-                "account": { "address": ACCOUNT },
-                "target": { "kind": "native", "contract_address": CONTRACT },
-                "raw_amount": "1"
+                "account_address": ACCOUNT,
+                "requested_token": { "kind": "native", "contract_address": CONTRACT },
+                "raw_balance": {
+                    "status": "resolved",
+                    "value": "1"
+                }
             }]),
         ),
         {
@@ -226,6 +235,11 @@ fn maps_all_documented_error_pairs() {
             BigwigError::InvalidWindowShape,
         ),
         (
+            StatusCode::BAD_REQUEST,
+            "invalid_as_of",
+            BigwigError::InvalidAsOf,
+        ),
+        (
             StatusCode::UNAUTHORIZED,
             "unauthorized",
             BigwigError::Unauthorized,
@@ -259,6 +273,11 @@ fn maps_all_documented_error_pairs() {
             StatusCode::UNPROCESSABLE_ENTITY,
             "reversed_timestamp_range",
             BigwigError::ReversedTimestampRange,
+        ),
+        (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "timestamp_anchor_not_configured",
+            BigwigError::TimestampAnchorNotConfigured,
         ),
         (
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -394,11 +413,11 @@ async fn sends_exact_authenticated_contract_request() {
     };
     let client = BigwigClient::new(&base_url, "test-token", 2000).unwrap();
 
-    let response = client.latest_balances(&sample_request()).await.unwrap();
+    let response = client.balances(&sample_request()).await.unwrap();
     let request = handle.join().unwrap();
     let (headers, body) = split_request(&request);
 
-    assert!(headers.starts_with("POST /internal/v1/primitives/evm/latest-balances HTTP/1.1\r\n"));
+    assert!(headers.starts_with("POST /internal/v1/primitives/evm/balances HTTP/1.1\r\n"));
     assert_header(headers, "authorization", "Bearer test-token");
     assert_header(headers, "x-client-service", "mother-api");
     assert_header(headers, "content-type", "application/json");
@@ -427,7 +446,7 @@ async fn retains_retry_after_without_retrying() {
     let client = BigwigClient::new(&base_url, "test-token", 2000).unwrap();
 
     let error = client
-        .latest_balances(&sample_request())
+        .balances(&sample_request())
         .await
         .expect_err("rate limit should fail");
     let attempts = handle.join().unwrap();
@@ -451,7 +470,7 @@ async fn non_ok_success_status_is_rejected() {
     let client = BigwigClient::new(&base_url, "test-token", 2000).unwrap();
 
     let error = client
-        .latest_balances(&sample_request())
+        .balances(&sample_request())
         .await
         .expect_err("only 200 OK is evidence");
 
@@ -469,7 +488,7 @@ async fn malformed_ok_body_maps_to_malformed_success_response() {
     let client = BigwigClient::new(&base_url, "test-token", 2000).unwrap();
 
     let error = client
-        .latest_balances(&sample_request())
+        .balances(&sample_request())
         .await
         .expect_err("malformed evidence should fail");
 
@@ -487,7 +506,7 @@ async fn transport_and_timeout_failures_are_classified() {
     let client = BigwigClient::new(&closed_url, "test-token", 2000).unwrap();
 
     assert_eq!(
-        client.latest_balances(&sample_request()).await,
+        client.balances(&sample_request()).await,
         Err(BigwigError::Transport)
     );
 
@@ -502,7 +521,7 @@ async fn transport_and_timeout_failures_are_classified() {
     let client = BigwigClient::new(&timeout_url, "test-token", 10).unwrap();
 
     assert_eq!(
-        client.latest_balances(&sample_request()).await,
+        client.balances(&sample_request()).await,
         Err(BigwigError::Timeout)
     );
     handle.join().unwrap();
@@ -511,10 +530,9 @@ async fn transport_and_timeout_failures_are_classified() {
 fn sample_request() -> BigwigRequest {
     BigwigRequest {
         network_slug: "arbitrum-mainnet".to_string(),
-        accounts: vec![BigwigAccount {
-            address: ACCOUNT.to_string(),
-        }],
-        targets: vec![
+        as_of: BigwigAsOf::Latest,
+        accounts: vec![ACCOUNT.to_string()],
+        tokens: vec![
             BigwigTarget::Erc20 {
                 contract_address: CONTRACT.to_string(),
             },
@@ -525,40 +543,46 @@ fn sample_request() -> BigwigRequest {
 
 fn resolved_item() -> Value {
     json!({
-        "status": "resolved",
-        "account": { "address": ACCOUNT },
-        "target": {
+        "account_address": ACCOUNT,
+        "requested_token": {
             "kind": "erc20",
             "contract_address": CONTRACT
         },
-        "raw_amount": "80001234560000000000000000000000000000"
+        "raw_balance": {
+            "status": "resolved",
+            "value": "80001234560000000000000000000000000000"
+        }
     })
 }
 
 fn failed_item(code: &str) -> Value {
     json!({
-        "status": "failed",
-        "account": { "address": ACCOUNT },
-        "target": { "kind": "native" },
-        "error": {
-            "code": code,
-            "message": "Bigwig-owned message"
+        "account_address": ACCOUNT,
+        "requested_token": { "kind": "native" },
+        "raw_balance": {
+            "status": "failed",
+            "error": {
+                "code": code,
+                "message": "Bigwig-owned message"
+            }
         }
     })
 }
 
 fn response_body(status: &str, items: Value) -> Value {
     json!({
-        "primitive": "evm_latest_balances",
+        "primitive": "evm_balances",
         "status": status,
         "network": {
             "network_slug": "arbitrum-mainnet",
             "chain_id": 42161
         },
-        "observed_at": "2026-06-16T15:04:30Z",
-        "block": {
-            "number": "123456789",
-            "hash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        "requested_as_of": { "kind": "latest" },
+        "resolved_evidence": {
+            "kind": "observed_head",
+            "block_number": "123456789",
+            "block_hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "block_timestamp": "2026-06-16T15:04:30Z"
         },
         "items": items
     })

@@ -3,13 +3,17 @@ use serde::{de, Deserialize, Deserializer, Serialize};
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct BigwigRequest {
     pub network_slug: String,
-    pub accounts: Vec<BigwigAccount>,
-    pub targets: Vec<BigwigTarget>,
+    pub as_of: BigwigAsOf,
+    pub accounts: Vec<String>,
+    pub tokens: Vec<BigwigTarget>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct BigwigAccount {
-    pub address: String,
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BigwigAsOf {
+    Latest,
+    Timestamp { timestamp: String },
+    BlockNumber { block_number: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -45,15 +49,15 @@ pub struct BigwigResponse {
     pub primitive: BigwigPrimitive,
     pub status: BigwigEvidenceStatus,
     pub network: BigwigEvidenceNetwork,
-    pub observed_at: String,
-    pub block: BigwigEvidenceBlock,
+    pub requested_as_of: BigwigAsOf,
+    pub resolved_evidence: BigwigResolvedEvidence,
     pub items: Vec<BigwigEvidenceItem>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 pub enum BigwigPrimitive {
-    #[serde(rename = "evm_latest_balances")]
-    EvmLatestBalances,
+    #[serde(rename = "evm_balances")]
+    EvmBalances,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
@@ -71,20 +75,35 @@ pub struct BigwigEvidenceNetwork {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct BigwigEvidenceBlock {
-    pub number: String,
-    pub hash: String,
+pub struct BigwigResolvedEvidence {
+    pub kind: BigwigResolvedEvidenceKind,
+    pub block_number: String,
+    pub block_hash: String,
+    pub block_timestamp: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum BigwigResolvedEvidenceKind {
+    ExactBlock,
+    ResolvedTimestamp,
+    ObservedHead,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BigwigEvidenceItem {
     Resolved {
-        account: BigwigAccount,
+        account_address: String,
         target: BigwigTarget,
         raw_amount: String,
     },
     Failed {
-        account: BigwigAccount,
+        account_address: String,
+        target: BigwigTarget,
+        error: BigwigItemError,
+    },
+    Unavailable {
+        account_address: String,
         target: BigwigTarget,
         error: BigwigItemError,
     },
@@ -100,27 +119,42 @@ impl<'de> Deserialize<'de> for BigwigEvidenceItem {
         enum WireStatus {
             Resolved,
             Failed,
+            Unavailable,
+        }
+
+        #[derive(Deserialize)]
+        struct WireRawBalance {
+            status: WireStatus,
+            value: Option<String>,
+            error: Option<BigwigItemError>,
         }
 
         #[derive(Deserialize)]
         struct WireItem {
-            status: WireStatus,
-            account: BigwigAccount,
-            target: BigwigTarget,
-            raw_amount: Option<String>,
-            error: Option<BigwigItemError>,
+            account_address: String,
+            requested_token: BigwigTarget,
+            raw_balance: WireRawBalance,
         }
 
         let item = WireItem::deserialize(deserializer)?;
-        match (item.status, item.raw_amount, item.error) {
+        match (
+            item.raw_balance.status,
+            item.raw_balance.value,
+            item.raw_balance.error,
+        ) {
             (WireStatus::Resolved, Some(raw_amount), None) => Ok(Self::Resolved {
-                account: item.account,
-                target: item.target,
+                account_address: item.account_address,
+                target: item.requested_token,
                 raw_amount,
             }),
             (WireStatus::Failed, None, Some(error)) => Ok(Self::Failed {
-                account: item.account,
-                target: item.target,
+                account_address: item.account_address,
+                target: item.requested_token,
+                error,
+            }),
+            (WireStatus::Unavailable, None, Some(error)) => Ok(Self::Unavailable {
+                account_address: item.account_address,
+                target: item.requested_token,
                 error,
             }),
             _ => Err(de::Error::custom("invalid balance evidence item shape")),
@@ -140,6 +174,9 @@ pub enum BigwigItemErrorCode {
     NativeBalanceCallFailed,
     Erc20BalanceCallFailed,
     Erc20BadResponse,
+    Erc20ContractCodeAbsentAtEvidenceBlock,
+    Erc20BalanceofNotSupported,
+    HistoricalEvidenceUnavailable,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

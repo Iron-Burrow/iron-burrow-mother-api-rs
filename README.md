@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-02
+last_reviewed: 2026-07-08
 agent_edit_policy: update_when_relevant
 ---
 
@@ -123,7 +123,8 @@ curl -sS "$IB_API/v1/balances/bulk" \
 
 Use balance endpoints when a caller needs deterministic, structured balance
 results for explicitly supported networks, catalog token asset slugs, or
-explicit ERC-20 contract addresses. Responses are data results, not
+explicit ERC-20 contract addresses. Balance `as_of` supports latest,
+timestamp, and block-number requests. Responses are data results, not
 natural-language answers; applications and agents should inspect fields,
 timestamps, evidence, skipped items, and error states before presenting
 conclusions to users.

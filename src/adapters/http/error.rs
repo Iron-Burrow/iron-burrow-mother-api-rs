@@ -140,7 +140,7 @@ impl ApiError {
         Self {
             status: StatusCode::BAD_REQUEST,
             code: "unsupported_as_of",
-            message: "Only latest balance snapshots are supported.".to_string(),
+            message: "Balance as_of kind is not supported.".to_string(),
         }
     }
 

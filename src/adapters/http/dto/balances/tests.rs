@@ -428,7 +428,8 @@ fn single_response_serializes_complete_shape_and_observation_time() {
                 "network_slug": "base-mainnet",
                 "block": {
                     "number": "123",
-                    "hash": format!("0x{}", "a".repeat(64))
+                    "hash": format!("0x{}", "a".repeat(64)),
+                    "timestamp": "2026-06-17T12:00:00Z"
                 },
                 "observed_at": "2026-06-17T12:00:00Z"
             },
@@ -545,6 +546,7 @@ fn bulk_status_is_partial_when_any_account_degrades_but_another_resolves() {
     }]);
     second.account.address = "0x2222222222222222222222222222222222222222".to_string();
     let response = BalanceResponseAssembler.bulk(BalanceSnapshotResult {
+        as_of: BalanceAsOf::Latest,
         quote_currency: "MXN".to_string(),
         requested_token_count: 1,
         accounts: vec![first, second],
@@ -559,7 +561,7 @@ fn bulk_status_is_partial_when_any_account_degrades_but_another_resolves() {
 }
 
 #[test]
-fn single_without_evidence_serializes_null_observed_at_and_evidence() {
+fn single_without_evidence_omits_observed_at_and_serializes_null_evidence() {
     let mut snapshot = snapshot(vec![BalanceItemOutcome::Skipped {
         network_slug: "base-mainnet".to_string(),
         asset_slug: "bitso-mxn".to_string(),
@@ -568,7 +570,7 @@ fn single_without_evidence_serializes_null_observed_at_and_evidence() {
     let response = BalanceResponseAssembler.single(snapshot).unwrap();
     let value = serde_json::to_value(response).unwrap();
 
-    assert_eq!(value["as_of"]["observed_at"], json!(null));
+    assert!(value["as_of"].get("observed_at").is_none());
     assert_eq!(value["evidence"], json!(null));
 }
 
@@ -594,6 +596,7 @@ fn documented_quote_unavailable_example_keeps_position_and_sanitized_error() {
 
 fn snapshot(items: Vec<BalanceItemOutcome>) -> BalanceSnapshotResult {
     BalanceSnapshotResult {
+        as_of: BalanceAsOf::Latest,
         quote_currency: "MXN".to_string(),
         requested_token_count: 2,
         accounts: vec![account_result(items)],
@@ -612,6 +615,7 @@ fn account_result(items: Vec<BalanceItemOutcome>) -> BalanceAccountResult {
             observed_at: "2026-06-17T12:00:00Z".to_string(),
             block_number: "123".to_string(),
             block_hash: format!("0x{}", "a".repeat(64)),
+            block_timestamp: "2026-06-17T12:00:00Z".to_string(),
         }),
         items,
     }

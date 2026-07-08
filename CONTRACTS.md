@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-07-02
+last_reviewed: 2026-07-08
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -749,8 +749,8 @@ confidence, warnings, and future informational field additions.
 
 ### `POST /v1/balances`
 
-Resolves the latest balances for one explicitly network-scoped EVM account
-across requested token selectors. The endpoint accepts JSON only.
+Resolves latest or historical balances for one explicitly network-scoped EVM
+account across requested token selectors. The endpoint accepts JSON only.
 
 The account's `network_slug` and each `tokens.asset_slugs[]` value are exact
 canonical identifiers. Asset slugs are not trimmed or case-normalized.
@@ -792,7 +792,9 @@ Request fields:
 
 | Field | Type | Required | Notes |
 | ----- | ---- | -------- | ----- |
-| `as_of.kind` | string | Yes | Must be exactly `"latest"`. |
+| `as_of.kind` | string | Yes | `"latest"`, `"timestamp"`, or `"block_number"`. |
+| `as_of.timestamp` | string | Conditional | Required only when `kind="timestamp"`; RFC3339 timestamp. |
+| `as_of.block_number` | string | Conditional | Required only when `kind="block_number"`; network-local decimal block number string. |
 | `account.network_slug` | string | Yes | Exact canonical active EVM network slug. Legacy slugs are unsupported. |
 | `account.address` | string | Yes | `0x` plus 40 ASCII hex characters. |
 | `account.client_ref` | string | No | Opaque caller reference, echoed unchanged; `null` when omitted. |
@@ -823,7 +825,8 @@ Request fields:
     "network_slug": "eth-mainnet",
     "block": {
       "number": "22900000",
-      "hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      "hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "timestamp": "2026-06-18T12:00:00Z"
     },
     "observed_at": "2026-06-18T12:00:00Z"
   },
@@ -856,8 +859,11 @@ Request fields:
 }
 ```
 
-For this endpoint, `as_of.observed_at` equals `evidence.observed_at`. Both are
-`null` when no Bigwig evidence was established.
+For latest requests, `as_of.observed_at` equals `evidence.observed_at` when
+Bigwig evidence was established and is omitted when no evidence exists.
+Historical requests echo the requested `as_of.timestamp` or
+`as_of.block_number`; the resolved block timestamp is exposed under
+`evidence.block.timestamp`.
 
 ---
 
@@ -938,7 +944,8 @@ would be exceeded.
         "network_slug": "base-mainnet",
         "block": {
           "number": "32000000",
-          "hash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          "hash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "timestamp": "2026-06-18T12:00:00Z"
         },
         "observed_at": "2026-06-18T12:00:00Z"
       },
@@ -997,7 +1004,7 @@ Balance response rules shared by both endpoints:
 - `asset_slug` and `symbol` are strings for catalog-resolved positions and
   `null` for unresolved explicit contracts.
 - `evidence` is an object or `null`. It may expose Bigwig block number, block
-  hash, and observation time, but makes no finality claim.
+  hash, block timestamp, and observation time, but makes no finality claim.
 - Public evidence never exposes chain IDs, route IDs, providers, URLs,
   authentication details, capabilities, or other Bigwig internals.
 - `balance.raw_amount`, `balance.amount`, quote prices, and quote values are
@@ -1052,7 +1059,8 @@ Bigwig and Price Indexer runtime failures are represented inside a
         "network_slug": "base-mainnet",
         "block": {
           "number": "32000000",
-          "hash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          "hash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "timestamp": "2026-06-18T12:00:00Z"
         },
         "observed_at": "2026-06-18T12:00:00Z"
       },
@@ -1102,8 +1110,7 @@ Bigwig and Price Indexer runtime failures are represented inside a
   "type": "balances",
   "status": "failed",
   "as_of": {
-    "kind": "latest",
-    "observed_at": null
+    "kind": "latest"
   },
   "quote_currency": "MXN",
   "account": {
@@ -1148,7 +1155,8 @@ Request-wide errors:
   `tokens.contract_addresses[]` value is malformed.
 - `400 unsupported_quote_currency` — the normalized quote currency is not
   `USD`, `MXN`, `USDC`, or `BTC`.
-- `400 unsupported_as_of` — `as_of.kind` is not `"latest"`.
+- `400 unsupported_as_of` — `as_of.kind` is not one of `"latest"`,
+  `"timestamp"`, or `"block_number"`.
 - `400 empty_accounts` — the bulk account array is empty.
 - `400 empty_tokens` — no token selector was provided.
 - `400 duplicate_account` — a network-scoped account is repeated.
@@ -2039,7 +2047,7 @@ Fields:
 | 400  | `unsupported_network`   | A balance request uses an unknown, non-EVM, legacy, or non-canonical network slug. |
 | 400  | `unsupported_asset`     | A balance request uses an unknown or non-canonical global asset slug. |
 | 400  | `unsupported_quote_currency` | A balance request uses a quote currency outside `USD`, `MXN`, `USDC`, and `BTC`. |
-| 400  | `unsupported_as_of`     | A balance request asks for anything other than the latest snapshot. |
+| 400  | `unsupported_as_of`     | A balance request uses an unsupported `as_of.kind`. |
 | 400  | `empty_accounts`        | A bulk balance request contains no accounts. |
 | 400  | `empty_tokens`          | A balance request contains no token selectors. |
 | 400  | `duplicate_account`     | A bulk balance request repeats a network-scoped account. |

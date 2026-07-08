@@ -147,7 +147,9 @@ pub(crate) fn map_bigwig_transfer_error(error: BigwigError) -> Erc20TransferExtr
         | BigwigError::InvalidAddress
         | BigwigError::InvalidContractAddress
         | BigwigError::InvalidDirection
+        | BigwigError::InvalidAsOf
         | BigwigError::InvalidWindowShape
+        | BigwigError::TimestampAnchorNotConfigured
         | BigwigError::TooManyContractAddresses
         | BigwigError::RequestValidation(_)
         | BigwigError::MalformedSuccessResponse
