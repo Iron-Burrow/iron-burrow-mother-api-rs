@@ -311,11 +311,7 @@ fn ethereum_position(currency: &str, unit_price: &str, value: &str) -> Value {
 }
 
 fn usdc_position(network_slug: &str, currency: &str, unit_price: &str, value: &str) -> Value {
-    let contract_address = match network_slug {
-        BASE_NETWORK => Some("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"),
-        ETH_NETWORK => Some("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
-        _ => None,
-    };
+    let contract_address = asset_contract_address(network_slug, "usdc");
 
     json!({
         "selector": {
@@ -368,7 +364,7 @@ fn balance_error(network_slug: &str, asset_slug: &str, code: &str) -> Value {
             "kind": "asset_slug",
             "value": asset_slug
         },
-        "contract_address": null,
+        "contract_address": asset_contract_address(network_slug, asset_slug),
         "asset_slug": asset_slug,
         "code": code,
         "message": match code {
@@ -379,6 +375,14 @@ fn balance_error(network_slug: &str, asset_slug: &str, code: &str) -> Value {
             _ => "This balance item could not be processed.",
         }
     })
+}
+
+fn asset_contract_address(network_slug: &str, asset_slug: &str) -> Option<&'static str> {
+    match (asset_slug, network_slug) {
+        ("usdc", BASE_NETWORK) => Some("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"),
+        ("usdc", ETH_NETWORK) => Some("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+        _ => None,
+    }
 }
 
 fn error_response(code: &str, message: &str) -> Value {

@@ -583,6 +583,10 @@ fn documented_quote_unavailable_example_keeps_position_and_sanitized_error() {
     assert_eq!(example["errors"].as_array().unwrap().len(), 1);
     assert_eq!(example["errors"][0]["code"], "price_resolution_failed");
     assert_eq!(
+        example["errors"][0]["contract_address"],
+        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+    );
+    assert_eq!(
         example["errors"][0]["message"],
         "Quote could not be resolved for this asset."
     );
