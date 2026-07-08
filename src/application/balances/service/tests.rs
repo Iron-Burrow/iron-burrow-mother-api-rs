@@ -14,7 +14,8 @@ use crate::{
 };
 use crate::{
     adapters::bigwig::balances::{
-        BigwigEvidenceBlock, BigwigEvidenceNetwork, BigwigItemError, BigwigItemErrorCode,
+        BigwigEvidenceNetwork, BigwigItemError, BigwigItemErrorCode, BigwigResolvedEvidence,
+        BigwigResolvedEvidenceKind,
     },
     adapters::postgres::global_assets::GlobalAssetRepository,
     adapters::price_indexer::PriceIndexerClient,
@@ -31,6 +32,7 @@ async fn groups_networks_concurrently_and_restores_caller_order() {
     };
     let service = service(Some(bigwig_client(&base_url)));
     let request = BalanceSnapshotRequest {
+        as_of: BalanceAsOf::Latest,
         accounts: vec![
             account("base-mainnet", ACCOUNT_A, Some("base-a")),
             account("eth-mainnet", ACCOUNT_B, Some("eth-b")),
@@ -40,7 +42,7 @@ async fn groups_networks_concurrently_and_restores_caller_order() {
         quote_currency: "MXN".to_string(),
     };
 
-    let result = service.resolve_latest(request.clone()).await.unwrap();
+    let result = service.resolve(request.clone()).await.unwrap();
     let requests = server.join().unwrap();
     let requests_by_network = requests
         .into_iter()
@@ -55,19 +57,19 @@ async fn groups_networks_concurrently_and_restores_caller_order() {
     assert_eq!(requests_by_network.len(), 2);
     assert_eq!(
         requests_by_network["base-mainnet"]["accounts"],
-        json!([{ "address": ACCOUNT_A }, { "address": ACCOUNT_C }])
+        json!([ACCOUNT_A, ACCOUNT_C])
     );
     assert_eq!(
         requests_by_network["eth-mainnet"]["accounts"],
-        json!([{ "address": ACCOUNT_B }])
+        json!([ACCOUNT_B])
     );
     for network_slug in ["base-mainnet", "eth-mainnet"] {
         assert_eq!(
-            requests_by_network[network_slug]["targets"][0]["kind"],
+            requests_by_network[network_slug]["tokens"][0]["kind"],
             "erc20"
         );
         assert_eq!(
-            requests_by_network[network_slug]["targets"][1],
+            requests_by_network[network_slug]["tokens"][1],
             json!({ "kind": "native" })
         );
         let serialized = requests_by_network[network_slug].to_string();
@@ -121,6 +123,7 @@ async fn batches_deduplicated_quotes_once_and_fans_them_out_in_caller_order() {
         return;
     };
     let request = BalanceSnapshotRequest {
+        as_of: BalanceAsOf::Latest,
         accounts: vec![
             account("base-mainnet", ACCOUNT_A, Some("base")),
             account("eth-mainnet", ACCOUNT_B, Some("eth")),
@@ -133,7 +136,7 @@ async fn batches_deduplicated_quotes_once_and_fans_them_out_in_caller_order() {
         Some(bigwig_client(&bigwig_url)),
         Some(price_quote_client(&price_url)),
     )
-    .resolve_latest(request.clone())
+    .resolve(request.clone())
     .await
     .unwrap();
     bigwig_server.join().unwrap();
@@ -181,6 +184,52 @@ async fn batches_deduplicated_quotes_once_and_fans_them_out_in_caller_order() {
             ..
         } if amount.as_deref() == Some("0.000000000000001000")
             && value == "0.000000000000002500"
+    ));
+}
+
+#[tokio::test]
+async fn historical_requests_do_not_use_latest_quote_lookup() {
+    let Some((bigwig_url, bigwig_server)) = spawn_dynamic_server(1) else {
+        return;
+    };
+    let Ok(price_listener) = TcpListener::bind("127.0.0.1:0") else {
+        return;
+    };
+    let price_url = format!("http://{}", price_listener.local_addr().unwrap());
+
+    let result = service_with_quote(
+        Some(bigwig_client(&bigwig_url)),
+        Some(price_quote_client(&price_url)),
+    )
+    .resolve(BalanceSnapshotRequest {
+        as_of: BalanceAsOf::BlockNumber {
+            block_number: "19000000".to_string(),
+        },
+        accounts: vec![account("eth-mainnet", ACCOUNT_A, None)],
+        tokens: token_slugs(["ethereum"]),
+        quote_currency: "USD".to_string(),
+    })
+    .await
+    .unwrap();
+
+    let requests = bigwig_server.join().unwrap();
+    assert_eq!(
+        requests[0]["as_of"],
+        json!({"kind": "block_number", "block_number": "19000000"})
+    );
+    price_listener.set_nonblocking(true).unwrap();
+    assert_eq!(
+        price_listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    assert!(matches!(
+        &result.accounts[0].items[0],
+        BalanceItemOutcome::Resolved {
+            quote: BalanceQuoteOutcome::Unavailable {
+                code: BalanceItemErrorCode::PriceResolutionFailed,
+            },
+            ..
+        }
     ));
 }
 
@@ -367,7 +416,8 @@ async fn unresolved_explicit_contracts_skip_quote_lookup_and_return_unsupported(
         Some(bigwig_client(&bigwig_url)),
         Some(price_quote_client(&price_url)),
     )
-    .resolve_latest(BalanceSnapshotRequest {
+    .resolve(BalanceSnapshotRequest {
+        as_of: BalanceAsOf::Latest,
         accounts: vec![account("eth-mainnet", ACCOUNT_A, None)],
         tokens: mixed_tokens(&[], &[contract]),
         quote_currency: "USD".to_string(),
@@ -567,32 +617,36 @@ fn dynamic_response(request: &Value) -> Value {
         other => panic!("unexpected test network: {other}"),
     };
     let accounts = request["accounts"].as_array().unwrap();
-    let targets = request["targets"].as_array().unwrap();
+    let targets = request["tokens"].as_array().unwrap();
     let items = accounts
         .iter()
         .flat_map(|account| {
             targets.iter().map(move |target| {
                 json!({
-                    "status": "resolved",
-                    "account": account,
-                    "target": target,
-                    "raw_amount": "1000"
+                    "account_address": account,
+                    "requested_token": target,
+                    "raw_balance": {
+                        "status": "resolved",
+                        "value": "1000"
+                    }
                 })
             })
         })
         .collect::<Vec<_>>();
 
     json!({
-        "primitive": "evm_latest_balances",
+        "primitive": "evm_balances",
         "status": "complete",
         "network": {
             "network_slug": network_slug,
             "chain_id": chain_id
         },
-        "observed_at": "2026-06-17T12:00:00Z",
-        "block": {
-            "number": "123",
-            "hash": format!("0x{}", "a".repeat(64))
+        "requested_as_of": request["as_of"].clone(),
+        "resolved_evidence": {
+            "kind": "observed_head",
+            "block_number": "123",
+            "block_hash": format!("0x{}", "a".repeat(64)),
+            "block_timestamp": "2026-06-17T12:00:00Z"
         },
         "items": items
     })
@@ -704,7 +758,14 @@ fn plan_asset_group(
         asset_slugs,
         contract_addresses: Vec::new(),
     };
-    plan_network_group(group, &tokens, None, resolutions, Vec::new())
+    plan_network_group(
+        group,
+        &BalanceAsOf::Latest,
+        &tokens,
+        None,
+        resolutions,
+        Vec::new(),
+    )
 }
 
 fn response_for_plan(
@@ -718,9 +779,7 @@ fn response_for_plan(
         .flat_map(|account| {
             plan.targets.iter().map(move |target| {
                 (
-                    BigwigAccount {
-                        address: account.account.address.to_ascii_uppercase(),
-                    },
+                    account.account.address.to_ascii_uppercase(),
                     target.wire_target.clone(),
                 )
             })
@@ -730,13 +789,13 @@ fn response_for_plan(
         .map(|(index, ((account, target), resolved))| {
             if resolved {
                 BigwigEvidenceItem::Resolved {
-                    account,
+                    account_address: account,
                     target,
                     raw_amount: format!("{}000", index + 1),
                 }
             } else {
                 BigwigEvidenceItem::Failed {
-                    account,
+                    account_address: account,
                     target,
                     error: BigwigItemError {
                         code: BigwigItemErrorCode::Erc20BalanceCallFailed,
@@ -748,16 +807,18 @@ fn response_for_plan(
         .collect();
 
     BigwigResponse {
-        primitive: BigwigPrimitive::EvmLatestBalances,
+        primitive: BigwigPrimitive::EvmBalances,
         status,
         network: BigwigEvidenceNetwork {
             network_slug: plan.network_slug.clone(),
             chain_id: u64::try_from(plan.chain_id.unwrap()).unwrap(),
         },
-        observed_at: "2026-06-17T12:00:00Z".to_string(),
-        block: BigwigEvidenceBlock {
-            number: "123".to_string(),
-            hash: format!("0x{}", "a".repeat(64)),
+        requested_as_of: BigwigAsOf::from(&plan.as_of),
+        resolved_evidence: BigwigResolvedEvidence {
+            kind: BigwigResolvedEvidenceKind::ObservedHead,
+            block_number: "123".to_string(),
+            block_hash: format!("0x{}", "a".repeat(64)),
+            block_timestamp: "2026-06-17T12:00:00Z".to_string(),
         },
         items,
     }
@@ -769,7 +830,8 @@ async fn deduplicates_targets_and_fans_out_duplicate_assets() {
         return;
     };
     let result = service(Some(bigwig_client(&base_url)))
-        .resolve_latest(BalanceSnapshotRequest {
+        .resolve(BalanceSnapshotRequest {
+            as_of: BalanceAsOf::Latest,
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["usdc", "usdc"]),
             quote_currency: "USD".to_string(),
@@ -779,7 +841,7 @@ async fn deduplicates_targets_and_fans_out_duplicate_assets() {
     let requests = server.join().unwrap();
 
     assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0]["targets"].as_array().unwrap().len(), 1);
+    assert_eq!(requests[0]["tokens"].as_array().unwrap().len(), 1);
     assert_eq!(result.accounts[0].items.len(), 2);
     let raw_amounts = result.accounts[0]
         .items
@@ -820,7 +882,8 @@ async fn mixed_asset_and_explicit_contract_deduplicates_upstream_and_keeps_attri
         Some(bigwig_client(&bigwig_url)),
         Some(price_quote_client(&price_url)),
     )
-    .resolve_latest(BalanceSnapshotRequest {
+    .resolve(BalanceSnapshotRequest {
+        as_of: BalanceAsOf::Latest,
         accounts: vec![account("eth-mainnet", ACCOUNT_A, None)],
         tokens: mixed_tokens(&["usdc"], &[contract]),
         quote_currency: "USD".to_string(),
@@ -829,9 +892,9 @@ async fn mixed_asset_and_explicit_contract_deduplicates_upstream_and_keeps_attri
     .unwrap();
 
     let requests = bigwig_server.join().unwrap();
-    assert_eq!(requests[0]["targets"].as_array().unwrap().len(), 1);
+    assert_eq!(requests[0]["tokens"].as_array().unwrap().len(), 1);
     assert_eq!(
-        requests[0]["targets"],
+        requests[0]["tokens"],
         json!([{"kind": "erc20", "contract_address": contract}])
     );
     let price_request = price_server.join().unwrap();
@@ -864,7 +927,8 @@ async fn skips_unsupported_pairs_without_calling_bigwig() {
     };
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let result = service(Some(bigwig_client(&base_url)))
-        .resolve_latest(BalanceSnapshotRequest {
+        .resolve(BalanceSnapshotRequest {
+            as_of: BalanceAsOf::Latest,
             accounts: vec![account("mantle-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["wrapped-bitcoin"]),
             quote_currency: "USD".to_string(),
@@ -894,7 +958,8 @@ async fn skipped_only_results_do_not_call_price_indexer() {
     };
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let result = service_with_quote(None, Some(price_quote_client(&base_url)))
-        .resolve_latest(BalanceSnapshotRequest {
+        .resolve(BalanceSnapshotRequest {
+            as_of: BalanceAsOf::Latest,
             accounts: vec![account("mantle-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["wrapped-bitcoin"]),
             quote_currency: "USD".to_string(),
@@ -916,7 +981,8 @@ async fn skipped_only_results_do_not_call_price_indexer() {
 #[tokio::test]
 async fn missing_bigwig_client_marks_supported_items_provider_unavailable() {
     let result = service(None)
-        .resolve_latest(BalanceSnapshotRequest {
+        .resolve(BalanceSnapshotRequest {
+            as_of: BalanceAsOf::Latest,
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["usdc", "wrapped-bitcoin"]),
             quote_currency: "USD".to_string(),
@@ -945,7 +1011,8 @@ async fn planning_failure_prevents_all_bigwig_calls() {
     };
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let error = service(Some(bigwig_client(&base_url)))
-        .resolve_latest(BalanceSnapshotRequest {
+        .resolve(BalanceSnapshotRequest {
+            as_of: BalanceAsOf::Latest,
             accounts: vec![
                 account("base-mainnet", ACCOUNT_A, None),
                 account("unknown-mainnet", ACCOUNT_B, None),
@@ -971,7 +1038,8 @@ async fn planning_failure_prevents_all_bigwig_calls() {
 #[tokio::test]
 async fn unsupported_global_asset_is_a_whole_request_error() {
     let error = service(None)
-        .resolve_latest(BalanceSnapshotRequest {
+        .resolve(BalanceSnapshotRequest {
+            as_of: BalanceAsOf::Latest,
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["missing-asset"]),
             quote_currency: "USD".to_string(),
@@ -1010,25 +1078,29 @@ fn spawn_static_server(
 #[tokio::test]
 async fn malformed_raw_amount_invalidates_group_evidence_before_quote_lookup() {
     let body = json!({
-        "primitive": "evm_latest_balances",
+        "primitive": "evm_balances",
         "status": "complete",
         "network": {
             "network_slug": "base-mainnet",
             "chain_id": 8453
         },
-        "observed_at": "2026-06-17T12:00:00Z",
-        "block": {
-            "number": "123",
-            "hash": format!("0x{}", "a".repeat(64))
+        "requested_as_of": {"kind": "latest"},
+        "resolved_evidence": {
+            "kind": "observed_head",
+            "block_number": "123",
+            "block_hash": format!("0x{}", "a".repeat(64)),
+            "block_timestamp": "2026-06-17T12:00:00Z"
         },
         "items": [{
-            "status": "resolved",
-            "account": {"address": ACCOUNT_A},
-            "target": {
+            "account_address": ACCOUNT_A,
+            "requested_token": {
                 "kind": "erc20",
                 "contract_address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
             },
-            "raw_amount": "1.0"
+            "raw_balance": {
+                "status": "resolved",
+                "value": "1.0"
+            }
         }]
     });
     let Some((base_url, server)) = spawn_static_server(StatusCode::OK, body) else {
@@ -1036,7 +1108,8 @@ async fn malformed_raw_amount_invalidates_group_evidence_before_quote_lookup() {
     };
 
     let result = service(Some(bigwig_client(&base_url)))
-        .resolve_latest(BalanceSnapshotRequest {
+        .resolve(BalanceSnapshotRequest {
+            as_of: BalanceAsOf::Latest,
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["usdc"]),
             quote_currency: "USD".to_string(),
@@ -1330,6 +1403,9 @@ fn maps_every_bigwig_request_wide_failure_class() {
         BigwigError::UnsupportedNetwork,
         BigwigError::NetworkNotEnabledForOperation,
         BigwigError::NoRouteSatisfiesOperation,
+        BigwigError::BlockOutOfRange,
+        BigwigError::TimestampAnchorNotConfigured,
+        BigwigError::TimestampOutOfRange,
         BigwigError::RpcError,
     ];
     for error in resolution_failures {
@@ -1365,11 +1441,10 @@ fn maps_every_bigwig_request_wide_failure_class() {
         BigwigError::InvalidAddress,
         BigwigError::InvalidContractAddress,
         BigwigError::InvalidDirection,
+        BigwigError::InvalidAsOf,
         BigwigError::InvalidWindowShape,
         BigwigError::ReversedBlockRange,
-        BigwigError::BlockOutOfRange,
         BigwigError::ReversedTimestampRange,
-        BigwigError::TimestampOutOfRange,
         BigwigError::LookbackTooLarge,
         BigwigError::RangeTooLarge,
         BigwigError::TooManyContractAddresses,

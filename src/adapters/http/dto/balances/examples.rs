@@ -78,8 +78,7 @@ pub(crate) fn single_item_level_failure_response() -> Value {
         "type": "balances",
         "status": "failed",
         "as_of": {
-            "kind": "latest",
-            "observed_at": null
+            "kind": "latest"
         },
         "quote_currency": "MXN",
         "account": {
@@ -279,7 +278,8 @@ fn evidence(network_slug: &str, block_number: &str, block_hash: &str) -> Value {
         "network_slug": network_slug,
         "block": {
             "number": block_number,
-            "hash": block_hash
+            "hash": block_hash,
+            "timestamp": "2026-06-18T12:00:00Z"
         },
         "observed_at": "2026-06-18T12:00:00Z"
     })

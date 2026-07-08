@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::application::balances::service::{
-    BalanceAccountResult, BalanceEvidence, BalanceItemErrorCode, BalanceItemOutcome,
+    BalanceAccountResult, BalanceAsOf, BalanceEvidence, BalanceItemErrorCode, BalanceItemOutcome,
     BalanceQuoteOutcome, BalanceSnapshotResult, BalanceTokenSelector, ResolvedBalanceTarget,
 };
 use crate::domain::accounts::OnchainAccount;
@@ -25,17 +25,12 @@ impl BalanceResponseAssembler {
         }
 
         let account = shape_account(accounts.pop().expect("single account length checked"));
+        let as_of = shape_as_of(&snapshot.as_of, account.evidence.as_ref());
         Ok(SingleBalanceResponse {
             ok: true,
             response_type: "balances".to_string(),
             status: account.status,
-            as_of: SingleAsOfPayload {
-                kind: "latest".to_string(),
-                observed_at: account
-                    .evidence
-                    .as_ref()
-                    .map(|evidence| evidence.observed_at.clone()),
-            },
+            as_of,
             quote_currency: snapshot.quote_currency,
             account: account.account,
             evidence: account.evidence,
@@ -61,13 +56,12 @@ impl BalanceResponseAssembler {
             .sum();
         let status = aggregate_bulk_status(&accounts);
 
+        let as_of = shape_as_of(&snapshot.as_of, None);
         BulkBalanceResponse {
             ok: true,
             response_type: "balances_bulk".to_string(),
             status,
-            as_of: BulkAsOfPayload {
-                kind: "latest".to_string(),
-            },
+            as_of,
             quote_currency: snapshot.quote_currency,
             summary: BalanceSummaryPayload {
                 requested_accounts,
@@ -112,7 +106,7 @@ pub struct SingleBalanceResponse {
     #[serde(rename = "type")]
     response_type: String,
     status: BalanceResponseStatus,
-    as_of: SingleAsOfPayload,
+    as_of: BalanceAsOfPayload,
     quote_currency: String,
     account: BalanceAccountIdentityPayload,
     evidence: Option<BalanceEvidencePayload>,
@@ -127,7 +121,7 @@ pub struct BulkBalanceResponse {
     #[serde(rename = "type")]
     response_type: String,
     status: BalanceResponseStatus,
-    as_of: BulkAsOfPayload,
+    as_of: BalanceAsOfPayload,
     quote_currency: String,
     summary: BalanceSummaryPayload,
     accounts: Vec<BalanceAccountPayload>,
@@ -135,14 +129,14 @@ pub struct BulkBalanceResponse {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub(crate) struct SingleAsOfPayload {
+pub(crate) struct BalanceAsOfPayload {
     kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    timestamp: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    block_number: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     observed_at: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
-pub(crate) struct BulkAsOfPayload {
-    kind: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
@@ -198,6 +192,7 @@ impl From<BalanceEvidence> for BalanceEvidencePayload {
             block: BalanceBlockPayload {
                 number: evidence.block_number,
                 hash: evidence.block_hash,
+                timestamp: evidence.block_timestamp,
             },
             observed_at: evidence.observed_at,
         }
@@ -208,6 +203,7 @@ impl From<BalanceEvidence> for BalanceEvidencePayload {
 pub(crate) struct BalanceBlockPayload {
     number: String,
     hash: String,
+    timestamp: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
@@ -353,6 +349,32 @@ fn shape_account(account: BalanceAccountResult) -> ShapedAccount {
         supported_balance_items,
         resolved_balance_items,
         failed_balance_items,
+    }
+}
+
+fn shape_as_of(
+    as_of: &BalanceAsOf,
+    evidence: Option<&BalanceEvidencePayload>,
+) -> BalanceAsOfPayload {
+    match as_of {
+        BalanceAsOf::Latest => BalanceAsOfPayload {
+            kind: "latest".to_string(),
+            timestamp: None,
+            block_number: None,
+            observed_at: evidence.map(|evidence| evidence.observed_at.clone()),
+        },
+        BalanceAsOf::Timestamp { timestamp } => BalanceAsOfPayload {
+            kind: "timestamp".to_string(),
+            timestamp: Some(timestamp.clone()),
+            block_number: None,
+            observed_at: None,
+        },
+        BalanceAsOf::BlockNumber { block_number } => BalanceAsOfPayload {
+            kind: "block_number".to_string(),
+            timestamp: None,
+            block_number: Some(block_number.clone()),
+            observed_at: None,
+        },
     }
 }
 

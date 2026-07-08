@@ -15,11 +15,10 @@ use crate::adapters::http::dto::assets::token_selector::{
 };
 use crate::adapters::http::dto::balances::{
     examples as balance_examples, requests::BulkBalanceRequest, requests::SingleBalanceRequest,
-    BalanceAccountIdentityPayload, BalanceAccountPayload, BalanceAmountPayload,
+    BalanceAccountIdentityPayload, BalanceAccountPayload, BalanceAmountPayload, BalanceAsOfPayload,
     BalanceBlockPayload, BalanceErrorPayload, BalanceEvidencePayload, BalancePositionPayload,
     BalanceQuotePayload, BalanceQuoteStatus, BalanceResponseStatus, BalanceSelectorPayload,
-    BalanceSkippedPayload, BalanceSummaryPayload, BulkAsOfPayload, BulkBalanceResponse,
-    SingleAsOfPayload, SingleBalanceResponse,
+    BalanceSkippedPayload, BalanceSummaryPayload, BulkBalanceResponse, SingleBalanceResponse,
 };
 use crate::adapters::http::dto::erc20_transfers::{
     examples as erc20_transfer_examples, response::Erc20TransferAmount, response::Erc20TransferRow,
@@ -81,7 +80,7 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
         BalanceSelectorPayload,
         BalanceSkippedPayload,
         BalanceSummaryPayload,
-        BulkAsOfPayload,
+        BalanceAsOfPayload,
         BulkBalanceRequest,
         BulkBalanceResponse,
         Erc20TransferAmount,
@@ -101,7 +100,6 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
         ErrorBody,
         ErrorResponse,
         ResolvedTokenSelectorRequest,
-        SingleAsOfPayload,
         SingleBalanceRequest,
         SingleBalanceResponse
     ))
@@ -136,7 +134,7 @@ struct BaseApiDoc;
         BalanceSelectorPayload,
         BalanceSkippedPayload,
         BalanceSummaryPayload,
-        BulkAsOfPayload,
+        BalanceAsOfPayload,
         BulkBalanceRequest,
         BulkBalanceResponse,
         Erc20TransferAmount,
@@ -156,7 +154,6 @@ struct BaseApiDoc;
         ErrorBody,
         ErrorResponse,
         ResolvedTokenSelectorRequest,
-        SingleAsOfPayload,
         SingleBalanceRequest,
         SingleBalanceResponse
     ))
@@ -168,7 +165,7 @@ struct Erc20TransfersApiDoc;
     path = "/v1/balances",
     tag = "balances",
     summary = "Resolve one latest balance snapshot",
-    description = "Resolves one latest EVM balance snapshot for a canonical network_slug and explicit token selectors. Requests use network_slug, never chain or chain_id. Supported quote_currency values are USD, MXN, USDC, and BTC. The single endpoint accepts exactly one account and up to 20 total token selectors, including catalog tokens.asset_slugs and explicit ERC-20 tokens.contract_addresses, for at most 20 account-token resolution items. Unknown explicit contracts can return raw balances with unsupported quotes. Historical as_of forms are reserved for later SPEC-012 slices and are rejected by this implementation.",
+    description = "Resolves one latest or historical EVM balance snapshot for a canonical network_slug and explicit token selectors. Requests use network_slug, never chain or chain_id. Supported as_of forms are latest, timestamp, and block_number. Supported quote_currency values are USD, MXN, USDC, and BTC. The single endpoint accepts exactly one account and up to 20 total token selectors, including catalog tokens.asset_slugs and explicit ERC-20 tokens.contract_addresses, for at most 20 account-token resolution items. Unknown explicit contracts can return raw balances with unsupported quotes. Historical raw balances never fall back to latest evidence; historical quote enrichment is unavailable unless a time-aligned quote is supported.",
     request_body(
         content = SingleBalanceRequest,
         content_type = "application/json"
@@ -214,7 +211,7 @@ async fn resolve_single_balance_operation() {}
     path = "/v1/balances/bulk",
     tag = "balances",
     summary = "Resolve latest balance snapshots in bulk",
-    description = "Resolves latest EVM balance snapshots for explicit canonical network_slug accounts and token selectors. Requests use network_slug, never chain or chain_id. Supported quote_currency values are USD, MXN, USDC, and BTC. Bulk accepts 1 to 50 accounts, up to 20 total token selectors across tokens.asset_slugs and tokens.contract_addresses, and up to 1,000 account-token resolution items. Unknown explicit contracts can return raw balances with unsupported quotes. Historical as_of forms are reserved for later SPEC-012 slices and are rejected by this implementation.",
+    description = "Resolves latest or historical EVM balance snapshots for explicit canonical network_slug accounts and token selectors. Requests use network_slug, never chain or chain_id. Supported as_of forms are latest, timestamp, and block_number. Supported quote_currency values are USD, MXN, USDC, and BTC. Bulk accepts 1 to 50 accounts, up to 20 total token selectors across tokens.asset_slugs and tokens.contract_addresses, and up to 1,000 account-token resolution items. Unknown explicit contracts can return raw balances with unsupported quotes. Historical raw balances never fall back to latest evidence; historical quote enrichment is unavailable unless a time-aligned quote is supported.",
     request_body(
         content = BulkBalanceRequest,
         content_type = "application/json"
@@ -944,8 +941,11 @@ mod tests {
                 "type",
             ],
         );
-        assert_schema_properties(schemas, "SingleAsOfPayload", &["kind", "observed_at"]);
-        assert_schema_properties(schemas, "BulkAsOfPayload", &["kind"]);
+        assert_schema_properties(
+            schemas,
+            "BalanceAsOfPayload",
+            &["block_number", "kind", "observed_at", "timestamp"],
+        );
         assert_schema_properties(
             schemas,
             "BalanceSummaryPayload",
@@ -980,7 +980,11 @@ mod tests {
             "BalanceEvidencePayload",
             &["block", "network_slug", "observed_at", "source"],
         );
-        assert_schema_properties(schemas, "BalanceBlockPayload", &["hash", "number"]);
+        assert_schema_properties(
+            schemas,
+            "BalanceBlockPayload",
+            &["hash", "number", "timestamp"],
+        );
         assert_schema_properties(
             schemas,
             "BalancePositionPayload",
@@ -1078,8 +1082,11 @@ mod tests {
                 .unwrap_or_else(|| panic!("{path} should include a description"));
             assert!(description.contains("tokens.asset_slugs"));
             assert!(description.contains("tokens.contract_addresses"));
-            assert!(description.contains("Historical as_of forms are reserved"));
-            assert!(description.contains("rejected by this implementation"));
+            assert!(description
+                .contains("Supported as_of forms are latest, timestamp, and block_number"));
+            assert!(
+                description.contains("Historical raw balances never fall back to latest evidence")
+            );
         }
     }
 

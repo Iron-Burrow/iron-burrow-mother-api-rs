@@ -6,6 +6,7 @@ use tracing::warn;
 use crate::adapters::http::dto::accounts::OnchainAccountRequest;
 use crate::adapters::http::dto::assets::token_selector::TokenSelectorRequest;
 use crate::adapters::http::dto::onchain_time::as_of::AsOfRequest;
+use crate::common::rfc3339::parse_rfc3339;
 use crate::domain::accounts::OnchainAccount;
 use crate::domain::assets::token_selector::TokenSelector;
 use crate::{
@@ -21,7 +22,10 @@ use crate::{
     application::balances::{
         catalog::CatalogBalanceTargetResolver,
         quote::PriceQuoteClient,
-        service::{BalanceSnapshotRequest, BalanceSnapshotService, BalanceSnapshotServiceError},
+        service::{
+            BalanceAsOf, BalanceSnapshotRequest, BalanceSnapshotService,
+            BalanceSnapshotServiceError,
+        },
     },
     domain::assets::balance_catalog::CatalogResolverError,
     state::AppState,
@@ -94,9 +98,7 @@ fn validate_request(
     quote_currency: String,
     tokens: TokenSelectorRequest,
 ) -> Result<BalanceSnapshotRequest, ApiError> {
-    if as_of.kind != "latest" || as_of.timestamp.is_some() || as_of.block_number.is_some() {
-        return Err(ApiError::unsupported_as_of());
-    }
+    let as_of = validate_balance_as_of(as_of)?;
     if accounts.is_empty() {
         return Err(ApiError::empty_accounts());
     }
@@ -154,6 +156,7 @@ fn validate_request(
     }
 
     Ok(BalanceSnapshotRequest {
+        as_of,
         accounts: accounts
             .into_iter()
             .map(|account| OnchainAccount {
@@ -168,6 +171,38 @@ fn validate_request(
         },
         quote_currency,
     })
+}
+
+fn validate_balance_as_of(as_of: AsOfRequest) -> Result<BalanceAsOf, ApiError> {
+    match as_of.kind.as_str() {
+        "latest" if as_of.timestamp.is_none() && as_of.block_number.is_none() => {
+            Ok(BalanceAsOf::Latest)
+        }
+        "timestamp" if as_of.block_number.is_none() => {
+            let Some(timestamp) = as_of.timestamp else {
+                return Err(ApiError::invalid_request());
+            };
+            if parse_rfc3339(&timestamp).is_none() {
+                return Err(ApiError::invalid_request());
+            }
+            Ok(BalanceAsOf::Timestamp { timestamp })
+        }
+        "block_number" if as_of.timestamp.is_none() => {
+            let Some(block_number) = as_of.block_number else {
+                return Err(ApiError::invalid_request());
+            };
+            if !block_number
+                .as_bytes()
+                .iter()
+                .all(|character| character.is_ascii_digit())
+            {
+                return Err(ApiError::invalid_request());
+            }
+            Ok(BalanceAsOf::BlockNumber { block_number })
+        }
+        "latest" | "timestamp" | "block_number" => Err(ApiError::invalid_request()),
+        _ => Err(ApiError::unsupported_as_of()),
+    }
 }
 
 fn is_evm_address(address: &str) -> bool {
@@ -196,7 +231,7 @@ async fn resolve_snapshot(
     );
 
     service
-        .resolve_latest(request)
+        .resolve(request)
         .await
         .map_err(balance_service_error_to_api_error)
 }
@@ -419,18 +454,15 @@ mod tests {
         assert!(response["evidence"].get("chain_id").is_none());
 
         let bigwig_request = bigwig_handle.await.unwrap();
-        assert!(
-            bigwig_request.starts_with("POST /internal/v1/primitives/evm/latest-balances HTTP/1.1")
-        );
+        assert!(bigwig_request.starts_with("POST /internal/v1/primitives/evm/balances HTTP/1.1"));
         let bigwig_json = request_body_json(&bigwig_request);
         assert_eq!(
             bigwig_json,
             json!({
                 "network_slug": "eth-mainnet",
-                "accounts": [{
-                "address": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
-                }],
-                "targets": [{"kind": "native"}]
+                "as_of": {"kind": "latest"},
+                "accounts": ["0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"],
+                "tokens": [{"kind": "native"}]
             })
         );
         assert!(!bigwig_request.contains("client_ref"));
@@ -441,6 +473,104 @@ mod tests {
         assert_eq!(
             request_body_json(&price_request),
             json!({"slugs": ["ethereum"], "quoteCurrency": "MXN"})
+        );
+    }
+
+    #[tokio::test]
+    async fn timestamp_balance_forwards_historical_as_of_and_does_not_use_latest_quotes() {
+        let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
+            "eth-mainnet",
+            1,
+            json!({"kind": "native"}),
+            &[(ACCOUNT_A, "1000000000000000000")],
+        )) else {
+            return;
+        };
+        let Ok(price_listener) = TcpListener::bind("127.0.0.1:0") else {
+            return;
+        };
+        let price_url = format!("http://{}", price_listener.local_addr().unwrap());
+        let app = balance_app(Some(&bigwig_url), Some(&price_url));
+
+        let (status, response) = post_json(
+            app,
+            "/v1/balances",
+            json!({
+                "as_of": {
+                    "kind": "timestamp",
+                    "timestamp": "2026-07-03T00:00:00Z"
+                },
+                "account": {"network_slug": "eth-mainnet", "address": ACCOUNT_A},
+                "quote_currency": "USD",
+                "tokens": {"asset_slugs": ["ethereum"], "contract_addresses": []}
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            response["as_of"],
+            json!({"kind": "timestamp", "timestamp": "2026-07-03T00:00:00Z"})
+        );
+        assert_eq!(
+            response["positions"][0]["balance"]["raw_amount"],
+            "1000000000000000000"
+        );
+        assert_eq!(response["positions"][0]["quote"]["status"], "unavailable");
+        assert_eq!(response["errors"][0]["code"], "price_resolution_failed");
+
+        let bigwig_request = bigwig_handle.await.unwrap();
+        let bigwig_json = request_body_json(&bigwig_request);
+        assert_eq!(
+            bigwig_json["as_of"],
+            json!({"kind": "timestamp", "timestamp": "2026-07-03T00:00:00Z"})
+        );
+        assert_eq!(bigwig_json["accounts"], json!([ACCOUNT_A]));
+        assert_eq!(bigwig_json["tokens"], json!([{"kind": "native"}]));
+
+        price_listener.set_nonblocking(true).unwrap();
+        assert_eq!(
+            price_listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+
+    #[tokio::test]
+    async fn block_number_balance_forwards_historical_as_of() {
+        let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
+            "eth-mainnet",
+            1,
+            json!({"kind": "native"}),
+            &[(ACCOUNT_A, "42")],
+        )) else {
+            return;
+        };
+        let app = balance_app(Some(&bigwig_url), None);
+
+        let (status, response) = post_json(
+            app,
+            "/v1/balances",
+            json!({
+                "as_of": {
+                    "kind": "block_number",
+                    "block_number": "19000000"
+                },
+                "account": {"network_slug": "eth-mainnet", "address": ACCOUNT_A},
+                "quote_currency": "USD",
+                "tokens": {"asset_slugs": ["ethereum"], "contract_addresses": []}
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            response["as_of"],
+            json!({"kind": "block_number", "block_number": "19000000"})
+        );
+        let bigwig_request = bigwig_handle.await.unwrap();
+        assert_eq!(
+            request_body_json(&bigwig_request)["as_of"],
+            json!({"kind": "block_number", "block_number": "19000000"})
         );
     }
 
@@ -551,7 +681,7 @@ mod tests {
 
         let bigwig_request = bigwig_handle.await.unwrap();
         assert_eq!(
-            request_body_json(&bigwig_request)["targets"]
+            request_body_json(&bigwig_request)["tokens"]
                 .as_array()
                 .unwrap()
                 .len(),
@@ -704,7 +834,7 @@ mod tests {
 
         let bigwig_request = bigwig_handle.await.unwrap();
         assert_eq!(
-            request_body_json(&bigwig_request)["targets"],
+            request_body_json(&bigwig_request)["tokens"],
             json!([{"kind": "erc20", "contract_address": contract}])
         );
     }
@@ -749,7 +879,7 @@ mod tests {
 
         let bigwig_request = bigwig_handle.await.unwrap();
         assert_eq!(
-            request_body_json(&bigwig_request)["targets"],
+            request_body_json(&bigwig_request)["tokens"],
             json!([{"kind": "erc20", "contract_address": contract}])
         );
     }
@@ -984,25 +1114,25 @@ mod tests {
                 json!({
                     "as_of": {
                         "kind": "timestamp",
-                        "timestamp": "2026-07-03T00:00:00Z"
+                        "timestamp": "not-a-timestamp"
                     },
                     "accounts": [valid_account.clone()],
                     "quote_currency": "USD",
                     "tokens": valid_tokens.clone()
                 }),
-                "unsupported_as_of",
+                "invalid_request",
             ),
             (
                 json!({
                     "as_of": {
                         "kind": "block_number",
-                        "block_number": "19000000"
+                        "block_number": "19.5"
                     },
                     "accounts": [valid_account.clone()],
                     "quote_currency": "USD",
                     "tokens": valid_tokens.clone()
                 }),
-                "unsupported_as_of",
+                "invalid_request",
             ),
             (
                 json!({
@@ -1430,25 +1560,29 @@ mod tests {
             .iter()
             .map(|(address, raw_amount)| {
                 json!({
-                    "status": "resolved",
-                    "account": {"address": address},
-                    "target": target.clone(),
-                    "raw_amount": raw_amount
+                    "account_address": address,
+                    "requested_token": target.clone(),
+                    "raw_balance": {
+                        "status": "resolved",
+                        "value": raw_amount
+                    }
                 })
             })
             .collect::<Vec<_>>();
 
         json!({
-            "primitive": "evm_latest_balances",
+            "primitive": "evm_balances",
             "status": "complete",
             "network": {
                 "network_slug": network_slug,
                 "chain_id": chain_id
             },
-            "observed_at": "2026-06-18T12:00:00Z",
-            "block": {
-                "number": "123456",
-                "hash": format!("0x{}", "a".repeat(64))
+            "requested_as_of": {"kind": "latest"},
+            "resolved_evidence": {
+                "kind": "observed_head",
+                "block_number": "123456",
+                "block_hash": format!("0x{}", "a".repeat(64)),
+                "block_timestamp": "2026-06-18T12:00:00Z"
             },
             "items": items
         })

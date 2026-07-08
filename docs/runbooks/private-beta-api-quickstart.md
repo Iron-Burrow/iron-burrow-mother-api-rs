@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-02
+last_reviewed: 2026-07-08
 agent_edit_policy: update_when_relevant
 ---
 
@@ -40,9 +40,9 @@ Use `/v1/balances` for one account on one network. The `network_slug` field is
 the canonical network identifier; do not send `chain`, `chain_id`, or
 `chain_slug`.
 
-For balances, `as_of` currently supports only `{"kind": "latest"}`. Historical
-balance snapshots, block-specific balances, and timestamp-specific balances
-are not part of the private Beta surface yet.
+For balances, `as_of` supports `{"kind": "latest"}`, timestamp requests, and
+block-number requests. Historical raw balances never fall back to latest
+evidence; quote fields may be unavailable when no time-aligned quote exists.
 
 ```bash
 curl -sS "$IB_API/v1/balances" \

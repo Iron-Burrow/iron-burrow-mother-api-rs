@@ -337,3 +337,13 @@ implementation, and documentation changes.
 - Added OpenAPI and documentation synchronization coverage so balance schemas,
   examples, and smoke payloads keep the enabled v0.3 token-selector contract
   while historical `as_of` forms remain reserved for a later SPEC-012 slice.
+- Completed SPEC-012 historical balance support for private Beta by moving
+  balance evidence calls to Bigwig
+  `POST /internal/v1/primitives/evm/balances` and accepting `as_of.kind`
+  values `latest`, `timestamp`, and `block_number`.
+- Historical balance requests now preserve explicit raw-balance evidence and
+  never fall back to latest balances; latest quote lookup is skipped for
+  historical requests unless a time-aligned quote path is implemented.
+- Updated contracts, README, quickstart, smoke payloads, OpenAPI
+  descriptions, and route/service coverage for the v0.3 historical balance
+  release.

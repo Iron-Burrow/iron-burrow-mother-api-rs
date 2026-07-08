@@ -1,7 +1,7 @@
 ---
 status: draft
 owner: iron-burrow
-last_reviewed: 2026-07-07
+last_reviewed: 2026-07-08
 agent_edit_policy: update_when_relevant
 ---
 
@@ -9,11 +9,10 @@ agent_edit_policy: update_when_relevant
 
 Draft replacement spec for the private Beta balance endpoints.
 
-This document does not override [CONTRACTS.md](../../CONTRACTS.md). The
-current binding balance contract remains latest-only, and only slices already
-reflected in `CONTRACTS.md` are public truth until later SPEC-012 slices are
-implemented and the contract, OpenAPI, examples, smoke checks, and
-[HISTORY.md](../../HISTORY.md) are updated in the same change.
+This document does not override [CONTRACTS.md](../../CONTRACTS.md). Only
+slices reflected in `CONTRACTS.md` are public truth. The v0.3 historical
+balance release requires the runtime contract, OpenAPI, examples, smoke
+checks, and [HISTORY.md](../../HISTORY.md) to be updated in the same change.
 
 Breaking the private Beta balance contract is acceptable for v0.3 because the
 resulting surface should be clearer, less catalog-bound, and harder to
@@ -510,6 +509,18 @@ They must not leak upstream provider topology or pricing internals.
   range failures.
 - Add historical quote tests proving latest prices are not silently used for
   historical balance requests.
+
+### PR 7 - Release Contract, Docs, and Version Bump
+
+- Update `CONTRACTS.md`, README, private-Beta quickstart, smoke checks,
+  OpenAPI descriptions/examples, and `HISTORY.md` to make latest, timestamp,
+  and block-number balances the binding v0.3 public contract.
+- Remove stale latest-only language and stale claims that historical `as_of`
+  forms return `unsupported_as_of`.
+- Keep historical quote behavior explicit: raw balances may resolve while
+  quote status is `unavailable` when no time-aligned quote is supported.
+- Bump Cargo package version to `0.3.0` only after runtime behavior,
+  generated OpenAPI, docs, and tests are aligned.
 
 ## Test Plan
 
