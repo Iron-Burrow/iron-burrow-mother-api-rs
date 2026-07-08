@@ -164,7 +164,7 @@ struct Erc20TransfersApiDoc;
     post,
     path = "/v1/balances",
     tag = "balances",
-    summary = "Resolve one latest balance snapshot",
+    summary = "Resolve one balance snapshot",
     description = "Resolves one latest or historical EVM balance snapshot for a canonical network_slug and explicit token selectors. Requests use network_slug, never chain or chain_id. Supported as_of forms are latest, timestamp, and block_number. Supported quote_currency values are USD, MXN, USDC, and BTC. The single endpoint accepts exactly one account and up to 20 total token selectors, including catalog tokens.asset_slugs and explicit ERC-20 tokens.contract_addresses, for at most 20 account-token resolution items. Unknown explicit contracts can return raw balances with unsupported quotes. Historical raw balances never fall back to latest evidence; historical quote enrichment is unavailable unless a time-aligned quote is supported.",
     request_body(
         content = SingleBalanceRequest,
@@ -210,7 +210,7 @@ async fn resolve_single_balance_operation() {}
     post,
     path = "/v1/balances/bulk",
     tag = "balances",
-    summary = "Resolve latest balance snapshots in bulk",
+    summary = "Resolve balance snapshots in bulk",
     description = "Resolves latest or historical EVM balance snapshots for explicit canonical network_slug accounts and token selectors. Requests use network_slug, never chain or chain_id. Supported as_of forms are latest, timestamp, and block_number. Supported quote_currency values are USD, MXN, USDC, and BTC. Bulk accepts 1 to 50 accounts, up to 20 total token selectors across tokens.asset_slugs and tokens.contract_addresses, and up to 1,000 account-token resolution items. Unknown explicit contracts can return raw balances with unsupported quotes. Historical raw balances never fall back to latest evidence; historical quote enrichment is unavailable unless a time-aligned quote is supported.",
     request_body(
         content = BulkBalanceRequest,
