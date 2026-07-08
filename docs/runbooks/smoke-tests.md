@@ -9,7 +9,8 @@ agent_edit_policy: update_when_relevant
 
 Brief runbook for the private Beta balance surface from
 [SPEC-008](../specs/SPEC-008-balance-endpoint-beta-contract-hardening.md) and
-the mandatory ERC-20 transfer search surface from
+[SPEC-012](../specs/SPEC-012-balance-endpoint-v0-3-explicit-token-selectors-and-historical-balances.md),
+plus the mandatory ERC-20 transfer search surface from
 [SPEC-007](../specs/SPEC-007-public-erc-20-transfer-search-v1.md).
 
 Run these from the production repository root. Requires `curl`, `jq`, `grep`,
@@ -31,8 +32,8 @@ Do not call private Beta ready until:
 - Bigwig Hub has `extraction.enabled: true`;
 - Mother API has `INFRA_GATEWAY_URL`, `INFRA_GATEWAY_TOKEN`, and
   `BIGWIG_REQUEST_TIMEOUT_MS=30000`;
-- health, single-balance, bulk-balance, validation-error, disabled-route, and
-  unknown-route checks below pass;
+- health, single-balance, historical-balance, bulk-balance, validation-error,
+  disabled-route, and unknown-route checks below pass;
 - transfer-search checks 1-10 below pass without
   `extraction_unavailable`, `upstream_provider_timeout`, or
   `extraction_timeout` for the valid USDC smoke payload;
@@ -375,6 +376,23 @@ echo "HTTP $status"
 test "$status" = "200"
 jq -e '.status as $status | .ok == true and .type == "balances" and (["complete", "partial", "failed"] | index($status) != null) and .account.network_slug == "eth-mainnet" and (.positions | type) == "array" and (.errors | type) == "array"' \
   /tmp/mother-balance-single.out.json
+```
+
+### B2A. Historical Single Balance
+
+Expected: HTTP `200`, `ok: true`, single-balance response shape, echoed
+timestamp request, and no latest-balance fallback.
+
+```bash
+status="$(curl -sS -o /tmp/mother-balance-single-historical.out.json -w '%{http_code}' \
+  -X POST "$IB_API/v1/balances" \
+  -H "$JSON_HEADER" \
+  -H "$AUTH_HEADER" \
+  -d @/tmp/mother-balance-single-historical.json)"
+echo "HTTP $status"
+test "$status" = "200"
+jq -e '.status as $status | .ok == true and .type == "balances" and (["complete", "partial", "failed"] | index($status) != null) and .as_of.kind == "timestamp" and .as_of.timestamp == "2026-07-03T00:00:00Z" and (.positions | type) == "array" and (.errors | type) == "array"' \
+  /tmp/mother-balance-single-historical.out.json
 ```
 
 ### B3. Bulk Balances

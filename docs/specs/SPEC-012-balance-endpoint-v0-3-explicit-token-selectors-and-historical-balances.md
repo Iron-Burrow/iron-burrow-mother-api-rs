@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 owner: iron-burrow
 last_reviewed: 2026-07-08
 agent_edit_policy: update_when_relevant
@@ -7,12 +7,11 @@ agent_edit_policy: update_when_relevant
 
 # SPEC-012 - Balance Endpoint v0.3 Explicit Token Selectors and Historical Balances
 
-Draft replacement spec for the private Beta balance endpoints.
+Accepted replacement spec for the private Beta balance endpoints.
 
-This document does not override [CONTRACTS.md](../../CONTRACTS.md). Only
-slices reflected in `CONTRACTS.md` are public truth. The v0.3 historical
-balance release requires the runtime contract, OpenAPI, examples, smoke
-checks, and [HISTORY.md](../../HISTORY.md) to be updated in the same change.
+This document does not override [CONTRACTS.md](../../CONTRACTS.md). The v0.3
+historical balance release is binding only through the runtime contract,
+OpenAPI, examples, smoke checks, and [HISTORY.md](../../HISTORY.md).
 
 Breaking the private Beta balance contract is acceptable for v0.3 because the
 resulting surface should be clearer, less catalog-bound, and harder to
@@ -551,8 +550,8 @@ They must not leak upstream provider topology or pricing internals.
 - The future ERC-20 transfer account wrapper is a private-Beta breaking
   change and will not keep top-level public `network_slug` or `address`
   compatibility aliases.
-- SPEC-012 remains draft until the replacement contract and upstream
-  historical support are fully shipped to the private Beta public contract.
+- SPEC-012 is accepted because the replacement contract and upstream
+  historical support are shipped to the private Beta public contract.
 - Initial upstream historical network coverage for this SPEC-012 slice is
   `eth-mainnet` and `base-mainnet`.
 - `account.client_ref` is Mother API public metadata only; it is not forwarded

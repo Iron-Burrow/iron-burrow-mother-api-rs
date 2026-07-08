@@ -372,7 +372,7 @@ fn add_single_balance_examples(document: &mut utoipa::openapi::OpenApi) {
                 content,
                 [(
                     "single_balance",
-                    "Single latest balance request",
+                    "Single balance request",
                     balance_examples::single_request(),
                 )],
             );
@@ -433,7 +433,7 @@ fn add_bulk_balance_examples(document: &mut utoipa::openapi::OpenApi) {
                 content,
                 [(
                     "bulk_balances",
-                    "Bulk latest balance request",
+                    "Bulk balance request",
                     balance_examples::bulk_request(),
                 )],
             );

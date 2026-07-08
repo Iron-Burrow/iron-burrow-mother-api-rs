@@ -65,7 +65,7 @@ Mother API supports an explicit runtime route-surface mode through
 
 The production private Beta deployment must set
 `ERC20_TRANSFERS_ENABLED=true`. A production Beta deployment with the transfer
-route disabled is not the supported v0.2 customer surface.
+route disabled is not the supported v0.3 customer surface.
 
 In `beta` mode, `/health` remains public. The beta `/v1/*` routes listed
 above require `Authorization: Bearer <api_key>`. Missing, malformed,
@@ -1013,6 +1013,8 @@ Balance response rules shared by both endpoints:
   `null` when unknown.
 - Quote `status` is `available`, `unavailable`, or `unsupported`. Non-available
   quote fields (`currency`, `unit_price`, `value`, `price_as_of`) are `null`.
+- Historical raw balances may resolve while quote status is `unavailable` when
+  no time-aligned quote is supported.
 
 Per-account item errors use these stable codes:
 

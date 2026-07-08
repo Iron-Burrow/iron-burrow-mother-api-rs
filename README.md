@@ -7,7 +7,7 @@ agent_edit_policy: update_when_relevant
 
 # Iron Burrow Mother API
 
-Public Beta v0.2 API boundary for **Iron Burrow**.
+Public Beta v0.3 API boundary for **Iron Burrow**.
 
 Iron Burrow is a source-aware blockchain intelligence system built to make
 on-chain data easier for humans, applications, and agents to inspect without
@@ -16,7 +16,7 @@ guessing.
 The **Mother API** is the public HTTP surface of the burrow. In private Beta
 mode, it exposes a deliberately small API surface:
 
-1. latest balance lookups;
+1. latest and historical balance lookups;
 2. bounded ERC-20 transfer search.
 
 Everything else is intentionally out of scope for this README. No hackathon
@@ -46,7 +46,7 @@ For a customer-facing copy-paste guide, see
 
 The production Beta deployment should run with `PUBLIC_API_SURFACE=beta` and
 `ERC20_TRANSFERS_ENABLED=true`. Alpha compatibility mode still exists for the
-broader Production Alpha 1 route surface and is not the private Beta v0.2
+broader Production Alpha 1 route surface and is not the private Beta v0.3
 customer surface.
 
 ## Public Health Check
@@ -66,8 +66,8 @@ internal data dependency is fully available.
 | Method | Path                         | Auth    | Purpose |
 | ------ | ---------------------------- | ------- | ------- |
 | `GET`  | `/health`                    | Public  | Lightweight process liveness check. |
-| `POST` | `/v1/balances`               | API key | Read latest balances for one supported account. |
-| `POST` | `/v1/balances/bulk`          | API key | Read latest balances for supported accounts, networks, and assets. |
+| `POST` | `/v1/balances`               | API key | Read latest or historical balances for one supported account. |
+| `POST` | `/v1/balances/bulk`          | API key | Read latest or historical balances for supported accounts, networks, and tokens. |
 | `POST` | `/v1/erc20-transfers/search` | API key | Search bounded ERC-20 transfers. |
 
 In Beta mode, known Alpha-only routes return `403 endpoint_disabled`. Truly
@@ -258,7 +258,7 @@ schemas and examples, use the generated OpenAPI document.
 
 ## Beta Release Principle
 
-Beta v0.2 favors a small, reliable, protected surface over a large exploratory
+Beta v0.3 favors a small, reliable, protected surface over a large exploratory
 API. The goal is to give early customers useful on-chain data without exposing
 unstable internal routes or old demo concepts.
 
