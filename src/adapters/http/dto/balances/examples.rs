@@ -96,6 +96,32 @@ pub(crate) fn single_item_level_failure_response() -> Value {
     })
 }
 
+pub(crate) fn single_quote_unavailable_response() -> Value {
+    json!({
+        "ok": true,
+        "type": "balances",
+        "status": "partial",
+        "as_of": {
+            "kind": "latest",
+            "observed_at": "2026-06-18T12:00:00Z"
+        },
+        "quote_currency": "USD",
+        "account": {
+            "network_slug": ETH_NETWORK,
+            "address": ACCOUNT_A,
+            "client_ref": "main-safe"
+        },
+        "evidence": eth_evidence(),
+        "positions": [
+            usdc_unavailable_quote_position(ETH_NETWORK)
+        ],
+        "skipped": [],
+        "errors": [
+            balance_error(ETH_NETWORK, "usdc", "price_resolution_failed")
+        ]
+    })
+}
+
 pub(crate) fn bulk_success_response() -> Value {
     json!({
         "ok": true,
@@ -285,11 +311,7 @@ fn ethereum_position(currency: &str, unit_price: &str, value: &str) -> Value {
 }
 
 fn usdc_position(network_slug: &str, currency: &str, unit_price: &str, value: &str) -> Value {
-    let contract_address = match network_slug {
-        BASE_NETWORK => Some("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"),
-        ETH_NETWORK => Some("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
-        _ => None,
-    };
+    let contract_address = asset_contract_address(network_slug, "usdc");
 
     json!({
         "selector": {
@@ -315,6 +337,18 @@ fn usdc_position(network_slug: &str, currency: &str, unit_price: &str, value: &s
     })
 }
 
+fn usdc_unavailable_quote_position(network_slug: &str) -> Value {
+    let mut position = usdc_position(network_slug, "USD", "1.00", "1.250000");
+    position["quote"] = json!({
+        "status": "unavailable",
+        "currency": null,
+        "unit_price": null,
+        "value": null,
+        "price_as_of": null
+    });
+    position
+}
+
 fn skipped_item(network_slug: &str, asset_slug: &str) -> Value {
     json!({
         "network_slug": network_slug,
@@ -330,16 +364,25 @@ fn balance_error(network_slug: &str, asset_slug: &str, code: &str) -> Value {
             "kind": "asset_slug",
             "value": asset_slug
         },
-        "contract_address": null,
+        "contract_address": asset_contract_address(network_slug, asset_slug),
         "asset_slug": asset_slug,
         "code": code,
         "message": match code {
             "balance_provider_unavailable" => {
                 "Balance is temporarily unavailable for this asset on this network."
             }
+            "price_resolution_failed" => "Quote could not be resolved for this asset.",
             _ => "This balance item could not be processed.",
         }
     })
+}
+
+fn asset_contract_address(network_slug: &str, asset_slug: &str) -> Option<&'static str> {
+    match (asset_slug, network_slug) {
+        ("usdc", BASE_NETWORK) => Some("0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"),
+        ("usdc", ETH_NETWORK) => Some("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+        _ => None,
+    }
 }
 
 fn error_response(code: &str, message: &str) -> Value {

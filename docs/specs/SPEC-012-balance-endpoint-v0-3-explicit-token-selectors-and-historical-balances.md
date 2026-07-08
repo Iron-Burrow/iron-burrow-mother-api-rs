@@ -470,8 +470,6 @@ They must not leak upstream provider topology or pricing internals.
 - Keep unresolved explicit contracts eligible for raw balance results with
   `unsupported` quote status.
 
-🔖
-
 ### PR 4 - Quote and Response Shaping
 
 - Extend balance responses only as needed to expose requested token identity,

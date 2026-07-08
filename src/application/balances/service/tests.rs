@@ -235,6 +235,166 @@ fn matches_quotes_with_the_same_normalized_pricing_slug_used_for_collection() {
     ));
 }
 
+#[test]
+fn unavailable_quote_resolution_preserves_raw_balance() {
+    let accounts = vec![RawBalanceAccountResult {
+        account: account("eth-mainnet", ACCOUNT_A, None),
+        evidence: None,
+        items: vec![RawBalanceItemOutcome::Resolved {
+            target: resolved_target_from_asset_selector(
+                "usdc",
+                target(
+                    "eth-mainnet",
+                    1,
+                    "usdc",
+                    BalanceTargetKind::Erc20 {
+                        contract_address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48".to_string(),
+                    },
+                ),
+            ),
+            raw_amount: "1000".to_string(),
+        }],
+    }];
+    let quotes = Ok(HashMap::from([(
+        "usdc".to_string(),
+        PriceQuoteResolution::Unavailable,
+    )]));
+    let results = enrich_account_results(accounts, quotes);
+
+    assert!(matches!(
+        &results[0].items[0],
+        BalanceItemOutcome::Resolved {
+            raw_amount,
+            quote: BalanceQuoteOutcome::Unavailable {
+                code: BalanceItemErrorCode::PriceResolutionFailed,
+            },
+            ..
+        } if raw_amount == "1000"
+    ));
+}
+
+#[test]
+fn missing_quote_entries_are_quote_resolution_failures_not_internal_errors() {
+    let accounts = vec![RawBalanceAccountResult {
+        account: account("eth-mainnet", ACCOUNT_A, None),
+        evidence: None,
+        items: vec![RawBalanceItemOutcome::Resolved {
+            target: resolved_target_from_asset_selector(
+                "ethereum",
+                target("eth-mainnet", 1, "ethereum", BalanceTargetKind::Native),
+            ),
+            raw_amount: "1000000000000000000".to_string(),
+        }],
+    }];
+    let results = enrich_account_results(accounts, Ok(HashMap::new()));
+
+    assert!(matches!(
+        &results[0].items[0],
+        BalanceItemOutcome::Resolved {
+            raw_amount,
+            amount,
+            quote: BalanceQuoteOutcome::Unavailable {
+                code: BalanceItemErrorCode::PriceResolutionFailed,
+            },
+            ..
+        } if raw_amount == "1000000000000000000"
+            && amount.as_deref() == Some("1.000000000000000000")
+    ));
+}
+
+#[test]
+fn quote_provider_failures_preserve_all_resolved_raw_balances() {
+    let accounts = vec![RawBalanceAccountResult {
+        account: account("eth-mainnet", ACCOUNT_A, None),
+        evidence: None,
+        items: vec![
+            RawBalanceItemOutcome::Resolved {
+                target: resolved_target_from_asset_selector(
+                    "usdc",
+                    target(
+                        "eth-mainnet",
+                        1,
+                        "usdc",
+                        BalanceTargetKind::Erc20 {
+                            contract_address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+                                .to_string(),
+                        },
+                    ),
+                ),
+                raw_amount: "1000".to_string(),
+            },
+            RawBalanceItemOutcome::Resolved {
+                target: resolved_target_from_asset_selector(
+                    "ethereum",
+                    target("eth-mainnet", 1, "ethereum", BalanceTargetKind::Native),
+                ),
+                raw_amount: "2000".to_string(),
+            },
+        ],
+    }];
+    let results = enrich_account_results(accounts, Err(PriceQuoteClientError::ProviderUnavailable));
+    let raw_amounts = results[0]
+        .items
+        .iter()
+        .map(|item| match item {
+            BalanceItemOutcome::Resolved {
+                raw_amount,
+                quote:
+                    BalanceQuoteOutcome::Unavailable {
+                        code: BalanceItemErrorCode::PriceProviderUnavailable,
+                    },
+                ..
+            } => raw_amount.as_str(),
+            other => panic!("expected resolved balance with provider-unavailable quote: {other:?}"),
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(raw_amounts, vec!["1000", "2000"]);
+}
+
+#[tokio::test]
+async fn unresolved_explicit_contracts_skip_quote_lookup_and_return_unsupported() {
+    let contract = "0x9999999999999999999999999999999999999999";
+    let Some((bigwig_url, bigwig_server)) = spawn_dynamic_server(1) else {
+        return;
+    };
+    let Ok(price_listener) = TcpListener::bind("127.0.0.1:0") else {
+        return;
+    };
+    let price_url = format!("http://{}", price_listener.local_addr().unwrap());
+
+    let result = service_with_quote(
+        Some(bigwig_client(&bigwig_url)),
+        Some(price_quote_client(&price_url)),
+    )
+    .resolve_latest(BalanceSnapshotRequest {
+        accounts: vec![account("eth-mainnet", ACCOUNT_A, None)],
+        tokens: mixed_tokens(&[], &[contract]),
+        quote_currency: "USD".to_string(),
+    })
+    .await
+    .unwrap();
+
+    bigwig_server.join().unwrap();
+    price_listener.set_nonblocking(true).unwrap();
+    assert_eq!(
+        price_listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+    assert!(matches!(
+        &result.accounts[0].items[0],
+        BalanceItemOutcome::Resolved {
+            target,
+            raw_amount,
+            amount: None,
+            quote: BalanceQuoteOutcome::Unsupported,
+        } if target.selector == BalanceTokenSelector::ContractAddress(contract.to_string())
+            && target.asset_slug.is_none()
+            && target.decimals.is_none()
+            && raw_amount == "1000"
+    ));
+}
+
 fn spawn_dynamic_server(request_count: usize) -> Option<(String, thread::JoinHandle<Vec<Value>>)> {
     let listener = match TcpListener::bind("127.0.0.1:0") {
         Ok(listener) => listener,

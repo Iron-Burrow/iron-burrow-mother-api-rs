@@ -396,6 +396,11 @@ fn add_single_balance_examples(document: &mut utoipa::openapi::OpenApi) {
                 "Item-level balance provider failure response",
                 balance_examples::single_item_level_failure_response(),
             ),
+            (
+                "quote_unavailable",
+                "Resolved balance with unavailable quote response",
+                balance_examples::single_quote_unavailable_response(),
+            ),
         ],
     );
     add_response_examples(
@@ -1075,6 +1080,24 @@ mod tests {
         );
         serde_json::from_value::<SingleBalanceResponse>(single_failure)
             .expect("single item-level failure example should deserialize");
+
+        let quote_unavailable =
+            response_example_value(single_responses, "200", "quote_unavailable");
+        assert_eq!(
+            quote_unavailable,
+            balance_examples::single_quote_unavailable_response()
+        );
+        assert_eq!(quote_unavailable["status"], "partial");
+        assert_eq!(
+            quote_unavailable["positions"][0]["quote"]["status"],
+            "unavailable"
+        );
+        assert_eq!(
+            quote_unavailable["errors"][0]["code"],
+            "price_resolution_failed"
+        );
+        serde_json::from_value::<SingleBalanceResponse>(quote_unavailable)
+            .expect("single quote-unavailable example should deserialize");
 
         assert_error_example(response_example_value(
             single_responses,
