@@ -1128,6 +1128,14 @@ mod tests {
                 content.contains("tokens"),
                 "{name} should show the token-selector contract"
             );
+            assert!(
+                content.contains("asset_slugs"),
+                "{name} should show tokens.asset_slugs"
+            );
+            assert!(
+                content.contains("contract_addresses"),
+                "{name} should show tokens.contract_addresses"
+            );
             for legacy_pattern in legacy_patterns {
                 assert!(
                     !content.contains(legacy_pattern),
