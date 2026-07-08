@@ -6,8 +6,8 @@ use crate::adapters::http::dto::assets::token_selector::{
 };
 use crate::adapters::http::dto::{
     accounts::{validate_account_object, OnchainAccountRequest},
-    onchain_time::onchain_window::{validate_window, OnchainWindowRequest},
-    transfers::transfer_direction::{validate_direction, TransferDirectionRequest},
+    onchain_time::onchain_window::{validate_window, OnchainWindowDTO},
+    transfers::transfer_direction::TransferDirectionDTO,
 };
 use crate::adapters::http::error::ApiError;
 use crate::adapters::http::types::JsonObject;
@@ -20,9 +20,9 @@ const TOP_LEVEL_FIELDS: [&str; 4] = ["account", "direction", "tokens", "window"]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Erc20TransferSearchRequest {
     pub account: OnchainAccountRequest,
-    pub direction: TransferDirectionRequest,
+    pub direction: TransferDirectionDTO,
     pub tokens: Option<TokenSelectorRequest>,
-    pub window: OnchainWindowRequest,
+    pub window: OnchainWindowDTO,
 }
 
 impl TryFrom<&JsonObject> for Erc20TransferSearchRequest {
@@ -37,7 +37,7 @@ impl TryFrom<&JsonObject> for Erc20TransferSearchRequest {
 
         Ok(Self {
             account,
-            direction: validate_direction(request.get("direction"))?,
+            direction: TransferDirectionDTO::try_from(request.get("direction"))?,
             tokens: validate_optional_token_filters(request.get("tokens"))?,
             window: validate_window(request.get("window"))?,
         })

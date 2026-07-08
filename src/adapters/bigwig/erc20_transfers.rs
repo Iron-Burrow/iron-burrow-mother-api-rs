@@ -1,52 +1,22 @@
 use serde::{Deserialize, Serialize};
 
 use crate::adapters::bigwig::{client::BigwigClient, error::BigwigError};
+use crate::adapters::http::dto::onchain_time::onchain_window::{
+    OnchainWindowDTO, OnchainWindowKindDTO,
+};
+use crate::adapters::http::dto::transfers::transfer_direction::TransferDirectionDTO;
 use crate::application::erc20_transfers::service::{
     Erc20TransferExtractionError, Erc20TransferExtractionRequest, Erc20TransferExtractionResult,
     Erc20TransferExtractionRow, Erc20TransferExtractor,
-};
-use crate::domain::{
-    onchain_time::onchain_window::OnchainWindow, transfers::transfer_direction::TransferDirection,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct BigwigErc20TransferRequest {
     pub network_slug: String,
     pub address: String,
-    pub direction: BigwigErc20TransferDirection,
+    pub direction: TransferDirectionDTO,
     pub contract_addresses: Vec<String>,
-    pub window: BigwigErc20TransferWindow,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum BigwigErc20TransferDirection {
-    Any,
-    From,
-    To,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(untagged)]
-pub(crate) enum BigwigErc20TransferWindow {
-    Block {
-        from_block: u64,
-        to_block: u64,
-    },
-    Timestamp {
-        from_timestamp: String,
-        to_timestamp: String,
-    },
-    Lookback {
-        lookback_seconds: u64,
-        to: BigwigErc20TransferLookbackTarget,
-    },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum BigwigErc20TransferLookbackTarget {
-    Latest,
+    pub window: OnchainWindowDTO,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -54,8 +24,8 @@ pub(crate) struct BigwigErc20TransferResponse {
     pub extractor: BigwigErc20TransferExtractor,
     pub network_slug: String,
     pub address: String,
-    pub direction: BigwigErc20TransferDirection,
-    pub window_kind: BigwigErc20TransferWindowKind,
+    pub direction: TransferDirectionDTO,
+    pub window_kind: OnchainWindowKindDTO,
     #[serde(default)]
     pub from_block: Option<u64>,
     #[serde(default)]
@@ -78,14 +48,6 @@ pub(crate) enum BigwigErc20TransferExtractor {
     EvmErc20TransfersByAddress,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum BigwigErc20TransferWindowKind {
-    Block,
-    Timestamp,
-    Lookback,
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub(crate) struct BigwigErc20TransferRow {
     pub block_number: u64,
@@ -102,42 +64,13 @@ impl From<Erc20TransferExtractionRequest> for BigwigErc20TransferRequest {
         Self {
             network_slug: request.network_slug,
             address: request.address.to_ascii_lowercase(),
-            direction: BigwigErc20TransferDirection::from(request.direction),
+            direction: TransferDirectionDTO::from(request.direction),
             contract_addresses: request
                 .contract_addresses
                 .into_iter()
                 .map(|contract_address| contract_address.to_ascii_lowercase())
                 .collect(),
-            window: BigwigErc20TransferWindow::from(request.window),
-        }
-    }
-}
-
-impl From<TransferDirection> for BigwigErc20TransferDirection {
-    fn from(direction: TransferDirection) -> Self {
-        match direction {
-            TransferDirection::Any => Self::Any,
-            TransferDirection::From => Self::From,
-            TransferDirection::To => Self::To,
-        }
-    }
-}
-
-impl From<OnchainWindow> for BigwigErc20TransferWindow {
-    fn from(window: OnchainWindow) -> Self {
-        match window {
-            OnchainWindow::Block(window) => Self::Block {
-                from_block: window.from_block,
-                to_block: window.to_block,
-            },
-            OnchainWindow::Timestamp(window) => Self::Timestamp {
-                from_timestamp: window.from_timestamp,
-                to_timestamp: window.to_timestamp,
-            },
-            OnchainWindow::Lookback(window) => Self::Lookback {
-                lookback_seconds: window.lookback_seconds,
-                to: BigwigErc20TransferLookbackTarget::Latest,
-            },
+            window: OnchainWindowDTO::from(request.window),
         }
     }
 }

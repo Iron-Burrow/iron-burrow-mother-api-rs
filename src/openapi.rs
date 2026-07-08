@@ -28,12 +28,9 @@ use crate::adapters::http::dto::erc20_transfers::{
 };
 use crate::adapters::http::dto::onchain_time::as_of::AsOfRequest;
 use crate::adapters::http::dto::onchain_time::onchain_window::{
-    BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowRequest,
-    OnchainWindowResponse, TimestampWindowDTO,
+    BlockWindowDTO, LookbackTargetDTO, LookbackWindowDTO, OnchainWindowDTO, TimestampWindowDTO,
 };
-use crate::adapters::http::dto::transfers::transfer_direction::{
-    TransferDirectionRequest, TransferDirectionResponse,
-};
+use crate::adapters::http::dto::transfers::transfer_direction::TransferDirectionDTO;
 use crate::adapters::http::dto::{
     accounts::OnchainAccountRequest, erc20_transfers::requests::Erc20TransferSearchRequest,
 };
@@ -89,16 +86,14 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
         BulkBalanceResponse,
         Erc20TransferAmount,
         BlockWindowDTO,
-        TransferDirectionRequest,
-        TransferDirectionResponse,
+        TransferDirectionDTO,
         LookbackTargetDTO,
         LookbackWindowDTO,
         Erc20TransferRow,
         Erc20TransferSearchLimits,
         Erc20TransferSearchRequest,
         Erc20TransferSearchResponse,
-        OnchainWindowResponse,
-        OnchainWindowRequest,
+        OnchainWindowDTO,
         TimestampWindowDTO,
         Erc20TransferToken,
         TokenFilterResolutionDTO,
@@ -146,16 +141,14 @@ struct BaseApiDoc;
         BulkBalanceResponse,
         Erc20TransferAmount,
         BlockWindowDTO,
-        TransferDirectionRequest,
-        TransferDirectionResponse,
+        TransferDirectionDTO,
         LookbackTargetDTO,
         LookbackWindowDTO,
         Erc20TransferRow,
         Erc20TransferSearchLimits,
         Erc20TransferSearchRequest,
         Erc20TransferSearchResponse,
-        OnchainWindowResponse,
-        OnchainWindowRequest,
+        OnchainWindowDTO,
         TimestampWindowDTO,
         Erc20TransferToken,
         TokenFilterResolutionDTO,
@@ -1173,8 +1166,7 @@ mod tests {
             "Erc20TransferSearchRequest",
             "Erc20TransferSearchResponse",
             "OnchainAccountRequest",
-            "OnchainWindowResponse",
-            "OnchainWindowRequest",
+            "OnchainWindowDTO",
             "TokenSelectorRequest",
             "ResolvedTokenSelectorRequest",
             "Erc20TransferRow",
@@ -1366,7 +1358,7 @@ mod tests {
         let schemas = json["components"]["schemas"]
             .as_object()
             .expect("OpenAPI components.schemas should be an object");
-        let enum_values = schemas["TransferDirectionRequest"]["enum"]
+        let enum_values = schemas["TransferDirectionDTO"]["enum"]
             .as_array()
             .expect("direction schema should define enum values")
             .iter()

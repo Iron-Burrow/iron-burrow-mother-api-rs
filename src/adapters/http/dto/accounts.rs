@@ -53,10 +53,10 @@ pub(crate) fn validate_account_array(
         return Err(ApiError::invalid_request());
     };
 
-    Ok(accounts
+    accounts
         .iter()
         .map(|account| validate_account_object(Some(account), supported_network_slugs))
-        .collect::<Result<Vec<OnchainAccountRequest>, ApiError>>()?)
+        .collect::<Result<Vec<OnchainAccountRequest>, ApiError>>()
 }
 
 fn validate_account_network_slug(
@@ -72,10 +72,7 @@ fn validate_account_network_slug(
         return Err(ApiError::missing_network_slug());
     }
 
-    if supported_network_slugs
-        .iter()
-        .any(|supported| *supported == network_slug)
-    {
+    if supported_network_slugs.contains(&network_slug) {
         Ok(network_slug.to_string())
     } else {
         Err(ApiError::unsupported_network())

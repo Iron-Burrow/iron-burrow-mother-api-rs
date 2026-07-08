@@ -16,10 +16,8 @@ use crate::{
                 Erc20TransferSearchResponse, Erc20TransferToken,
             },
         },
-        onchain_time::onchain_window::{
-            BlockWindowDTO, OnchainWindowRequest, OnchainWindowResponse,
-        },
-        transfers::transfer_direction::{TransferDirectionRequest, TransferDirectionResponse},
+        onchain_time::onchain_window::{BlockWindowDTO, OnchainWindowDTO},
+        transfers::transfer_direction::TransferDirectionDTO,
     },
     test_utils::{
         fixtures::erc20_transfers::{
@@ -38,12 +36,12 @@ fn request_serialization_snapshot_matches_public_shape() {
             address: "0xabc0000000000000000000000000000000000000".to_string(),
             client_ref: Some("treasury-main".to_string()),
         },
-        direction: TransferDirectionRequest::Any,
+        direction: TransferDirectionDTO::Any,
         tokens: Some(TokenSelectorRequest {
             asset_slugs: vec!["usdc".to_string(), "usdt".to_string()],
             contract_addresses: vec!["0x1111111111111111111111111111111111111111".to_string()],
         }),
-        window: OnchainWindowRequest::Block(BlockWindowDTO {
+        window: OnchainWindowDTO::Block(BlockWindowDTO {
             from_block: 18_600_000,
             to_block: 18_600_500,
         }),
@@ -85,8 +83,8 @@ fn response_serialization_snapshot_matches_public_shape() {
             address: "0xabc0000000000000000000000000000000000000".to_string(),
             client_ref: Some("treasury-main".to_string()),
         },
-        direction: TransferDirectionResponse::Any,
-        window: OnchainWindowResponse::Block(BlockWindowDTO {
+        direction: TransferDirectionDTO::Any,
+        window: OnchainWindowDTO::Block(BlockWindowDTO {
             from_block: 18_600_000,
             to_block: 18_600_500,
         }),
@@ -129,7 +127,7 @@ fn response_serialization_snapshot_matches_public_shape() {
                 raw: "12500000".to_string(),
                 decimal: Some("12.5".to_string()),
             },
-            direction: TransferDirectionResponse::From,
+            direction: TransferDirectionDTO::From,
         }],
         limits: Erc20TransferSearchLimits {
             max_rows: 5_000,
@@ -292,7 +290,7 @@ fn request_allows_timestamp_and_lookback_window_shapes() {
         serde_json::from_value::<Erc20TransferSearchRequest>(timestamp).unwrap();
     assert!(matches!(
         timestamp_request.window,
-        OnchainWindowRequest::Timestamp(_)
+        OnchainWindowDTO::Timestamp(_)
     ));
 
     let mut lookback = valid_erc20_transfers_request_body();
@@ -304,7 +302,7 @@ fn request_allows_timestamp_and_lookback_window_shapes() {
         .expect("lookback window should deserialize");
     assert!(matches!(
         lookback_request.window,
-        OnchainWindowRequest::Lookback(_)
+        OnchainWindowDTO::Lookback(_)
     ));
 }
 
@@ -314,7 +312,7 @@ fn validation_accepts_supported_window_shapes() {
     let block = Erc20TransferSearchRequest::try_from(&request).unwrap();
     assert!(matches!(
         block.window,
-        OnchainWindowRequest::Block(BlockWindowDTO {
+        OnchainWindowDTO::Block(BlockWindowDTO {
             from_block: 18_600_000,
             to_block: 18_600_500,
         })
@@ -326,10 +324,7 @@ fn validation_accepts_supported_window_shapes() {
         "to_timestamp": "2026-06-25T01:00:00Z"
     });
     let timestamp = Erc20TransferSearchRequest::try_from(&json_object(timestamp_body)).unwrap();
-    assert!(matches!(
-        timestamp.window,
-        OnchainWindowRequest::Timestamp(_)
-    ));
+    assert!(matches!(timestamp.window, OnchainWindowDTO::Timestamp(_)));
 
     let mut lookback_body = valid_erc20_transfers_request_body();
     lookback_body["window"] = json!({
@@ -337,7 +332,7 @@ fn validation_accepts_supported_window_shapes() {
         "to": "latest"
     });
     let lookback = Erc20TransferSearchRequest::try_from(&json_object(lookback_body)).unwrap();
-    assert!(matches!(lookback.window, OnchainWindowRequest::Lookback(_)));
+    assert!(matches!(lookback.window, OnchainWindowDTO::Lookback(_)));
 }
 
 #[test]
@@ -445,11 +440,11 @@ fn validation_accepts_minimal_asset_contract_and_mixed_token_filter_shapes() {
             request.account.client_ref,
             Some("treasury-main".to_string())
         );
-        assert_eq!(request.direction, TransferDirectionRequest::Any);
+        assert_eq!(request.direction, TransferDirectionDTO::Any);
         assert_eq!(request.tokens.unwrap_or_default(), expected_tokens);
         assert!(matches!(
             request.window,
-            OnchainWindowRequest::Block(BlockWindowDTO {
+            OnchainWindowDTO::Block(BlockWindowDTO {
                 from_block: 18_600_000,
                 to_block: 18_600_500,
             })
