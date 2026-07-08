@@ -142,9 +142,7 @@ jq -n \
       client_ref: "single-smoke"
     },
     quote_currency: "USD",
-    assets: [
-      {asset_slug: "ethereum"}
-    ]
+    tokens: {asset_slugs: ["ethereum"], contract_addresses: []}
   }' > /tmp/mother-balance-single.json
 
 jq -n \
@@ -165,10 +163,7 @@ jq -n \
       }
     ],
     quote_currency: "USD",
-    assets: [
-      {asset_slug: "usdc"},
-      {asset_slug: "ethereum"}
-    ]
+    tokens: {asset_slugs: ["usdc", "ethereum"], contract_addresses: []}
   }' > /tmp/mother-balance-bulk.json
 
 jq -n \
