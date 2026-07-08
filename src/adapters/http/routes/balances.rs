@@ -565,6 +565,103 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn unavailable_quote_keeps_position_and_returns_sanitized_item_error() {
+        let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
+            "eth-mainnet",
+            1,
+            json!({
+                "kind": "erc20",
+                "contract_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+            }),
+            &[(ACCOUNT_A, "1000000")],
+        )) else {
+            return;
+        };
+        let Some((price_url, price_handle)) = spawn_server(price_unavailable("usdc", "USD")) else {
+            return;
+        };
+        let app = balance_app(Some(&bigwig_url), Some(&price_url));
+
+        let (status, response) = post_json(
+            app,
+            "/v1/balances",
+            json!({
+                "as_of": {"kind": "latest"},
+                "account": {"network_slug": "eth-mainnet", "address": ACCOUNT_A},
+                "quote_currency": "USD",
+                "tokens": {"asset_slugs": ["usdc"], "contract_addresses": []}
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(response["status"], "partial");
+        assert_eq!(response["positions"].as_array().unwrap().len(), 1);
+        assert_eq!(response["positions"][0]["balance"]["raw_amount"], "1000000");
+        assert_eq!(response["positions"][0]["quote"]["status"], "unavailable");
+        assert_eq!(response["positions"][0]["quote"]["currency"], Value::Null);
+        assert_eq!(response["errors"].as_array().unwrap().len(), 1);
+        assert_eq!(response["errors"][0]["code"], "price_resolution_failed");
+        assert_eq!(
+            response["errors"][0]["message"],
+            "Quote could not be resolved for this asset."
+        );
+        let serialized = response.to_string();
+        assert!(!serialized.contains("PriceIndexer"));
+        assert!(!serialized.contains("price-indexer"));
+        assert!(!serialized.contains("Bigwig"));
+
+        bigwig_handle.await.unwrap();
+        price_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn quote_provider_unavailable_keeps_position_and_sanitizes_error() {
+        let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
+            "eth-mainnet",
+            1,
+            json!({"kind": "native"}),
+            &[(ACCOUNT_A, "1000000000000000000")],
+        )) else {
+            return;
+        };
+        let app = balance_app(Some(&bigwig_url), None);
+
+        let (status, response) = post_json(
+            app,
+            "/v1/balances",
+            json!({
+                "as_of": {"kind": "latest"},
+                "account": {"network_slug": "eth-mainnet", "address": ACCOUNT_A},
+                "quote_currency": "USD",
+                "tokens": {"asset_slugs": ["ethereum"], "contract_addresses": []}
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(response["status"], "partial");
+        assert_eq!(response["positions"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            response["positions"][0]["balance"]["amount"],
+            "1.000000000000000000"
+        );
+        assert_eq!(response["positions"][0]["quote"]["status"], "unavailable");
+        assert_eq!(response["errors"].as_array().unwrap().len(), 1);
+        assert_eq!(response["errors"][0]["code"], "price_provider_unavailable");
+        assert_eq!(
+            response["errors"][0]["message"],
+            "Quote is temporarily unavailable for this asset."
+        );
+        let serialized = response.to_string();
+        assert!(!serialized.contains("PriceIndexer"));
+        assert!(!serialized.contains("price-indexer"));
+        assert!(!serialized.contains("Bigwig"));
+
+        bigwig_handle.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn unknown_explicit_contract_returns_raw_balance_with_unsupported_quote() {
         let contract = "0x9999999999999999999999999999999999999999";
         let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
@@ -1388,6 +1485,25 @@ mod tests {
                         "warningThresholdSeconds": 300
                     }
                 },
+                "error": null
+            }]
+        })
+    }
+
+    fn price_unavailable(asset_slug: &str, quote_currency: &str) -> Value {
+        json!({
+            "quoteCurrency": quote_currency,
+            "requestedCount": 1,
+            "uniqueCount": 1,
+            "results": [{
+                "requestedSlug": asset_slug,
+                "normalizedSlug": asset_slug,
+                "assetId": null,
+                "slug": null,
+                "name": null,
+                "status": "unavailable",
+                "freshnessStatus": "unavailable",
+                "price": null,
                 "error": null
             }]
         })

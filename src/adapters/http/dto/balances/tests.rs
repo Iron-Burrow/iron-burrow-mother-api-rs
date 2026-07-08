@@ -338,6 +338,14 @@ fn documented_success_examples_match_public_dto_shape() {
     let response: SingleBalanceResponse = serde_json::from_value(single_failure.clone()).unwrap();
     assert_eq!(serde_json::to_value(response).unwrap(), single_failure);
 
+    let single_quote_unavailable = examples::single_quote_unavailable_response();
+    let response: SingleBalanceResponse =
+        serde_json::from_value(single_quote_unavailable.clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(response).unwrap(),
+        single_quote_unavailable
+    );
+
     for example in [
         examples::bulk_success_response(),
         examples::skipped_item_response(),
@@ -368,6 +376,7 @@ fn documented_balance_examples_do_not_expose_reserved_or_internal_fields() {
         examples::bulk_request(),
         examples::single_success_response(),
         examples::single_item_level_failure_response(),
+        examples::single_quote_unavailable_response(),
         examples::bulk_success_response(),
         examples::skipped_item_response(),
         examples::item_level_failure_response(),
@@ -561,6 +570,22 @@ fn single_without_evidence_serializes_null_observed_at_and_evidence() {
 
     assert_eq!(value["as_of"]["observed_at"], json!(null));
     assert_eq!(value["evidence"], json!(null));
+}
+
+#[test]
+fn documented_quote_unavailable_example_keeps_position_and_sanitized_error() {
+    let example = examples::single_quote_unavailable_response();
+
+    assert_eq!(example["status"], "partial");
+    assert_eq!(example["positions"].as_array().unwrap().len(), 1);
+    assert_eq!(example["positions"][0]["quote"]["status"], "unavailable");
+    assert_eq!(example["positions"][0]["quote"]["currency"], json!(null));
+    assert_eq!(example["errors"].as_array().unwrap().len(), 1);
+    assert_eq!(example["errors"][0]["code"], "price_resolution_failed");
+    assert_eq!(
+        example["errors"][0]["message"],
+        "Quote could not be resolved for this asset."
+    );
 }
 
 fn snapshot(items: Vec<BalanceItemOutcome>) -> BalanceSnapshotResult {

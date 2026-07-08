@@ -1050,7 +1050,7 @@ fn enrich_item(
                         .get(&normalize_pricing_asset_slug(pricing_asset_slug))
                         .map(|quote| enrich_quote(quote, &raw_amount, decimals))
                         .unwrap_or(BalanceQuoteOutcome::Unavailable {
-                            code: BalanceItemErrorCode::InternalError,
+                            code: BalanceItemErrorCode::PriceResolutionFailed,
                         }),
                     Err(PriceQuoteClientError::ProviderUnavailable) => {
                         BalanceQuoteOutcome::Unavailable {

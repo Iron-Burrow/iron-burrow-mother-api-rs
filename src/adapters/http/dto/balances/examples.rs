@@ -96,6 +96,32 @@ pub(crate) fn single_item_level_failure_response() -> Value {
     })
 }
 
+pub(crate) fn single_quote_unavailable_response() -> Value {
+    json!({
+        "ok": true,
+        "type": "balances",
+        "status": "partial",
+        "as_of": {
+            "kind": "latest",
+            "observed_at": "2026-06-18T12:00:00Z"
+        },
+        "quote_currency": "USD",
+        "account": {
+            "network_slug": ETH_NETWORK,
+            "address": ACCOUNT_A,
+            "client_ref": "main-safe"
+        },
+        "evidence": eth_evidence(),
+        "positions": [
+            usdc_unavailable_quote_position(ETH_NETWORK)
+        ],
+        "skipped": [],
+        "errors": [
+            balance_error(ETH_NETWORK, "usdc", "price_resolution_failed")
+        ]
+    })
+}
+
 pub(crate) fn bulk_success_response() -> Value {
     json!({
         "ok": true,
@@ -315,6 +341,18 @@ fn usdc_position(network_slug: &str, currency: &str, unit_price: &str, value: &s
     })
 }
 
+fn usdc_unavailable_quote_position(network_slug: &str) -> Value {
+    let mut position = usdc_position(network_slug, "USD", "1.00", "1.250000");
+    position["quote"] = json!({
+        "status": "unavailable",
+        "currency": null,
+        "unit_price": null,
+        "value": null,
+        "price_as_of": null
+    });
+    position
+}
+
 fn skipped_item(network_slug: &str, asset_slug: &str) -> Value {
     json!({
         "network_slug": network_slug,
@@ -337,6 +375,7 @@ fn balance_error(network_slug: &str, asset_slug: &str, code: &str) -> Value {
             "balance_provider_unavailable" => {
                 "Balance is temporarily unavailable for this asset on this network."
             }
+            "price_resolution_failed" => "Quote could not be resolved for this asset.",
             _ => "This balance item could not be processed.",
         }
     })
