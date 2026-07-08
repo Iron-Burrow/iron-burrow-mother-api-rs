@@ -58,28 +58,24 @@ curl -sS "$IB_API/v1/balances" \
       "client_ref": "main-wallet"
     },
     "quote_currency": "USD",
-    "assets": [
-      {
-        "asset_slug": "ethereum"
-      },
-      {
-        "asset_slug": "usdc"
-      }
-    ]
+    "tokens": {
+      "asset_slugs": ["ethereum", "usdc"],
+      "contract_addresses": []
+    }
   }' | jq
 ```
 
-Balance requests identify assets with canonical `asset_slug` values, such as
-`ethereum` or `usdc`. They do not accept token contract addresses. If you only
-know a token contract address today, use the ERC-20 transfer search endpoint's
-`tokens.contract_addresses` filter, or ask Iron Burrow for the matching asset
-slug before requesting balances.
+Balance requests identify tokens with canonical `tokens.asset_slugs[]` values,
+such as `ethereum` or `usdc`, or explicit ERC-20
+`tokens.contract_addresses[]` values. Unknown explicit contracts can return raw
+balances with unsupported quotes when Mother API cannot map them to catalog
+metadata.
 
 ## Bulk Balance Lookup
 
 Use `/v1/balances/bulk` to query several explicit network-scoped accounts in
-one request. Mother API does not infer networks or assets; each account and
-asset must be requested directly.
+one request. Mother API does not infer networks or tokens; each account and
+token selector must be requested directly.
 
 ```bash
 curl -sS "$IB_API/v1/balances/bulk" \
@@ -102,14 +98,10 @@ curl -sS "$IB_API/v1/balances/bulk" \
       }
     ],
     "quote_currency": "USD",
-    "assets": [
-      {
-        "asset_slug": "ethereum"
-      },
-      {
-        "asset_slug": "usdc"
-      }
-    ]
+    "tokens": {
+      "asset_slugs": ["ethereum", "usdc"],
+      "contract_addresses": []
+    }
   }' | jq
 ```
 
@@ -210,8 +202,8 @@ curl -sS "$IB_API/v1/erc20-transfers/search" \
 
 ## Important Limits
 
-- Balance requests support up to 50 accounts, 20 assets, and 1,000
-  account-asset resolution items.
+- Balance requests support up to 50 accounts, 20 token selectors, and 1,000
+  account-token resolution items.
 - ERC-20 transfer search supports `eth-mainnet`, a 5,000-block inclusive
   window, 20 token filters, and 5,000 returned rows.
 - ERC-20 asset slug filters must name ERC-20 tokens on the requested network.

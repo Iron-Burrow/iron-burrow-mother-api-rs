@@ -1039,6 +1039,105 @@ mod tests {
     }
 
     #[test]
+    fn balance_request_openapi_binds_v03_token_selector_shape() {
+        let json = document_json(&Config::default());
+        let schemas = &json["components"]["schemas"];
+
+        for schema_name in ["SingleBalanceRequest", "BulkBalanceRequest"] {
+            let properties = schemas[schema_name]["properties"]
+                .as_object()
+                .unwrap_or_else(|| panic!("{schema_name} should define object properties"));
+            assert!(
+                properties.contains_key("tokens"),
+                "{schema_name} must expose tokens"
+            );
+            assert!(
+                !properties.contains_key("assets"),
+                "{schema_name} must not expose legacy assets[]"
+            );
+
+            let required = schemas[schema_name]["required"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{schema_name} should define required fields"));
+            assert!(
+                required.iter().any(|field| field == "tokens"),
+                "{schema_name} should require tokens"
+            );
+        }
+
+        let token_selector_properties = schemas["TokenSelectorRequest"]["properties"]
+            .as_object()
+            .expect("TokenSelectorRequest should define object properties");
+        assert!(token_selector_properties.contains_key("asset_slugs"));
+        assert!(token_selector_properties.contains_key("contract_addresses"));
+        assert!(!token_selector_properties.contains_key("assets"));
+
+        for path in ["/v1/balances", "/v1/balances/bulk"] {
+            let description = json["paths"][path]["post"]["description"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{path} should include a description"));
+            assert!(description.contains("tokens.asset_slugs"));
+            assert!(description.contains("tokens.contract_addresses"));
+            assert!(description.contains("Historical as_of forms are reserved"));
+            assert!(description.contains("rejected by this implementation"));
+        }
+    }
+
+    #[test]
+    fn balance_docs_and_smoke_payloads_use_v03_tokens_not_legacy_assets() {
+        for (name, content, legacy_patterns) in [
+            (
+                "private-beta quickstart",
+                include_str!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/docs/runbooks/private-beta-api-quickstart.md"
+                )),
+                &[
+                    "\"assets\": [",
+                    "20 assets",
+                    "account-asset",
+                    "They do not accept token contract addresses",
+                ][..],
+            ),
+            (
+                "production smoke runbook",
+                include_str!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/docs/runbooks/smoke-tests.md"
+                )),
+                &["assets: ["][..],
+            ),
+            (
+                "operator runbook",
+                include_str!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/docs/runbooks/operator.md"
+                )),
+                &["assets: ["][..],
+            ),
+            (
+                "beta auth smoke script",
+                include_str!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/scripts/smoke/beta-auth.sh"
+                )),
+                &["\"assets\": ["][..],
+            ),
+        ] {
+            assert!(
+                content.contains("tokens"),
+                "{name} should show the token-selector contract"
+            );
+            for legacy_pattern in legacy_patterns {
+                assert!(
+                    !content.contains(legacy_pattern),
+                    "{name} still contains legacy balance pattern {legacy_pattern:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn balance_openapi_enums_match_public_values() {
         let json = document_json(&Config::default());
         let schemas = &json["components"]["schemas"];

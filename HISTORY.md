@@ -327,3 +327,13 @@ implementation, and documentation changes.
 - Updated `CONTRACTS.md`, OpenAPI schemas/descriptions, examples, and balance
   route/service coverage for selector attribution and nullable raw-only
   explicit-contract positions.
+
+## 2026-07-08
+
+- Bound the latest-only SPEC-012 private Beta balance contract in docs and
+  smoke coverage by updating quickstart, operator, production smoke, and
+  local beta-auth payloads to use `tokens.asset_slugs` and
+  `tokens.contract_addresses` instead of legacy `assets[]`.
+- Added OpenAPI and documentation synchronization coverage so balance schemas,
+  examples, and smoke payloads keep the enabled v0.3 token-selector contract
+  while historical `as_of` forms remain reserved for a later SPEC-012 slice.

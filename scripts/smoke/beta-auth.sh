@@ -160,11 +160,10 @@ cat >"$payload" <<'JSON'
     "chain": "eth-mainnet"
   },
   "quote_currency": "USD",
-  "assets": [
-    {
-      "asset_slug": "ethereum"
-    }
-  ]
+  "tokens": {
+    "asset_slugs": ["ethereum"],
+    "contract_addresses": []
+  }
 }
 JSON
 

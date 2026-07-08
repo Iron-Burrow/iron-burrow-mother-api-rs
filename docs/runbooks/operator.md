@@ -116,7 +116,7 @@ jq -n '{
     chain: "eth-mainnet"
   },
   quote_currency: "USD",
-  assets: [{asset_slug: "ethereum"}]
+  tokens: {asset_slugs: ["ethereum"], contract_addresses: []}
 }' > /tmp/mother-api-key-check.json
 
 status="$(curl -sS -o /tmp/mother-api-key-check.out.json -w '%{http_code}' \
