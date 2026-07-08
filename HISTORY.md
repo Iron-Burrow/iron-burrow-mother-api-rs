@@ -347,3 +347,8 @@ implementation, and documentation changes.
 - Updated contracts, README, quickstart, smoke payloads, OpenAPI
   descriptions, and route/service coverage for the v0.3 historical balance
   release.
+- Completed SPEC-012 PR 7 by making latest, timestamp, and block-number
+  balances the binding private Beta v0.3 public contract across
+  `CONTRACTS.md`, README, OpenAPI examples, runbooks, smoke docs, and
+  `HISTORY.md`.
+- Promoted SPEC-012 to accepted and aligned the release version at `0.3.0`.

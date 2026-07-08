@@ -71,6 +71,35 @@ such as `ethereum` or `usdc`, or explicit ERC-20
 balances with unsupported quotes when Mother API cannot map them to catalog
 metadata.
 
+## Historical Balance Lookup
+
+Use a timestamp `as_of` when you need balance evidence at or before a specific
+time. Historical raw balances do not fall back to latest evidence; when no
+time-aligned quote is available, the balance can still resolve with
+`quote.status` set to `unavailable`.
+
+```bash
+curl -sS "$IB_API/v1/balances" \
+  -H "$AUTH_HEADER" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "as_of": {
+      "kind": "timestamp",
+      "timestamp": "2026-07-03T00:00:00Z"
+    },
+    "account": {
+      "network_slug": "eth-mainnet",
+      "address": "0x1234567890abcdef1234567890abcdef1234beef",
+      "client_ref": "main-wallet-historical"
+    },
+    "quote_currency": "USD",
+    "tokens": {
+      "asset_slugs": ["ethereum"],
+      "contract_addresses": []
+    }
+  }' | jq
+```
+
 ## Bulk Balance Lookup
 
 Use `/v1/balances/bulk` to query several explicit network-scoped accounts in

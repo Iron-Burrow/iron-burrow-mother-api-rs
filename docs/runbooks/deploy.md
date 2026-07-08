@@ -1,11 +1,11 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-02
+last_reviewed: 2026-07-08
 agent_edit_policy: update_when_relevant
 ---
 
-# Deploy Mother API Private Beta v0.2
+# Deploy Mother API Private Beta v0.3
 
 Run this from the production host. This runbook deploys the Mother API service
 only; production smoke checks live in [smoke-tests.md](smoke-tests.md).
@@ -33,7 +33,7 @@ Confirm the production image tag, Beta surface, transfer route, and Bigwig
 client settings:
 
 ```bash
-IRON_BURROW_MOTHER_API_TAG=v0.2.x
+IRON_BURROW_MOTHER_API_TAG=v0.3.x
 PUBLIC_API_SURFACE=beta
 INFRA_GATEWAY_URL=http://infra-gateway-hub:8080
 INFRA_GATEWAY_TOKEN=<set-production-token>
