@@ -1,8 +1,8 @@
 use crate::{
     adapters::http::dto::balances::{
         BalanceAccountPayload, BalanceAmountPayload, BalanceAsOfPayload, BalanceErrorPayload,
-        BalanceEvidencePayload, BalancePositionPayload, BalanceQuotePayload,
-        BalanceQuoteStatus, BalanceResponseStatus, BalanceSelectorPayload, BalanceSkippedPayload,
+        BalanceEvidencePayload, BalancePositionPayload, BalanceQuotePayload, BalanceQuoteStatus,
+        BalanceResponseStatus, BalanceSelectorPayload, BalanceSkippedPayload,
         BalanceSummaryPayload, BulkBalanceResponse, SingleBalanceResponse,
     },
     application::balances::{
@@ -56,6 +56,11 @@ impl AccountPresentationStats {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BalancesResponsePresenterError {
     ExpectedSingleAccount,
+}
+
+struct PresentedQuote {
+    payload: BalanceQuotePayload,
+    error: Option<BalanceErrorPayload>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -154,12 +159,17 @@ fn shape_account(account: BalancesAccountResult) -> PresentedAccount {
                 amount,
                 quote,
             } => {
-                let degraded_quote = !matches!(quote, BalanceQuoteOutcome::Available { .. });
-                stats.record_resolved(degraded_quote);
-                let (quote, error) = shape_quote(&target, quote);
+                let PresentedQuote {
+                    payload: quote,
+                    error,
+                } = present_quote(&target, quote);
+
+                stats.record_resolved(quote.status != BalanceQuoteStatus::Available);
+
                 if let Some(error) = error {
                     errors.push(error);
                 }
+
                 let selector = selector_payload(&target.selector);
                 let contract_address = contract_address(&target);
                 positions.push(BalancePositionPayload {
@@ -227,46 +237,43 @@ fn shape_as_of(as_of: &AsOf, evidence: Option<&BalanceEvidencePayload>) -> Balan
     }
 }
 
-fn shape_quote(
-    target: &ResolvedBalanceTarget,
-    quote: BalanceQuoteOutcome,
-) -> (BalanceQuotePayload, Option<BalanceErrorPayload>) {
+fn present_quote(target: &ResolvedBalanceTarget, quote: BalanceQuoteOutcome) -> PresentedQuote {
     match quote {
         BalanceQuoteOutcome::Available {
             currency,
             unit_price,
             value,
             price_as_of,
-        } => (
-            BalanceQuotePayload {
+        } => PresentedQuote {
+            payload: BalanceQuotePayload {
                 status: BalanceQuoteStatus::Available,
                 currency: Some(currency),
                 unit_price: Some(unit_price),
                 value: Some(value),
                 price_as_of: Some(price_as_of),
             },
-            None,
-        ),
-        BalanceQuoteOutcome::Unavailable { code } => (
-            BalanceQuotePayload {
+            error: None,
+        },
+        BalanceQuoteOutcome::Unavailable { code } => PresentedQuote {
+            payload: BalanceQuotePayload {
                 status: BalanceQuoteStatus::Unavailable,
                 currency: None,
                 unit_price: None,
                 value: None,
                 price_as_of: None,
             },
-            Some(error_payload(target, code)),
-        ),
-        BalanceQuoteOutcome::Unsupported => (
-            BalanceQuotePayload {
+            error: Some(error_payload(target, code)),
+        },
+        BalanceQuoteOutcome::Unsupported => PresentedQuote {
+            payload: BalanceQuotePayload {
                 status: BalanceQuoteStatus::Unsupported,
                 currency: None,
                 unit_price: None,
                 value: None,
                 price_as_of: None,
             },
-            None,
-        ),
+            error: None,
+        },
     }
 }
 
