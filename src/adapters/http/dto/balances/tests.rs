@@ -5,7 +5,7 @@ use super::requests::{BulkBalanceRequest, SingleBalanceRequest};
 use super::*;
 use crate::adapters::http::error::ApiError;
 use crate::adapters::http::presenters::balances::BalancesResponsePresenter;
-use crate::application::balances::result::{BalanceAccountResult, GetBalancesResult};
+use crate::application::balances::result::{BalancesAccountResult, GetBalancesResult};
 use crate::application::balances::service::BalanceItemErrorCode;
 use crate::domain::onchain_time::as_of::AsOf;
 use crate::{
@@ -607,8 +607,8 @@ fn snapshot(items: Vec<BalanceItemOutcome>) -> GetBalancesResult {
     }
 }
 
-fn account_result(items: Vec<BalanceItemOutcome>) -> BalanceAccountResult {
-    BalanceAccountResult {
+fn account_result(items: Vec<BalanceItemOutcome>) -> BalancesAccountResult {
+    BalancesAccountResult {
         account: OnchainAccount {
             network_slug: "base-mainnet".to_string(),
             address: "0x1111111111111111111111111111111111111111".to_string(),

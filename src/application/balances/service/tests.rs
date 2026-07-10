@@ -240,7 +240,7 @@ fn matches_quotes_with_the_same_normalized_pricing_slug_used_for_collection() {
         target("eth-mainnet", 1, "ethereum", BalanceTargetKind::Native),
     );
     pricing_target.pricing_asset_slug = Some(" Ethereum ".to_string());
-    let accounts = vec![RawBalanceAccountResult {
+    let accounts = vec![RawBalancesAccountResult {
         account: account("eth-mainnet", ACCOUNT_A, None),
         evidence: None,
         items: vec![RawBalanceItemOutcome::Resolved {
@@ -286,7 +286,7 @@ fn matches_quotes_with_the_same_normalized_pricing_slug_used_for_collection() {
 
 #[test]
 fn unavailable_quote_resolution_preserves_raw_balance() {
-    let accounts = vec![RawBalanceAccountResult {
+    let accounts = vec![RawBalancesAccountResult {
         account: account("eth-mainnet", ACCOUNT_A, None),
         evidence: None,
         items: vec![RawBalanceItemOutcome::Resolved {
@@ -324,7 +324,7 @@ fn unavailable_quote_resolution_preserves_raw_balance() {
 
 #[test]
 fn missing_quote_entries_are_quote_resolution_failures_not_internal_errors() {
-    let accounts = vec![RawBalanceAccountResult {
+    let accounts = vec![RawBalancesAccountResult {
         account: account("eth-mainnet", ACCOUNT_A, None),
         evidence: None,
         items: vec![RawBalanceItemOutcome::Resolved {
@@ -353,7 +353,7 @@ fn missing_quote_entries_are_quote_resolution_failures_not_internal_errors() {
 
 #[test]
 fn quote_provider_failures_preserve_all_resolved_raw_balances() {
-    let accounts = vec![RawBalanceAccountResult {
+    let accounts = vec![RawBalancesAccountResult {
         account: account("eth-mainnet", ACCOUNT_A, None),
         evidence: None,
         items: vec![

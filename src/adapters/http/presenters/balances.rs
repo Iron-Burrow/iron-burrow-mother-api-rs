@@ -6,7 +6,7 @@ use crate::{
         BalanceSkippedPayload, BalanceSummaryPayload, BulkBalanceResponse, SingleBalanceResponse,
     },
     application::balances::{
-        result::{BalanceAccountResult, GetBalancesResult},
+        result::{BalancesAccountResult, GetBalancesResult},
         service::{
             BalanceItemErrorCode, BalanceItemOutcome, BalanceQuoteOutcome, BalanceTokenSelector,
             ResolvedBalanceTarget,
@@ -96,7 +96,7 @@ impl BalancesResponsePresenter {
     }
 }
 
-fn shape_account(account: BalanceAccountResult) -> ShapedAccount {
+fn shape_account(account: BalancesAccountResult) -> ShapedAccount {
     let mut positions = Vec::new();
     let mut skipped = Vec::new();
     let mut errors = Vec::new();

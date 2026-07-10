@@ -25,7 +25,7 @@ use crate::{
     application::balances::result::GetBalancesResult,
 };
 use crate::{
-    application::balances::result::BalanceAccountResult, domain::accounts::OnchainAccount,
+    application::balances::result::BalancesAccountResult, domain::accounts::OnchainAccount,
 };
 
 use super::{
@@ -251,7 +251,7 @@ pub enum BalanceQuoteOutcome {
 }
 
 #[derive(Clone, Debug)]
-struct RawBalanceAccountResult {
+struct RawBalancesAccountResult {
     account: OnchainAccount,
     evidence: Option<BalanceEvidence>,
     items: Vec<RawBalanceItemOutcome>,
@@ -780,7 +780,7 @@ enum ResponseValidationIssue {
 fn assemble_group_results(
     plan: &NetworkGroupPlan,
     execution: GroupExecution,
-) -> Vec<(usize, RawBalanceAccountResult)> {
+) -> Vec<(usize, RawBalancesAccountResult)> {
     let validated = match execution {
         GroupExecution::SkippedOnly => None,
         GroupExecution::Failed(code) => {
@@ -848,7 +848,7 @@ fn assemble_group_results(
 
             (
                 group_account.original_index,
-                RawBalanceAccountResult {
+                RawBalancesAccountResult {
                     account: group_account.account.clone(),
                     evidence,
                     items,
@@ -861,7 +861,7 @@ fn assemble_group_results(
 fn failed_group_results(
     plan: &NetworkGroupPlan,
     code: BalanceItemErrorCode,
-) -> Vec<(usize, RawBalanceAccountResult)> {
+) -> Vec<(usize, RawBalancesAccountResult)> {
     plan.accounts
         .iter()
         .map(|group_account| {
@@ -885,7 +885,7 @@ fn failed_group_results(
 
             (
                 group_account.original_index,
-                RawBalanceAccountResult {
+                RawBalancesAccountResult {
                     account: group_account.account.clone(),
                     evidence: None,
                     items,
@@ -1003,7 +1003,7 @@ fn validate_response(
     })
 }
 
-fn collect_pricing_asset_slugs(accounts: &[RawBalanceAccountResult]) -> Vec<String> {
+fn collect_pricing_asset_slugs(accounts: &[RawBalancesAccountResult]) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut pricing_asset_slugs = Vec::new();
 
@@ -1028,12 +1028,12 @@ fn normalize_pricing_asset_slug(pricing_asset_slug: &str) -> String {
 }
 
 fn enrich_account_results(
-    accounts: Vec<RawBalanceAccountResult>,
+    accounts: Vec<RawBalancesAccountResult>,
     quotes: Result<HashMap<String, PriceQuoteResolution>, PriceQuoteClientError>,
-) -> Vec<BalanceAccountResult> {
+) -> Vec<BalancesAccountResult> {
     accounts
         .into_iter()
-        .map(|account| BalanceAccountResult {
+        .map(|account| BalancesAccountResult {
             account: account.account,
             evidence: account.evidence,
             items: account
