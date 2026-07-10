@@ -89,26 +89,3 @@ pub enum BalanceQuoteOutcome {
     },
     Unsupported,
 }
-
-#[derive(Clone, Debug)]
-pub struct RawBalancesAccountResult {
-    pub account: OnchainAccount,
-    pub evidence: Option<BalanceEvidence>,
-    pub items: Vec<RawBalanceItemOutcome>,
-}
-
-#[derive(Clone, Debug)]
-pub enum RawBalanceItemOutcome {
-    Resolved {
-        target: ResolvedBalanceTarget,
-        raw_amount: String,
-    },
-    Skipped {
-        network_slug: String,
-        asset_slug: String,
-    },
-    Failed {
-        target: ResolvedBalanceTarget,
-        code: BalanceItemErrorCode,
-    },
-}

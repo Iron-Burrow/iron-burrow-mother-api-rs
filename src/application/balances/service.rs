@@ -3,12 +3,13 @@ use std::collections::{HashMap, HashSet};
 use tokio::task::JoinSet;
 use tracing::warn;
 
+use super::raw::{RawBalanceItemOutcome, RawBalancesAccountResult};
 use crate::application::balances::error::{
     BalanceItemErrorCode, BalancePlanIssue, BalanceSnapshotServiceError,
 };
 use crate::application::balances::result::{
     BalanceEvidence, BalanceItemOutcome, BalanceQuoteOutcome, BalanceTokenSelector,
-    RawBalanceItemOutcome, RawBalancesAccountResult, ResolvedBalanceTarget,
+    ResolvedBalanceTarget,
 };
 use crate::domain::assets::balance_catalog::{BalanceTarget, BalanceTargetKind};
 use crate::domain::assets::token_selector::TokenSelector;

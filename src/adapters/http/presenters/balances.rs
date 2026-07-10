@@ -7,7 +7,7 @@ use crate::{
             BalanceSkippedPayload, BalanceSummaryPayload, BulkBalanceResponse,
             SingleBalanceResponse,
         },
-        presenters::error::BalancesResponsePresenterError,
+        presenters::balances::error::BalancesResponsePresenterError,
     },
     application::balances::{
         error::BalanceItemErrorCode,
@@ -18,6 +18,9 @@ use crate::{
     },
     domain::onchain_time::as_of::AsOf,
 };
+
+pub(crate) mod error;
+pub(crate) mod mapping;
 
 struct PresentedQuote {
     payload: BalanceQuotePayload,

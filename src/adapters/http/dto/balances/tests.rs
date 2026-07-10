@@ -7,9 +7,10 @@ use crate::adapters::http::error::ApiError;
 use crate::adapters::http::presenters::balances::BalancesResponsePresenter;
 use crate::application::balances::error::BalanceItemErrorCode;
 use crate::application::balances::result::{
-    BalanceItemOutcome, BalanceQuoteOutcome, BalanceTokenSelector, BalancesAccountResult,
-    GetBalancesResult, ResolvedBalanceTarget,
+    BalanceEvidence, BalanceItemOutcome, BalanceQuoteOutcome, BalanceTokenSelector,
+    BalancesAccountResult, GetBalancesResult, ResolvedBalanceTarget,
 };
+use crate::domain::accounts::OnchainAccount;
 use crate::domain::onchain_time::as_of::AsOf;
 use crate::{domain::assets::balance_catalog::BalanceTargetKind, test_utils::json::json_object};
 
