@@ -1,3 +1,5 @@
+use axum::body::Bytes;
+use axum::http::HeaderMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
@@ -9,7 +11,8 @@ use crate::adapters::http::dto::assets::token_selector::{
     validate_required_non_empty_tokens_object, TokenSelectorRequest,
 };
 use crate::adapters::http::dto::onchain_time::as_of::{validate_as_of_object, AsOfRequest};
-use crate::adapters::http::validation::validate_required_string;
+use crate::adapters::http::json_body::parse_json_object_body;
+use crate::adapters::http::validation::{ensure_json_content_type, validate_required_string};
 use crate::adapters::http::{
     error::ApiError, types::JsonObject, validation::reject_unknown_fields,
 };
@@ -18,6 +21,10 @@ const RESERVED_NETWORK_ALIAS_FIELDS: [&str; 3] = ["chain", "chain_id", "chain_sl
 const SUPPORTED_BALANCE_NETWORK_SLUGS: [&str; 2] = ["eth-mainnet", "base-mainnet"];
 const SINGLE_BALANCE_FIELDS: [&str; 4] = ["as_of", "account", "quote_currency", "tokens"];
 const BULK_BALANCE_FIELDS: [&str; 4] = ["as_of", "accounts", "quote_currency", "tokens"];
+
+/// -----------------------
+/// Single Balance Request
+/// -----------------------
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -28,13 +35,15 @@ pub struct SingleBalanceRequest {
     pub(crate) tokens: TokenSelectorRequest,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct BulkBalanceRequest {
-    pub(crate) as_of: AsOfRequest,
-    pub(crate) accounts: Vec<OnchainAccountRequest>,
-    pub(crate) quote_currency: String,
-    pub(crate) tokens: TokenSelectorRequest,
+impl TryFrom<(&HeaderMap, &Bytes)> for SingleBalanceRequest {
+    type Error = ApiError;
+
+    fn try_from((headers, body): (&HeaderMap, &Bytes)) -> Result<Self, Self::Error> {
+        ensure_json_content_type(headers).map_err(|_| ApiError::invalid_request())?;
+        let request = parse_json_object_body(body).map_err(|_| ApiError::invalid_request())?;
+
+        SingleBalanceRequest::try_from(request)
+    }
 }
 
 impl TryFrom<JsonObject> for SingleBalanceRequest {
@@ -53,6 +62,30 @@ impl TryFrom<JsonObject> for SingleBalanceRequest {
             quote_currency: validate_required_string(request.get("quote_currency"))?,
             tokens: validate_required_non_empty_tokens_object(request.get("tokens"))?,
         })
+    }
+}
+
+/// ---------------------
+/// Bulk Balance Request
+/// ---------------------
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BulkBalanceRequest {
+    pub(crate) as_of: AsOfRequest,
+    pub(crate) accounts: Vec<OnchainAccountRequest>,
+    pub(crate) quote_currency: String,
+    pub(crate) tokens: TokenSelectorRequest,
+}
+
+impl TryFrom<(&HeaderMap, &Bytes)> for BulkBalanceRequest {
+    type Error = ApiError;
+
+    fn try_from((headers, body): (&HeaderMap, &Bytes)) -> Result<Self, Self::Error> {
+        ensure_json_content_type(headers).map_err(|_| ApiError::invalid_request())?;
+        let request = parse_json_object_body(body).map_err(|_| ApiError::invalid_request())?;
+
+        BulkBalanceRequest::try_from(request)
     }
 }
 

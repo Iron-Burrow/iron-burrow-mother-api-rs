@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::application::balances::result::BalanceSnapshotResult;
 use crate::application::balances::service::{
     BalanceAccountResult, BalanceEvidence, BalanceItemErrorCode, BalanceItemOutcome,
-    BalanceQuoteOutcome, BalanceSnapshotResult, BalanceTokenSelector, ResolvedBalanceTarget,
+    BalanceQuoteOutcome, BalanceTokenSelector, ResolvedBalanceTarget,
 };
 use crate::domain::accounts::OnchainAccount;
 use crate::domain::onchain_time::as_of::AsOf;

@@ -2,6 +2,7 @@ use axum::{body::Bytes, extract::State, http::HeaderMap, Json};
 use tracing::warn;
 
 use crate::application::balances::command::GetBalancesCommand;
+use crate::application::balances::result::BalanceSnapshotResult;
 use crate::{
     adapters::http::{
         dto::balances::{
@@ -9,8 +10,6 @@ use crate::{
             BalanceResponseAssemblerError, BulkBalanceResponse, SingleBalanceResponse,
         },
         error::ApiError,
-        json_body::parse_json_object_body,
-        validation::ensure_json_content_type,
     },
     application::balances::{
         catalog::CatalogBalanceTargetResolver,
@@ -26,10 +25,10 @@ pub async fn resolve_single_balance(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<SingleBalanceResponse>, ApiError> {
-    let request = parse_single_balance_request(&headers, &body)?;
-    let request = GetBalancesCommand::try_from(request)?;
+    let request = SingleBalanceRequest::try_from((&headers, &body))?;
+    let command = GetBalancesCommand::try_from(request)?;
 
-    let snapshot = resolve_snapshot(&state, request).await?;
+    let snapshot = resolve_balances(&state, command).await?;
     let response = BalanceResponseAssembler
         .single(snapshot)
         .map_err(balance_assembler_error_to_api_error)?;
@@ -42,37 +41,17 @@ pub async fn resolve_bulk_balances(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<BulkBalanceResponse>, ApiError> {
-    let request = parse_bulk_balance_request(&headers, &body)?;
-    let request = GetBalancesCommand::try_from(request)?;
-    let snapshot = resolve_snapshot(&state, request).await?;
+    let request = BulkBalanceRequest::try_from((&headers, &body))?;
+    let command = GetBalancesCommand::try_from(request)?;
+    let snapshot = resolve_balances(&state, command).await?;
 
     Ok(Json(BalanceResponseAssembler.bulk(snapshot)))
 }
 
-fn parse_single_balance_request(
-    headers: &HeaderMap,
-    body: &[u8],
-) -> Result<SingleBalanceRequest, ApiError> {
-    ensure_json_content_type(headers).map_err(|_| ApiError::invalid_request())?;
-    let request = parse_json_object_body(body).map_err(|_| ApiError::invalid_request())?;
-
-    SingleBalanceRequest::try_from(request)
-}
-
-fn parse_bulk_balance_request(
-    headers: &HeaderMap,
-    body: &[u8],
-) -> Result<BulkBalanceRequest, ApiError> {
-    ensure_json_content_type(headers).map_err(|_| ApiError::invalid_request())?;
-    let request = parse_json_object_body(body).map_err(|_| ApiError::invalid_request())?;
-
-    BulkBalanceRequest::try_from(request)
-}
-
-async fn resolve_snapshot(
+async fn resolve_balances(
     state: &AppState,
-    request: GetBalancesCommand,
-) -> Result<crate::application::balances::service::BalanceSnapshotResult, ApiError> {
+    command: GetBalancesCommand,
+) -> Result<BalanceSnapshotResult, ApiError> {
     let repository = state
         .asset_repository
         .clone()
@@ -87,7 +66,7 @@ async fn resolve_snapshot(
     );
 
     service
-        .resolve(request)
+        .resolve(command)
         .await
         .map_err(balance_service_error_to_api_error)
 }

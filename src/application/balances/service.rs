@@ -6,13 +6,6 @@ use std::{
 use tokio::task::JoinSet;
 use tracing::warn;
 
-use crate::adapters::bigwig::{
-    balances::{
-        BigwigEvidenceItem, BigwigEvidenceStatus, BigwigPrimitive, BigwigRequest, BigwigResponse,
-        BigwigTarget,
-    },
-    dto::as_of::BigwigAsOfDTO,
-};
 use crate::domain::accounts::OnchainAccount;
 use crate::domain::assets::balance_catalog::{
     BalanceTarget, BalanceTargetKind, CatalogResolverError,
@@ -21,6 +14,16 @@ use crate::domain::assets::token_selector::TokenSelector;
 use crate::{adapters::bigwig::client::BigwigClient, domain::onchain_time::as_of::AsOf};
 use crate::{
     adapters::bigwig::error::BigwigError, application::balances::command::GetBalancesCommand,
+};
+use crate::{
+    adapters::bigwig::{
+        balances::{
+            BigwigEvidenceItem, BigwigEvidenceStatus, BigwigPrimitive, BigwigRequest,
+            BigwigResponse, BigwigTarget,
+        },
+        dto::as_of::BigwigAsOfDTO,
+    },
+    application::balances::result::BalanceSnapshotResult,
 };
 
 use super::{
@@ -174,14 +177,6 @@ impl BalanceSnapshotService {
 
         Ok(plans)
     }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BalanceSnapshotResult {
-    pub as_of: AsOf,
-    pub quote_currency: String,
-    pub requested_token_count: usize,
-    pub accounts: Vec<BalanceAccountResult>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
