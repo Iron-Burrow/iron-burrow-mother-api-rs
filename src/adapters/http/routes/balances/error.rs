@@ -1,7 +1,7 @@
 use tracing::warn;
 
 use crate::adapters::http::error::ApiError;
-use crate::adapters::http::presenters::balances::BalancesResponsePresenterError;
+use crate::adapters::http::presenters::error::BalancesResponsePresenterError;
 use crate::application::balances::error::BalanceSnapshotServiceError;
 use crate::domain::assets::balance_catalog::CatalogResolverError;
 

@@ -61,6 +61,15 @@ pub struct ResolvedBalanceTarget {
     pub kind: BalanceTargetKind,
 }
 
+impl ResolvedBalanceTarget {
+    pub(crate) fn contract_address(&self) -> Option<String> {
+        match &self.kind {
+            BalanceTargetKind::Native => None,
+            BalanceTargetKind::Erc20 { contract_address } => Some(contract_address.clone()),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BalanceTokenSelector {
     AssetSlug(String),

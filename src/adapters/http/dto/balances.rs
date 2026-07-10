@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{application::balances::result::BalanceEvidence, domain::accounts::OnchainAccount};
+use crate::{
+    application::balances::result::{BalanceEvidence, BalanceTokenSelector},
+    domain::accounts::OnchainAccount,
+};
 
 pub(super) mod error;
 #[allow(dead_code)]
@@ -137,6 +140,21 @@ pub(crate) struct BalancePositionPayload {
 pub(crate) struct BalanceSelectorPayload {
     pub(crate) kind: String,
     pub(crate) value: String,
+}
+
+impl From<BalanceTokenSelector> for BalanceSelectorPayload {
+    fn from(selector: BalanceTokenSelector) -> Self {
+        match selector {
+            BalanceTokenSelector::AssetSlug(asset_slug) => BalanceSelectorPayload {
+                kind: "asset_slug".to_string(),
+                value: asset_slug.clone(),
+            },
+            BalanceTokenSelector::ContractAddress(contract_address) => BalanceSelectorPayload {
+                kind: "contract_address".to_string(),
+                value: contract_address.clone(),
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]

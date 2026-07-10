@@ -1,19 +1,28 @@
 use crate::{
-    adapters::http::dto::balances::{
-        BalanceAccountPayload, BalanceAmountPayload, BalanceAsOfPayload, BalanceErrorPayload,
-        BalanceEvidencePayload, BalancePositionPayload, BalanceQuotePayload, BalanceQuoteStatus,
-        BalanceResponseStatus, BalanceSelectorPayload, BalanceSkippedPayload,
-        BalanceSummaryPayload, BulkBalanceResponse, SingleBalanceResponse,
+    adapters::http::{
+        dto::balances::{
+            BalanceAccountPayload, BalanceAmountPayload, BalanceAsOfPayload, BalanceErrorPayload,
+            BalanceEvidencePayload, BalancePositionPayload, BalanceQuotePayload,
+            BalanceQuoteStatus, BalanceResponseStatus, BalanceSelectorPayload,
+            BalanceSkippedPayload, BalanceSummaryPayload, BulkBalanceResponse,
+            SingleBalanceResponse,
+        },
+        presenters::error::BalancesResponsePresenterError,
     },
     application::balances::{
         error::BalanceItemErrorCode,
         result::{
-            BalanceItemOutcome, BalanceQuoteOutcome, BalanceTokenSelector, BalancesAccountResult,
-            GetBalancesResult, ResolvedBalanceTarget,
+            BalanceItemOutcome, BalanceQuoteOutcome, BalancesAccountResult, GetBalancesResult,
+            ResolvedBalanceTarget,
         },
     },
-    domain::{assets::balance_catalog::BalanceTargetKind, onchain_time::as_of::AsOf},
+    domain::onchain_time::as_of::AsOf,
 };
+
+struct PresentedQuote {
+    payload: BalanceQuotePayload,
+    error: Option<BalanceErrorPayload>,
+}
 
 struct PresentedAccount {
     payload: BalanceAccountPayload,
@@ -51,16 +60,6 @@ impl AccountPresentationStats {
             BalanceResponseStatus::Complete
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum BalancesResponsePresenterError {
-    ExpectedSingleAccount,
-}
-
-struct PresentedQuote {
-    payload: BalanceQuotePayload,
-    error: Option<BalanceErrorPayload>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -210,8 +209,8 @@ fn present_account(account: BalancesAccountResult) -> PresentedAccount {
                     errors.push(error);
                 }
 
-                let selector = selector_payload(&target.selector);
-                let contract_address = contract_address(&target);
+                let selector = BalanceSelectorPayload::from(target.selector.clone());
+                let contract_address = target.contract_address();
                 positions.push(BalancePositionPayload {
                     selector,
                     network_slug: target.network_slug,
@@ -346,30 +345,10 @@ fn error_payload(
 
     BalanceErrorPayload {
         network_slug: target.network_slug.clone(),
-        selector: selector_payload(&target.selector),
-        contract_address: contract_address(target),
+        selector: BalanceSelectorPayload::from(target.selector.clone()),
+        contract_address: target.contract_address(),
         asset_slug: target.asset_slug.clone(),
         code: code.to_string(),
         message: message.to_string(),
-    }
-}
-
-fn selector_payload(selector: &BalanceTokenSelector) -> BalanceSelectorPayload {
-    match selector {
-        BalanceTokenSelector::AssetSlug(asset_slug) => BalanceSelectorPayload {
-            kind: "asset_slug".to_string(),
-            value: asset_slug.clone(),
-        },
-        BalanceTokenSelector::ContractAddress(contract_address) => BalanceSelectorPayload {
-            kind: "contract_address".to_string(),
-            value: contract_address.clone(),
-        },
-    }
-}
-
-fn contract_address(target: &ResolvedBalanceTarget) -> Option<String> {
-    match &target.kind {
-        BalanceTargetKind::Native => None,
-        BalanceTargetKind::Erc20 { contract_address } => Some(contract_address.clone()),
     }
 }

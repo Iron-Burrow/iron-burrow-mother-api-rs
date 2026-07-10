@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use crate::{
     adapters::{
         bigwig::client::BigwigClient,
-        http::{presenters::balances::BalancesResponsePresenterError, router::build_router},
+        http::{presenters::error::BalancesResponsePresenterError, router::build_router},
         postgres::{errors::RepositoryError, global_assets::GlobalAssetRepository},
         price_indexer::PriceIndexerClient,
     },
