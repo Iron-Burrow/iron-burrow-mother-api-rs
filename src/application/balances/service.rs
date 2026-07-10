@@ -6,7 +6,6 @@ use std::{
 use tokio::task::JoinSet;
 use tracing::warn;
 
-use crate::domain::accounts::OnchainAccount;
 use crate::domain::assets::balance_catalog::{
     BalanceTarget, BalanceTargetKind, CatalogResolverError,
 };
@@ -24,6 +23,9 @@ use crate::{
         dto::as_of::BigwigAsOfDTO,
     },
     application::balances::result::GetBalancesResult,
+};
+use crate::{
+    application::balances::result::BalanceAccountResult, domain::accounts::OnchainAccount,
 };
 
 use super::{
@@ -177,13 +179,6 @@ impl BalanceSnapshotService {
 
         Ok(plans)
     }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BalanceAccountResult {
-    pub account: OnchainAccount,
-    pub evidence: Option<BalanceEvidence>,
-    pub items: Vec<BalanceItemOutcome>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

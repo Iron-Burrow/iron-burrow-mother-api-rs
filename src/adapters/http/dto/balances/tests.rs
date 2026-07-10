@@ -4,14 +4,14 @@ use serde_json::{json, Value};
 use super::requests::{BulkBalanceRequest, SingleBalanceRequest};
 use super::*;
 use crate::adapters::http::error::ApiError;
-use crate::adapters::http::presenters::balances::BalanceResponseAssembler;
-use crate::application::balances::result::GetBalancesResult;
+use crate::adapters::http::presenters::balances::BalancesResponsePresenter;
+use crate::application::balances::result::{BalanceAccountResult, GetBalancesResult};
 use crate::application::balances::service::BalanceItemErrorCode;
 use crate::domain::onchain_time::as_of::AsOf;
 use crate::{
     application::balances::service::{
-        BalanceAccountResult, BalanceEvidence, BalanceItemOutcome, BalanceQuoteOutcome,
-        BalanceTokenSelector, ResolvedBalanceTarget,
+        BalanceEvidence, BalanceItemOutcome, BalanceQuoteOutcome, BalanceTokenSelector,
+        ResolvedBalanceTarget,
     },
     domain::assets::balance_catalog::BalanceTargetKind,
     test_utils::json::json_object,
@@ -396,7 +396,7 @@ fn documented_balance_examples_do_not_expose_reserved_or_internal_fields() {
 
 #[test]
 fn single_response_serializes_complete_shape_and_observation_time() {
-    let response = BalanceResponseAssembler
+    let response = BalancesResponsePresenter
         .single(snapshot(vec![resolved(
             "usdc",
             "450000000",
@@ -467,7 +467,7 @@ fn single_response_serializes_complete_shape_and_observation_time() {
 
 #[test]
 fn unavailable_and_unsupported_quotes_preserve_positions_and_make_partial() {
-    let response = BalanceResponseAssembler.bulk(snapshot(vec![
+    let response = BalancesResponsePresenter.bulk(snapshot(vec![
         resolved(
             "usdc",
             "1",
@@ -513,7 +513,7 @@ fn unavailable_and_unsupported_quotes_preserve_positions_and_make_partial() {
 
 #[test]
 fn skipped_only_is_complete_and_all_supported_failures_are_failed() {
-    let skipped = BalanceResponseAssembler.bulk(snapshot(vec![BalanceItemOutcome::Skipped {
+    let skipped = BalancesResponsePresenter.bulk(snapshot(vec![BalanceItemOutcome::Skipped {
         network_slug: "base-mainnet".to_string(),
         asset_slug: "bitso-mxn".to_string(),
     }]));
@@ -522,7 +522,7 @@ fn skipped_only_is_complete_and_all_supported_failures_are_failed() {
     assert_eq!(skipped["summary"]["skipped_items"], 1);
     assert_eq!(skipped["summary"]["failed_items"], 0);
 
-    let failed = BalanceResponseAssembler.bulk(snapshot(vec![BalanceItemOutcome::Failed {
+    let failed = BalancesResponsePresenter.bulk(snapshot(vec![BalanceItemOutcome::Failed {
         target: target("usdc"),
         code: BalanceItemErrorCode::BalanceProviderUnavailable,
     }]));
@@ -549,7 +549,7 @@ fn bulk_status_is_partial_when_any_account_degrades_but_another_resolves() {
         code: BalanceItemErrorCode::BalanceResolutionFailed,
     }]);
     second.account.address = "0x2222222222222222222222222222222222222222".to_string();
-    let response = BalanceResponseAssembler.bulk(GetBalancesResult {
+    let response = BalancesResponsePresenter.bulk(GetBalancesResult {
         as_of: AsOf::Latest,
         quote_currency: "MXN".to_string(),
         requested_token_count: 1,
@@ -571,7 +571,7 @@ fn single_without_evidence_omits_observed_at_and_serializes_null_evidence() {
         asset_slug: "bitso-mxn".to_string(),
     }]);
     snapshot.accounts[0].evidence = None;
-    let response = BalanceResponseAssembler.single(snapshot).unwrap();
+    let response = BalancesResponsePresenter.single(snapshot).unwrap();
     let value = serde_json::to_value(response).unwrap();
 
     assert!(value["as_of"].get("observed_at").is_none());

@@ -6,31 +6,31 @@ use crate::{
         BalanceSkippedPayload, BalanceSummaryPayload, BulkBalanceResponse, SingleBalanceResponse,
     },
     application::balances::{
-        result::GetBalancesResult,
+        result::{BalanceAccountResult, GetBalancesResult},
         service::{
-            BalanceAccountResult, BalanceItemErrorCode, BalanceItemOutcome, BalanceQuoteOutcome,
-            BalanceTokenSelector, ResolvedBalanceTarget,
+            BalanceItemErrorCode, BalanceItemOutcome, BalanceQuoteOutcome, BalanceTokenSelector,
+            ResolvedBalanceTarget,
         },
     },
     domain::onchain_time::as_of::AsOf,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum BalanceResponseAssemblerError {
+pub(crate) enum BalancesResponsePresenterError {
     ExpectedSingleAccount,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct BalanceResponseAssembler;
+pub(crate) struct BalancesResponsePresenter;
 
-impl BalanceResponseAssembler {
+impl BalancesResponsePresenter {
     pub(crate) fn single(
         &self,
         snapshot: GetBalancesResult,
-    ) -> Result<SingleBalanceResponse, BalanceResponseAssemblerError> {
+    ) -> Result<SingleBalanceResponse, BalancesResponsePresenterError> {
         let mut accounts = snapshot.accounts;
         if accounts.len() != 1 {
-            return Err(BalanceResponseAssemblerError::ExpectedSingleAccount);
+            return Err(BalancesResponsePresenterError::ExpectedSingleAccount);
         }
 
         let account = shape_account(accounts.pop().expect("single account length checked"));

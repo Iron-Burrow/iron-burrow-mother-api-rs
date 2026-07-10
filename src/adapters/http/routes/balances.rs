@@ -2,7 +2,7 @@ use axum::{body::Bytes, extract::State, http::HeaderMap, Json};
 use tracing::warn;
 
 use crate::adapters::http::presenters::balances::{
-    BalanceResponseAssembler, BalanceResponseAssemblerError,
+    BalancesResponsePresenter, BalancesResponsePresenterError,
 };
 use crate::application::balances::command::GetBalancesCommand;
 use crate::application::balances::result::GetBalancesResult;
@@ -32,7 +32,7 @@ pub async fn resolve_single_balance(
     let command = GetBalancesCommand::try_from(request)?;
     let snapshot = resolve_balances(&state, command).await?;
 
-    let response = BalanceResponseAssembler
+    let response = BalancesResponsePresenter
         .single(snapshot)
         .map_err(balance_assembler_error_to_api_error)?;
 
@@ -48,7 +48,7 @@ pub async fn resolve_bulk_balances(
     let command = GetBalancesCommand::try_from(request)?;
     let snapshot = resolve_balances(&state, command).await?;
 
-    let response = BalanceResponseAssembler.bulk(snapshot);
+    let response = BalancesResponsePresenter.bulk(snapshot);
 
     Ok(Json(response))
 }
@@ -107,7 +107,7 @@ fn balance_service_error_to_api_error(error: BalanceSnapshotServiceError) -> Api
     }
 }
 
-fn balance_assembler_error_to_api_error(error: BalanceResponseAssemblerError) -> ApiError {
+fn balance_assembler_error_to_api_error(error: BalancesResponsePresenterError) -> ApiError {
     warn!(?error, "Balance response assembly failed");
     ApiError::internal_error()
 }
@@ -1150,7 +1150,7 @@ mod tests {
         }
 
         let response = balance_assembler_error_to_api_error(
-            BalanceResponseAssemblerError::ExpectedSingleAccount,
+            BalancesResponsePresenterError::ExpectedSingleAccount,
         )
         .into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);

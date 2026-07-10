@@ -182,7 +182,7 @@ with these internal adapters:
 CatalogBalanceTargetResolver
 BigwigClient
 PriceQuoteClient
-BalanceResponseAssembler
+BalancesResponsePresenter
 ```
 
 These routes are implemented and are part of the public contract in
