@@ -3,6 +3,7 @@ use utoipa::ToSchema;
 
 use crate::{application::balances::result::BalanceEvidence, domain::accounts::OnchainAccount};
 
+pub(super) mod error;
 #[allow(dead_code)]
 pub(crate) mod examples;
 pub(crate) mod requests;

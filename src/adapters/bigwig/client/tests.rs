@@ -38,15 +38,18 @@ async fn malformed_success_body_becomes_internal_item_failure() {
         return;
     };
     let result = service(Some(bigwig_client(&base_url)))
-        .resolve(GetBalancesCommand {
-            as_of: AsOf::Latest,
-            accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
-            tokens: TokenSelector {
-                asset_slugs: vec!["usdc".to_string()],
-                contract_addresses: Vec::new(),
-            },
-            quote_currency: "USD".to_string(),
-        })
+        .resolve(
+            GetBalancesCommand::try_new(
+                AsOf::Latest,
+                vec![account("base-mainnet", ACCOUNT_A, None)],
+                "USD".to_string(),
+                TokenSelector {
+                    asset_slugs: vec!["usdc".to_string()],
+                    contract_addresses: Vec::new(),
+                },
+            )
+            .unwrap(),
+        )
         .await
         .unwrap();
     server.join().unwrap();
