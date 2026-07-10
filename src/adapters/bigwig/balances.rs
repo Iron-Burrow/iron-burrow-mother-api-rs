@@ -1,19 +1,13 @@
 use serde::{de, Deserialize, Deserializer, Serialize};
 
+use super::dto::as_of::BigwigAsOfDTO;
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct BigwigRequest {
     pub network_slug: String,
-    pub as_of: BigwigAsOf,
+    pub as_of: BigwigAsOfDTO,
     pub accounts: Vec<String>,
     pub tokens: Vec<BigwigTarget>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum BigwigAsOf {
-    Latest,
-    Timestamp { timestamp: String },
-    BlockNumber { block_number: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -49,7 +43,7 @@ pub struct BigwigResponse {
     pub primitive: BigwigPrimitive,
     pub status: BigwigEvidenceStatus,
     pub network: BigwigEvidenceNetwork,
-    pub requested_as_of: BigwigAsOf,
+    pub requested_as_of: BigwigAsOfDTO,
     pub resolved_evidence: BigwigResolvedEvidence,
     pub items: Vec<BigwigEvidenceItem>,
 }

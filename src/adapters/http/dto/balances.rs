@@ -2,10 +2,11 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::application::balances::service::{
-    BalanceAccountResult, BalanceAsOf, BalanceEvidence, BalanceItemErrorCode, BalanceItemOutcome,
+    BalanceAccountResult, BalanceEvidence, BalanceItemErrorCode, BalanceItemOutcome,
     BalanceQuoteOutcome, BalanceSnapshotResult, BalanceTokenSelector, ResolvedBalanceTarget,
 };
 use crate::domain::accounts::OnchainAccount;
+use crate::domain::onchain_time::as_of::AsOf;
 
 #[allow(dead_code)]
 pub(crate) mod examples;
@@ -352,24 +353,21 @@ fn shape_account(account: BalanceAccountResult) -> ShapedAccount {
     }
 }
 
-fn shape_as_of(
-    as_of: &BalanceAsOf,
-    evidence: Option<&BalanceEvidencePayload>,
-) -> BalanceAsOfPayload {
+fn shape_as_of(as_of: &AsOf, evidence: Option<&BalanceEvidencePayload>) -> BalanceAsOfPayload {
     match as_of {
-        BalanceAsOf::Latest => BalanceAsOfPayload {
+        AsOf::Latest => BalanceAsOfPayload {
             kind: "latest".to_string(),
             timestamp: None,
             block_number: None,
             observed_at: evidence.map(|evidence| evidence.observed_at.clone()),
         },
-        BalanceAsOf::Timestamp { timestamp } => BalanceAsOfPayload {
+        AsOf::Timestamp { timestamp } => BalanceAsOfPayload {
             kind: "timestamp".to_string(),
             timestamp: Some(timestamp.clone()),
             block_number: None,
             observed_at: None,
         },
-        BalanceAsOf::BlockNumber { block_number } => BalanceAsOfPayload {
+        AsOf::BlockNumber { block_number } => BalanceAsOfPayload {
             kind: "block_number".to_string(),
             timestamp: None,
             block_number: Some(block_number.clone()),

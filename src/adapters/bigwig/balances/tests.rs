@@ -78,7 +78,7 @@ fn complete_partial_and_failed_responses_decode() {
         assert_eq!(response.status, expected_status);
         assert_eq!(response.network.network_slug, "arbitrum-mainnet");
         assert_eq!(response.network.chain_id, 42161);
-        assert_eq!(response.requested_as_of, BigwigAsOf::Latest);
+        assert_eq!(response.requested_as_of, BigwigAsOfDTO::Latest);
         assert_eq!(response.resolved_evidence.block_number, "123456789");
         assert_eq!(
             response.resolved_evidence.block_timestamp,
@@ -530,7 +530,7 @@ async fn transport_and_timeout_failures_are_classified() {
 fn sample_request() -> BigwigRequest {
     BigwigRequest {
         network_slug: "arbitrum-mainnet".to_string(),
-        as_of: BigwigAsOf::Latest,
+        as_of: BigwigAsOfDTO::Latest,
         accounts: vec![ACCOUNT.to_string()],
         tokens: vec![
             BigwigTarget::Erc20 {

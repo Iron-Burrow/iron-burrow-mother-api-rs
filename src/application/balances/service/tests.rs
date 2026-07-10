@@ -32,7 +32,7 @@ async fn groups_networks_concurrently_and_restores_caller_order() {
     };
     let service = service(Some(bigwig_client(&base_url)));
     let request = BalanceSnapshotRequest {
-        as_of: BalanceAsOf::Latest,
+        as_of: AsOf::Latest,
         accounts: vec![
             account("base-mainnet", ACCOUNT_A, Some("base-a")),
             account("eth-mainnet", ACCOUNT_B, Some("eth-b")),
@@ -123,7 +123,7 @@ async fn batches_deduplicated_quotes_once_and_fans_them_out_in_caller_order() {
         return;
     };
     let request = BalanceSnapshotRequest {
-        as_of: BalanceAsOf::Latest,
+        as_of: AsOf::Latest,
         accounts: vec![
             account("base-mainnet", ACCOUNT_A, Some("base")),
             account("eth-mainnet", ACCOUNT_B, Some("eth")),
@@ -202,7 +202,7 @@ async fn historical_requests_do_not_use_latest_quote_lookup() {
         Some(price_quote_client(&price_url)),
     )
     .resolve(BalanceSnapshotRequest {
-        as_of: BalanceAsOf::BlockNumber {
+        as_of: AsOf::BlockNumber {
             block_number: "19000000".to_string(),
         },
         accounts: vec![account("eth-mainnet", ACCOUNT_A, None)],
@@ -417,7 +417,7 @@ async fn unresolved_explicit_contracts_skip_quote_lookup_and_return_unsupported(
         Some(price_quote_client(&price_url)),
     )
     .resolve(BalanceSnapshotRequest {
-        as_of: BalanceAsOf::Latest,
+        as_of: AsOf::Latest,
         accounts: vec![account("eth-mainnet", ACCOUNT_A, None)],
         tokens: mixed_tokens(&[], &[contract]),
         quote_currency: "USD".to_string(),
@@ -758,14 +758,7 @@ fn plan_asset_group(
         asset_slugs,
         contract_addresses: Vec::new(),
     };
-    plan_network_group(
-        group,
-        &BalanceAsOf::Latest,
-        &tokens,
-        None,
-        resolutions,
-        Vec::new(),
-    )
+    plan_network_group(group, &AsOf::Latest, &tokens, None, resolutions, Vec::new())
 }
 
 fn response_for_plan(
@@ -813,7 +806,7 @@ fn response_for_plan(
             network_slug: plan.network_slug.clone(),
             chain_id: u64::try_from(plan.chain_id.unwrap()).unwrap(),
         },
-        requested_as_of: BigwigAsOf::from(&plan.as_of),
+        requested_as_of: BigwigAsOfDTO::from(&plan.as_of),
         resolved_evidence: BigwigResolvedEvidence {
             kind: BigwigResolvedEvidenceKind::ObservedHead,
             block_number: "123".to_string(),
@@ -831,7 +824,7 @@ async fn deduplicates_targets_and_fans_out_duplicate_assets() {
     };
     let result = service(Some(bigwig_client(&base_url)))
         .resolve(BalanceSnapshotRequest {
-            as_of: BalanceAsOf::Latest,
+            as_of: AsOf::Latest,
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["usdc", "usdc"]),
             quote_currency: "USD".to_string(),
@@ -883,7 +876,7 @@ async fn mixed_asset_and_explicit_contract_deduplicates_upstream_and_keeps_attri
         Some(price_quote_client(&price_url)),
     )
     .resolve(BalanceSnapshotRequest {
-        as_of: BalanceAsOf::Latest,
+        as_of: AsOf::Latest,
         accounts: vec![account("eth-mainnet", ACCOUNT_A, None)],
         tokens: mixed_tokens(&["usdc"], &[contract]),
         quote_currency: "USD".to_string(),
@@ -928,7 +921,7 @@ async fn skips_unsupported_pairs_without_calling_bigwig() {
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let result = service(Some(bigwig_client(&base_url)))
         .resolve(BalanceSnapshotRequest {
-            as_of: BalanceAsOf::Latest,
+            as_of: AsOf::Latest,
             accounts: vec![account("mantle-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["wrapped-bitcoin"]),
             quote_currency: "USD".to_string(),
@@ -959,7 +952,7 @@ async fn skipped_only_results_do_not_call_price_indexer() {
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let result = service_with_quote(None, Some(price_quote_client(&base_url)))
         .resolve(BalanceSnapshotRequest {
-            as_of: BalanceAsOf::Latest,
+            as_of: AsOf::Latest,
             accounts: vec![account("mantle-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["wrapped-bitcoin"]),
             quote_currency: "USD".to_string(),
@@ -982,7 +975,7 @@ async fn skipped_only_results_do_not_call_price_indexer() {
 async fn missing_bigwig_client_marks_supported_items_provider_unavailable() {
     let result = service(None)
         .resolve(BalanceSnapshotRequest {
-            as_of: BalanceAsOf::Latest,
+            as_of: AsOf::Latest,
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["usdc", "wrapped-bitcoin"]),
             quote_currency: "USD".to_string(),
@@ -1012,7 +1005,7 @@ async fn planning_failure_prevents_all_bigwig_calls() {
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let error = service(Some(bigwig_client(&base_url)))
         .resolve(BalanceSnapshotRequest {
-            as_of: BalanceAsOf::Latest,
+            as_of: AsOf::Latest,
             accounts: vec![
                 account("base-mainnet", ACCOUNT_A, None),
                 account("unknown-mainnet", ACCOUNT_B, None),
@@ -1039,7 +1032,7 @@ async fn planning_failure_prevents_all_bigwig_calls() {
 async fn unsupported_global_asset_is_a_whole_request_error() {
     let error = service(None)
         .resolve(BalanceSnapshotRequest {
-            as_of: BalanceAsOf::Latest,
+            as_of: AsOf::Latest,
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["missing-asset"]),
             quote_currency: "USD".to_string(),
@@ -1109,7 +1102,7 @@ async fn malformed_raw_amount_invalidates_group_evidence_before_quote_lookup() {
 
     let result = service(Some(bigwig_client(&base_url)))
         .resolve(BalanceSnapshotRequest {
-            as_of: BalanceAsOf::Latest,
+            as_of: AsOf::Latest,
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["usdc"]),
             quote_currency: "USD".to_string(),

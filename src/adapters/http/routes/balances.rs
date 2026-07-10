@@ -9,6 +9,7 @@ use crate::adapters::http::dto::onchain_time::as_of::AsOfRequest;
 use crate::common::rfc3339::parse_rfc3339;
 use crate::domain::accounts::OnchainAccount;
 use crate::domain::assets::token_selector::TokenSelector;
+use crate::domain::onchain_time::as_of::AsOf;
 use crate::{
     adapters::http::{
         dto::balances::{
@@ -22,10 +23,7 @@ use crate::{
     application::balances::{
         catalog::CatalogBalanceTargetResolver,
         quote::PriceQuoteClient,
-        service::{
-            BalanceAsOf, BalanceSnapshotRequest, BalanceSnapshotService,
-            BalanceSnapshotServiceError,
-        },
+        service::{BalanceSnapshotRequest, BalanceSnapshotService, BalanceSnapshotServiceError},
     },
     domain::assets::balance_catalog::CatalogResolverError,
     state::AppState,
@@ -173,11 +171,9 @@ fn validate_request(
     })
 }
 
-fn validate_balance_as_of(as_of: AsOfRequest) -> Result<BalanceAsOf, ApiError> {
+fn validate_balance_as_of(as_of: AsOfRequest) -> Result<AsOf, ApiError> {
     match as_of.kind.as_str() {
-        "latest" if as_of.timestamp.is_none() && as_of.block_number.is_none() => {
-            Ok(BalanceAsOf::Latest)
-        }
+        "latest" if as_of.timestamp.is_none() && as_of.block_number.is_none() => Ok(AsOf::Latest),
         "timestamp" if as_of.block_number.is_none() => {
             let Some(timestamp) = as_of.timestamp else {
                 return Err(ApiError::invalid_request());
@@ -185,7 +181,7 @@ fn validate_balance_as_of(as_of: AsOfRequest) -> Result<BalanceAsOf, ApiError> {
             if parse_rfc3339(&timestamp).is_none() {
                 return Err(ApiError::invalid_request());
             }
-            Ok(BalanceAsOf::Timestamp { timestamp })
+            Ok(AsOf::Timestamp { timestamp })
         }
         "block_number" if as_of.timestamp.is_none() => {
             let Some(block_number) = as_of.block_number else {
@@ -198,7 +194,7 @@ fn validate_balance_as_of(as_of: AsOfRequest) -> Result<BalanceAsOf, ApiError> {
             {
                 return Err(ApiError::invalid_request());
             }
-            Ok(BalanceAsOf::BlockNumber { block_number })
+            Ok(AsOf::BlockNumber { block_number })
         }
         "latest" | "timestamp" | "block_number" => Err(ApiError::invalid_request()),
         _ => Err(ApiError::unsupported_as_of()),

@@ -8,15 +8,17 @@ use reqwest::StatusCode;
 use serde_json::{json, Value};
 
 use super::*;
-use crate::adapters::postgres::global_assets::GlobalAssetRepository;
 use crate::domain::{accounts::OnchainAccount, assets::token_selector::TokenSelector};
 use crate::test_utils::fixtures::global_assets::sample_assets;
+use crate::{
+    adapters::postgres::global_assets::GlobalAssetRepository, domain::onchain_time::as_of::AsOf,
+};
 use crate::{
     application::balances::{
         catalog::CatalogBalanceTargetResolver,
         quote::PriceQuoteClient,
         service::{
-            BalanceAsOf, BalanceItemErrorCode, BalanceItemOutcome, BalanceSnapshotRequest,
+            BalanceItemErrorCode, BalanceItemOutcome, BalanceSnapshotRequest,
             BalanceSnapshotService,
         },
     },
@@ -34,7 +36,7 @@ async fn malformed_success_body_becomes_internal_item_failure() {
     };
     let result = service(Some(bigwig_client(&base_url)))
         .resolve(BalanceSnapshotRequest {
-            as_of: BalanceAsOf::Latest,
+            as_of: AsOf::Latest,
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
             tokens: TokenSelector {
                 asset_slugs: vec!["usdc".to_string()],

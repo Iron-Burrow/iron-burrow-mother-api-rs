@@ -546,7 +546,7 @@ fn bulk_status_is_partial_when_any_account_degrades_but_another_resolves() {
     }]);
     second.account.address = "0x2222222222222222222222222222222222222222".to_string();
     let response = BalanceResponseAssembler.bulk(BalanceSnapshotResult {
-        as_of: BalanceAsOf::Latest,
+        as_of: AsOf::Latest,
         quote_currency: "MXN".to_string(),
         requested_token_count: 1,
         accounts: vec![first, second],
@@ -596,7 +596,7 @@ fn documented_quote_unavailable_example_keeps_position_and_sanitized_error() {
 
 fn snapshot(items: Vec<BalanceItemOutcome>) -> BalanceSnapshotResult {
     BalanceSnapshotResult {
-        as_of: BalanceAsOf::Latest,
+        as_of: AsOf::Latest,
         quote_currency: "MXN".to_string(),
         requested_token_count: 2,
         accounts: vec![account_result(items)],

@@ -6,17 +6,20 @@ use std::{
 use tokio::task::JoinSet;
 use tracing::warn;
 
-use crate::adapters::bigwig::balances::{
-    BigwigAsOf, BigwigEvidenceItem, BigwigEvidenceStatus, BigwigPrimitive, BigwigRequest,
-    BigwigResponse, BigwigTarget,
-};
-use crate::adapters::bigwig::client::BigwigClient;
 use crate::adapters::bigwig::error::BigwigError;
+use crate::adapters::bigwig::{
+    balances::{
+        BigwigEvidenceItem, BigwigEvidenceStatus, BigwigPrimitive, BigwigRequest, BigwigResponse,
+        BigwigTarget,
+    },
+    dto::as_of::BigwigAsOfDTO,
+};
 use crate::domain::accounts::OnchainAccount;
 use crate::domain::assets::balance_catalog::{
     BalanceTarget, BalanceTargetKind, CatalogResolverError,
 };
 use crate::domain::assets::token_selector::TokenSelector;
+use crate::{adapters::bigwig::client::BigwigClient, domain::onchain_time::as_of::AsOf};
 
 use super::{
     catalog::{
@@ -102,7 +105,7 @@ impl BalanceSnapshotService {
             .map(|result| result.expect("every requested account must belong to one group"))
             .collect::<Vec<_>>();
         let pricing_asset_slugs = collect_pricing_asset_slugs(&raw_account_results);
-        let quotes = if pricing_asset_slugs.is_empty() || request.as_of != BalanceAsOf::Latest {
+        let quotes = if pricing_asset_slugs.is_empty() || request.as_of != AsOf::Latest {
             Ok(HashMap::new())
         } else {
             match &self.price_quote_client {
@@ -173,36 +176,15 @@ impl BalanceSnapshotService {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BalanceSnapshotRequest {
-    pub as_of: BalanceAsOf,
+    pub as_of: AsOf,
     pub accounts: Vec<OnchainAccount>,
     pub tokens: TokenSelector,
     pub quote_currency: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum BalanceAsOf {
-    Latest,
-    Timestamp { timestamp: String },
-    BlockNumber { block_number: String },
-}
-
-impl From<&BalanceAsOf> for BigwigAsOf {
-    fn from(as_of: &BalanceAsOf) -> Self {
-        match as_of {
-            BalanceAsOf::Latest => Self::Latest,
-            BalanceAsOf::Timestamp { timestamp } => Self::Timestamp {
-                timestamp: timestamp.clone(),
-            },
-            BalanceAsOf::BlockNumber { block_number } => Self::BlockNumber {
-                block_number: block_number.clone(),
-            },
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BalanceSnapshotResult {
-    pub as_of: BalanceAsOf,
+    pub as_of: AsOf,
     pub quote_currency: String,
     pub requested_token_count: usize,
     pub accounts: Vec<BalanceAccountResult>,
@@ -391,7 +373,7 @@ struct GroupAccount {
 #[derive(Clone, Debug)]
 struct NetworkGroupPlan {
     network_slug: String,
-    as_of: BalanceAsOf,
+    as_of: AsOf,
     chain_id: Option<i64>,
     accounts: Vec<GroupAccount>,
     token_plans: Vec<TokenPlan>,
@@ -402,7 +384,7 @@ impl NetworkGroupPlan {
     fn bigwig_request(&self) -> BigwigRequest {
         BigwigRequest {
             network_slug: self.network_slug.clone(),
-            as_of: BigwigAsOf::from(&self.as_of),
+            as_of: BigwigAsOfDTO::from(&self.as_of),
             accounts: self
                 .accounts
                 .iter()
@@ -490,7 +472,7 @@ fn group_accounts(accounts: &[OnchainAccount]) -> Vec<GroupedAccounts> {
 
 fn plan_network_group(
     group: GroupedAccounts,
-    as_of: &BalanceAsOf,
+    as_of: &AsOf,
     requested_tokens: &TokenSelector,
     network_resolution: Option<BalanceNetworkResolution>,
     asset_resolutions: Vec<BalanceTargetResolution>,
