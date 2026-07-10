@@ -28,13 +28,6 @@ pub struct GetBalancesCommand {
     quote_currency: String,
 }
 
-pub(crate) struct GetBalancesCommandView {
-    pub(crate) as_of: AsOf,
-    pub(crate) accounts: Vec<OnchainAccount>,
-    pub(crate) tokens: TokenSelector,
-    pub(crate) quote_currency: String,
-}
-
 impl GetBalancesCommand {
     pub(crate) fn try_new(
         as_of: AsOf,
@@ -118,13 +111,20 @@ impl GetBalancesCommand {
         })
     }
 
-    pub(crate) fn view(&self) -> GetBalancesCommandView {
-        GetBalancesCommandView {
-            as_of: self.as_of.clone(),
-            accounts: self.accounts.clone(),
-            tokens: self.tokens.clone(),
-            quote_currency: self.quote_currency.clone(),
-        }
+    pub(crate) fn as_of(&self) -> &AsOf {
+        &self.as_of
+    }
+
+    pub(crate) fn accounts(&self) -> &[OnchainAccount] {
+        &self.accounts
+    }
+
+    pub(crate) fn tokens(&self) -> &TokenSelector {
+        &self.tokens
+    }
+
+    pub(crate) fn quote_currency(&self) -> &str {
+        &self.quote_currency
     }
 }
 
@@ -219,7 +219,7 @@ mod tests {
             assert_public_error(
                 status,
                 &response,
-                StatusCode::BAD_REQUEST,
+                StatusCode::PAYLOAD_TOO_LARGE,
                 "request_too_large",
             );
         }
@@ -250,7 +250,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(command.view().accounts.len(), MAX_ACCOUNTS);
-        assert_eq!(command.view().tokens.asset_slugs.len(), MAX_TOKENS);
+        assert_eq!(command.accounts().len(), MAX_ACCOUNTS);
+        assert_eq!(command.tokens().asset_slugs.len(), MAX_TOKENS);
     }
 }

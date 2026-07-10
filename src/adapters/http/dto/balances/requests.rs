@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use axum::body::Bytes;
 use axum::http::HeaderMap;
 use serde::{Deserialize, Serialize};
@@ -18,13 +16,10 @@ use crate::adapters::http::validation::{ensure_json_content_type, validate_requi
 use crate::adapters::http::{
     error::ApiError, types::JsonObject, validation::reject_unknown_fields,
 };
-use crate::application::balances::command::{
-    GetBalancesCommand, MAX_ACCOUNTS, MAX_RESOLUTION_ITEMS, MAX_TOKENS,
-};
+use crate::application::balances::command::GetBalancesCommand;
 use crate::domain::accounts::OnchainAccount;
 use crate::domain::assets::token_selector::TokenSelector;
 use crate::domain::onchain_time::as_of::AsOf;
-use crate::domain::validation::is_evm_address;
 
 use super::error::command_error_to_api_error;
 
@@ -205,6 +200,8 @@ mod tests {
     use axum::response::IntoResponse;
     use reqwest::StatusCode;
 
+    use crate::application::balances::command::MAX_ACCOUNTS;
+
     use super::*;
 
     const ACCOUNT_A: &str = "0x1111111111111111111111111111111111111111";
@@ -246,11 +243,11 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(request.view().quote_currency, "MXN");
-        assert_eq!(request.view().accounts[0].network_slug, "eth-mainnet");
-        assert_eq!(request.view().accounts[0].address, ACCOUNT_A);
-        assert_eq!(request.view().tokens.asset_slugs, ["ethereum"]);
-        assert!(request.view().tokens.contract_addresses.is_empty());
+        assert_eq!(request.quote_currency(), "MXN");
+        assert_eq!(request.accounts()[0].network_slug, "eth-mainnet");
+        assert_eq!(request.accounts()[0].address, ACCOUNT_A);
+        assert_eq!(request.tokens().asset_slugs, ["ethereum"]);
+        assert!(request.tokens().contract_addresses.is_empty());
     }
 
     #[test]
@@ -266,7 +263,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(request.view().accounts.len(), 2);
+        assert_eq!(request.accounts().len(), 2);
     }
 
     #[test]
@@ -303,8 +300,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(command.view().accounts.len(), 2);
-        assert_eq!(command.view().tokens.asset_slugs, ["ethereum", "usdc"]);
+        assert_eq!(command.accounts().len(), 2);
+        assert_eq!(command.tokens().asset_slugs, ["ethereum", "usdc"]);
     }
 
     #[test]
@@ -324,10 +321,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            request.view().tokens.contract_addresses,
+            request.tokens().contract_addresses,
             ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]
         );
-        assert!(request.view().tokens.asset_slugs.is_empty());
+        assert!(request.tokens().asset_slugs.is_empty());
     }
 
     #[test]

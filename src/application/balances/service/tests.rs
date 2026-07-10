@@ -87,14 +87,14 @@ async fn groups_networks_concurrently_and_restores_caller_order() {
     }
 
     assert_eq!(result.quote_currency, "MXN");
-    assert_eq!(result.requested_token_count, command.view().tokens.len());
+    assert_eq!(result.requested_token_count, command.tokens().len());
     assert_eq!(
         result
             .accounts
             .iter()
             .map(|result| result.account.clone())
             .collect::<Vec<_>>(),
-        command.view().accounts
+        command.accounts()
     );
     assert_eq!(
         result
@@ -157,7 +157,7 @@ async fn batches_deduplicated_quotes_once_and_fans_them_out_in_caller_order() {
             .iter()
             .map(|account| account.account.clone())
             .collect::<Vec<_>>(),
-        command.view().accounts
+        command.accounts()
     );
 
     let base_usdc = &result.accounts[0].items[0];
@@ -825,51 +825,20 @@ fn response_for_plan(
     }
 }
 
-#[tokio::test]
-async fn deduplicates_targets_and_fans_out_duplicate_assets() {
-    let Some((base_url, server)) = spawn_dynamic_server(1) else {
-        return;
-    };
-    let result = service(Some(bigwig_client(&base_url)))
-        .resolve(
-            GetBalancesCommand::try_new(
-                AsOf::Latest,
-                vec![account("base-mainnet", ACCOUNT_A, None)],
-                "USD".to_string(),
-                token_slugs(["usdc", "usdc"]),
-            )
-            .unwrap(),
-        )
-        .await
-        .unwrap();
-    let requests = server.join().unwrap();
+#[test]
+fn rejects_duplicate_assets_in_command_construction() {
+    let error = GetBalancesCommand::try_new(
+        AsOf::Latest,
+        vec![account("base-mainnet", ACCOUNT_A, None)],
+        "USD".to_string(),
+        token_slugs(["usdc", "usdc"]),
+    )
+    .unwrap_err();
 
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0]["tokens"].as_array().unwrap().len(), 1);
-    assert_eq!(result.accounts[0].items.len(), 2);
-    let raw_amounts = result.accounts[0]
-        .items
-        .iter()
-        .map(|item| match item {
-            BalanceItemOutcome::Resolved {
-                target,
-                raw_amount,
-                quote,
-                ..
-            } => {
-                assert_eq!(target.asset_slug.as_deref(), Some("usdc"));
-                assert_eq!(
-                    quote,
-                    &BalanceQuoteOutcome::Unavailable {
-                        code: BalanceItemErrorCode::PriceProviderUnavailable,
-                    }
-                );
-                raw_amount.as_str()
-            }
-            _ => panic!("duplicate supported assets should both resolve"),
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(raw_amounts, vec!["1000", "1000"]);
+    assert_eq!(
+        error,
+        crate::application::balances::command::GetBalancesCommandError::DuplicateAsset
+    );
 }
 
 #[tokio::test]

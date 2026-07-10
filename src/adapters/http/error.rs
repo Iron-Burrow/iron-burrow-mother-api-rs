@@ -234,7 +234,7 @@ impl ApiError {
 
     pub fn request_too_large() -> Self {
         Self {
-            status: StatusCode::BAD_REQUEST,
+            status: StatusCode::PAYLOAD_TOO_LARGE,
             code: "request_too_large",
             message: "Balance request exceeds the public limits.".to_string(),
         }

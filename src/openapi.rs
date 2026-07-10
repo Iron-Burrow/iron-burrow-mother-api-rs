@@ -178,7 +178,12 @@ struct Erc20TransfersApiDoc;
         ),
         (
             status = 400,
-            description = "Malformed, semantically invalid, or oversized balance request",
+            description = "Malformed or semantically invalid balance request",
+            body = ErrorResponse
+        ),
+        (
+            status = 413,
+            description = "Balance request exceeds public size limits",
             body = ErrorResponse
         ),
         (
@@ -224,7 +229,12 @@ async fn resolve_single_balance_operation() {}
         ),
         (
             status = 400,
-            description = "Malformed, semantically invalid, or oversized balance request",
+            description = "Malformed or semantically invalid balance request",
+            body = ErrorResponse
+        ),
+        (
+            status = 413,
+            description = "Balance request exceeds public size limits",
             body = ErrorResponse
         ),
         (
@@ -403,18 +413,20 @@ fn add_single_balance_examples(document: &mut utoipa::openapi::OpenApi) {
     add_response_examples(
         operation,
         "400",
-        [
-            (
-                "validation_error",
-                "Invalid balance request",
-                balance_examples::validation_error_response(),
-            ),
-            (
-                "request_too_large",
-                "Balance request exceeds public limits",
-                balance_examples::request_too_large_response(),
-            ),
-        ],
+        [(
+            "validation_error",
+            "Invalid balance request",
+            balance_examples::validation_error_response(),
+        )],
+    );
+    add_response_examples(
+        operation,
+        "413",
+        [(
+            "request_too_large",
+            "Balance request exceeds public limits",
+            balance_examples::request_too_large_response(),
+        )],
     );
     add_protected_route_error_examples(operation);
 }
@@ -464,18 +476,20 @@ fn add_bulk_balance_examples(document: &mut utoipa::openapi::OpenApi) {
     add_response_examples(
         operation,
         "400",
-        [
-            (
-                "validation_error",
-                "Invalid balance request",
-                balance_examples::validation_error_response(),
-            ),
-            (
-                "request_too_large",
-                "Balance request exceeds public limits",
-                balance_examples::request_too_large_response(),
-            ),
-        ],
+        [(
+            "validation_error",
+            "Invalid balance request",
+            balance_examples::validation_error_response(),
+        )],
+    );
+    add_response_examples(
+        operation,
+        "413",
+        [(
+            "request_too_large",
+            "Balance request exceeds public limits",
+            balance_examples::request_too_large_response(),
+        )],
     );
     add_protected_route_error_examples(operation);
 }
@@ -1220,7 +1234,7 @@ mod tests {
         ));
         assert_error_example(response_example_value(
             single_responses,
-            "400",
+            "413",
             "request_too_large",
         ));
         assert_protected_route_error_examples(single_responses);
@@ -1256,7 +1270,7 @@ mod tests {
         ));
         assert_error_example(response_example_value(
             bulk_responses,
-            "400",
+            "413",
             "request_too_large",
         ));
         assert_protected_route_error_examples(bulk_responses);
@@ -1539,7 +1553,7 @@ mod tests {
             format!("#/components/schemas/{response_schema}")
         );
 
-        for status in ["400", "401", "429", "500", "503"] {
+        for status in ["400", "401", "413", "429", "500", "503"] {
             assert_eq!(
                 operation["responses"][status]["content"]["application/json"]["schema"]["$ref"],
                 "#/components/schemas/ErrorResponse",
@@ -1556,6 +1570,7 @@ mod tests {
                 "200".to_string(),
                 "400".to_string(),
                 "401".to_string(),
+                "413".to_string(),
                 "429".to_string(),
                 "500".to_string(),
                 "503".to_string()

@@ -94,7 +94,7 @@ impl BalanceSnapshotService {
             executions[group_index] = Some(GroupExecution::Called(response));
         }
 
-        let mut raw_account_results = (0..request.view().accounts.len())
+        let mut raw_account_results = (0..request.accounts().len())
             .map(|_| None)
             .collect::<Vec<_>>();
 
@@ -114,13 +114,13 @@ impl BalanceSnapshotService {
             .map(|result| result.expect("every requested account must belong to one group"))
             .collect::<Vec<_>>();
         let pricing_asset_slugs = collect_pricing_asset_slugs(&raw_account_results);
-        let quotes = if pricing_asset_slugs.is_empty() || request.view().as_of != AsOf::Latest {
+        let quotes = if pricing_asset_slugs.is_empty() || request.as_of() != &AsOf::Latest {
             Ok(HashMap::new())
         } else {
             match &self.price_quote_client {
                 Some(client) => {
                     client
-                        .latest_quotes(&pricing_asset_slugs, &request.view().quote_currency)
+                        .latest_quotes(&pricing_asset_slugs, request.quote_currency())
                         .await
                 }
                 None => Err(PriceQuoteClientError::ProviderUnavailable),
@@ -128,9 +128,9 @@ impl BalanceSnapshotService {
         };
 
         Ok(GetBalancesResult {
-            as_of: request.view().as_of,
-            quote_currency: request.view().quote_currency,
-            requested_token_count: request.view().tokens.len(),
+            as_of: request.as_of().clone(),
+            quote_currency: request.quote_currency().to_string(),
+            requested_token_count: request.tokens().len(),
             accounts: enrich_account_results(raw_account_results, quotes),
         })
     }
@@ -139,15 +139,15 @@ impl BalanceSnapshotService {
         &self,
         request: &GetBalancesCommand,
     ) -> Result<Vec<NetworkGroupPlan>, BalanceSnapshotServiceError> {
-        let grouped_accounts = group_accounts(&request.view().accounts);
+        let grouped_accounts = group_accounts(request.accounts());
         let mut plans = Vec::with_capacity(grouped_accounts.len());
 
         for group in grouped_accounts {
             let asset_resolutions = self
                 .catalog_resolver
-                .resolve_network(&group.network_slug, &request.view().tokens.asset_slugs)
+                .resolve_network(&group.network_slug, &request.tokens().asset_slugs)
                 .await?;
-            let network_resolution = if request.view().tokens.contract_addresses.is_empty() {
+            let network_resolution = if request.tokens().contract_addresses.is_empty() {
                 None
             } else {
                 let Some(network) = self
@@ -164,15 +164,15 @@ impl BalanceSnapshotService {
             let contract_resolutions = match network_resolution.as_ref() {
                 Some(network) => {
                     self.catalog_resolver
-                        .resolve_erc20_contracts(network, &request.view().tokens.contract_addresses)
+                        .resolve_erc20_contracts(network, &request.tokens().contract_addresses)
                         .await?
                 }
                 None => Vec::new(),
             };
             plans.push(plan_network_group(
                 group,
-                &request.view().as_of,
-                &request.view().tokens,
+                request.as_of(),
+                request.tokens(),
                 network_resolution,
                 asset_resolutions,
                 contract_resolutions,
