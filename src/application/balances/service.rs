@@ -23,7 +23,7 @@ use crate::{
         },
         dto::as_of::BigwigAsOfDTO,
     },
-    application::balances::result::BalanceSnapshotResult,
+    application::balances::result::GetBalancesResult,
 };
 
 use super::{
@@ -62,7 +62,7 @@ impl BalanceSnapshotService {
     pub async fn resolve(
         &self,
         request: GetBalancesCommand,
-    ) -> Result<BalanceSnapshotResult, BalanceSnapshotServiceError> {
+    ) -> Result<GetBalancesResult, BalanceSnapshotServiceError> {
         let plans = self.plan_groups(&request).await?;
         let mut executions = (0..plans.len()).map(|_| None).collect::<Vec<_>>();
         let mut calls = JoinSet::new();
@@ -123,7 +123,7 @@ impl BalanceSnapshotService {
             }
         };
 
-        Ok(BalanceSnapshotResult {
+        Ok(GetBalancesResult {
             as_of: request.as_of,
             quote_currency: request.quote_currency,
             requested_token_count: request.tokens.len(),

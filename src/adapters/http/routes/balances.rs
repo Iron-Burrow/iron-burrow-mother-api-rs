@@ -1,13 +1,16 @@
 use axum::{body::Bytes, extract::State, http::HeaderMap, Json};
 use tracing::warn;
 
+use crate::adapters::http::presenters::balances::{
+    BalanceResponseAssembler, BalanceResponseAssemblerError,
+};
 use crate::application::balances::command::GetBalancesCommand;
-use crate::application::balances::result::BalanceSnapshotResult;
+use crate::application::balances::result::GetBalancesResult;
 use crate::{
     adapters::http::{
         dto::balances::{
-            requests::BulkBalanceRequest, requests::SingleBalanceRequest, BalanceResponseAssembler,
-            BalanceResponseAssemblerError, BulkBalanceResponse, SingleBalanceResponse,
+            requests::BulkBalanceRequest, requests::SingleBalanceRequest, BulkBalanceResponse,
+            SingleBalanceResponse,
         },
         error::ApiError,
     },
@@ -27,8 +30,8 @@ pub async fn resolve_single_balance(
 ) -> Result<Json<SingleBalanceResponse>, ApiError> {
     let request = SingleBalanceRequest::try_from((&headers, &body))?;
     let command = GetBalancesCommand::try_from(request)?;
-
     let snapshot = resolve_balances(&state, command).await?;
+
     let response = BalanceResponseAssembler
         .single(snapshot)
         .map_err(balance_assembler_error_to_api_error)?;
@@ -45,13 +48,15 @@ pub async fn resolve_bulk_balances(
     let command = GetBalancesCommand::try_from(request)?;
     let snapshot = resolve_balances(&state, command).await?;
 
-    Ok(Json(BalanceResponseAssembler.bulk(snapshot)))
+    let response = BalanceResponseAssembler.bulk(snapshot);
+
+    Ok(Json(response))
 }
 
 async fn resolve_balances(
     state: &AppState,
     command: GetBalancesCommand,
-) -> Result<BalanceSnapshotResult, ApiError> {
+) -> Result<GetBalancesResult, ApiError> {
     let repository = state
         .asset_repository
         .clone()

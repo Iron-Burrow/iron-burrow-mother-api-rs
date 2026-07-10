@@ -4,6 +4,10 @@ use serde_json::{json, Value};
 use super::requests::{BulkBalanceRequest, SingleBalanceRequest};
 use super::*;
 use crate::adapters::http::error::ApiError;
+use crate::adapters::http::presenters::balances::BalanceResponseAssembler;
+use crate::application::balances::result::GetBalancesResult;
+use crate::application::balances::service::BalanceItemErrorCode;
+use crate::domain::onchain_time::as_of::AsOf;
 use crate::{
     application::balances::service::{
         BalanceAccountResult, BalanceEvidence, BalanceItemOutcome, BalanceQuoteOutcome,
@@ -545,7 +549,7 @@ fn bulk_status_is_partial_when_any_account_degrades_but_another_resolves() {
         code: BalanceItemErrorCode::BalanceResolutionFailed,
     }]);
     second.account.address = "0x2222222222222222222222222222222222222222".to_string();
-    let response = BalanceResponseAssembler.bulk(BalanceSnapshotResult {
+    let response = BalanceResponseAssembler.bulk(GetBalancesResult {
         as_of: AsOf::Latest,
         quote_currency: "MXN".to_string(),
         requested_token_count: 1,
@@ -594,8 +598,8 @@ fn documented_quote_unavailable_example_keeps_position_and_sanitized_error() {
     );
 }
 
-fn snapshot(items: Vec<BalanceItemOutcome>) -> BalanceSnapshotResult {
-    BalanceSnapshotResult {
+fn snapshot(items: Vec<BalanceItemOutcome>) -> GetBalancesResult {
+    GetBalancesResult {
         as_of: AsOf::Latest,
         quote_currency: "MXN".to_string(),
         requested_token_count: 2,

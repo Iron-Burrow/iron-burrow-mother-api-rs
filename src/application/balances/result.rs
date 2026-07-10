@@ -3,7 +3,7 @@ use crate::{
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BalanceSnapshotResult {
+pub(crate) struct GetBalancesResult {
     pub as_of: AsOf,
     pub quote_currency: String,
     pub requested_token_count: usize,
