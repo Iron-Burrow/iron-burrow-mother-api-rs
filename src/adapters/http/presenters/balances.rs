@@ -148,31 +148,25 @@ impl BalancesResponsePresenter {
     pub(crate) fn bulk(&self, result: GetBalancesResult) -> BulkBalanceResponse {
         let requested_accounts = result.accounts.len();
         let requested_assets = result.requested_token_count;
+
         let accounts = result
             .accounts
             .into_iter()
             .map(present_account)
             .collect::<Vec<_>>();
+
         let stats = BulkPresentationStats::from_accounts(&accounts);
 
-        let as_of = shape_as_of(&result.as_of, None);
         BulkBalanceResponse {
             ok: true,
             response_type: "balances_bulk".to_string(),
             status: stats.status(),
-            as_of,
+            as_of: shape_as_of(&result.as_of, None),
             quote_currency: result.quote_currency,
             summary: stats.summary(requested_accounts, requested_assets),
             accounts: accounts
                 .into_iter()
-                .map(|account| BalanceAccountPayload {
-                    status: account.payload.status,
-                    account: account.payload.account,
-                    evidence: account.payload.evidence,
-                    positions: account.payload.positions,
-                    skipped: account.payload.skipped,
-                    errors: account.payload.errors,
-                })
+                .map(|account| account.payload)
                 .collect(),
             errors: Vec::new(),
         }
