@@ -12,7 +12,7 @@ use crate::{
             GetBalancesResult, ResolvedBalanceTarget,
         },
     },
-    domain::onchain_time::as_of::AsOf,
+    domain::{assets::balance_catalog::BalanceTargetKind, onchain_time::as_of::AsOf},
 };
 
 struct PresentedAccount {
@@ -64,6 +64,59 @@ struct PresentedQuote {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
+struct BulkPresentationStats {
+    supported_balance_items: usize,
+    resolved_balance_items: usize,
+    failed_balance_items: usize,
+    positions_returned: usize,
+    skipped_items: usize,
+    has_degraded_account: bool,
+}
+
+impl BulkPresentationStats {
+    fn from_accounts(accounts: &[PresentedAccount]) -> Self {
+        accounts.iter().fold(Self::default(), |mut stats, account| {
+            stats.supported_balance_items += account.stats.supported_balance_items;
+
+            stats.resolved_balance_items += account.stats.resolved_balance_items;
+
+            stats.failed_balance_items += account.stats.failed_balance_items;
+
+            stats.positions_returned += account.payload.positions.len();
+
+            stats.skipped_items += account.payload.skipped.len();
+
+            stats.has_degraded_account |= account.payload.status != BalanceResponseStatus::Complete;
+
+            stats
+        })
+    }
+
+    fn status(&self) -> BalanceResponseStatus {
+        if self.supported_balance_items == 0 {
+            BalanceResponseStatus::Complete
+        } else if self.resolved_balance_items == 0 {
+            BalanceResponseStatus::Failed
+        } else if self.has_degraded_account {
+            BalanceResponseStatus::Partial
+        } else {
+            BalanceResponseStatus::Complete
+        }
+    }
+
+    fn summary(&self, requested_accounts: usize, requested_assets: usize) -> BalanceSummaryPayload {
+        BalanceSummaryPayload {
+            requested_accounts,
+            requested_assets,
+            requested_resolution_items: requested_accounts.saturating_mul(requested_assets),
+            positions_returned: self.positions_returned,
+            skipped_items: self.skipped_items,
+            failed_items: self.failed_balance_items,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct BalancesResponsePresenter;
 
 impl BalancesResponsePresenter {
@@ -76,7 +129,7 @@ impl BalancesResponsePresenter {
             return Err(BalancesResponsePresenterError::ExpectedSingleAccount);
         }
 
-        let account = shape_account(accounts.pop().expect("single account length checked"));
+        let account = present_account(accounts.pop().expect("single account length checked"));
         let as_of = shape_as_of(&result.as_of, account.payload.evidence.as_ref());
         Ok(SingleBalanceResponse {
             ok: true,
@@ -98,37 +151,18 @@ impl BalancesResponsePresenter {
         let accounts = result
             .accounts
             .into_iter()
-            .map(shape_account)
+            .map(present_account)
             .collect::<Vec<_>>();
-        let positions_returned = accounts
-            .iter()
-            .map(|account| account.payload.positions.len())
-            .sum();
-        let skipped_items = accounts
-            .iter()
-            .map(|account| account.payload.skipped.len())
-            .sum();
-        let failed_items = accounts
-            .iter()
-            .map(|account| account.stats.failed_balance_items)
-            .sum();
-        let status = aggregate_bulk_status(&accounts);
+        let stats = BulkPresentationStats::from_accounts(&accounts);
 
         let as_of = shape_as_of(&result.as_of, None);
         BulkBalanceResponse {
             ok: true,
             response_type: "balances_bulk".to_string(),
-            status,
+            status: stats.status(),
             as_of,
             quote_currency: result.quote_currency,
-            summary: BalanceSummaryPayload {
-                requested_accounts,
-                requested_assets,
-                requested_resolution_items: requested_accounts.saturating_mul(requested_assets),
-                positions_returned,
-                skipped_items,
-                failed_items,
-            },
+            summary: stats.summary(requested_accounts, requested_assets),
             accounts: accounts
                 .into_iter()
                 .map(|account| BalanceAccountPayload {
@@ -145,7 +179,7 @@ impl BalancesResponsePresenter {
     }
 }
 
-fn shape_account(account: BalancesAccountResult) -> PresentedAccount {
+fn present_account(account: BalancesAccountResult) -> PresentedAccount {
     let mut positions = Vec::new();
     let mut skipped = Vec::new();
     let mut errors = Vec::new();
@@ -329,33 +363,7 @@ fn selector_payload(selector: &BalanceTokenSelector) -> BalanceSelectorPayload {
 
 fn contract_address(target: &ResolvedBalanceTarget) -> Option<String> {
     match &target.kind {
-        crate::domain::assets::balance_catalog::BalanceTargetKind::Native => None,
-        crate::domain::assets::balance_catalog::BalanceTargetKind::Erc20 { contract_address } => {
-            Some(contract_address.clone())
-        }
-    }
-}
-
-fn aggregate_bulk_status(accounts: &[PresentedAccount]) -> BalanceResponseStatus {
-    let supported_balance_items = accounts
-        .iter()
-        .map(|account| account.stats.supported_balance_items)
-        .sum::<usize>();
-    let resolved_balance_items = accounts
-        .iter()
-        .map(|account| account.stats.resolved_balance_items)
-        .sum::<usize>();
-
-    if supported_balance_items == 0 {
-        BalanceResponseStatus::Complete
-    } else if resolved_balance_items == 0 {
-        BalanceResponseStatus::Failed
-    } else if accounts
-        .iter()
-        .any(|account| account.payload.status != BalanceResponseStatus::Complete)
-    {
-        BalanceResponseStatus::Partial
-    } else {
-        BalanceResponseStatus::Complete
+        BalanceTargetKind::Native => None,
+        BalanceTargetKind::Erc20 { contract_address } => Some(contract_address.clone()),
     }
 }

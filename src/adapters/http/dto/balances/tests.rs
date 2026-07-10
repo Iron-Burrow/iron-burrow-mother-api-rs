@@ -561,6 +561,77 @@ fn bulk_status_is_partial_when_any_account_degrades_but_another_resolves() {
 }
 
 #[test]
+fn bulk_summary_aggregates_positions_skips_failures_and_requested_resolution_items() {
+    let mut first = account_result(vec![
+        resolved("usdc", "1000000", "1.000000", available_quote()),
+        BalanceItemOutcome::Skipped {
+            network_slug: "base-mainnet".to_string(),
+            asset_slug: "bitso-mxn".to_string(),
+        },
+    ]);
+    first.account.address = "0x1111111111111111111111111111111111111111".to_string();
+
+    let mut second = account_result(vec![
+        BalanceItemOutcome::Failed {
+            target: target("usdc"),
+            code: BalanceItemErrorCode::BalanceProviderUnavailable,
+        },
+        resolved(
+            "ethereum",
+            "1",
+            "0.000000000000000001",
+            BalanceQuoteOutcome::Unsupported,
+        ),
+    ]);
+    second.account.address = "0x2222222222222222222222222222222222222222".to_string();
+
+    let response = BalancesResponsePresenter.bulk(GetBalancesResult {
+        as_of: AsOf::Latest,
+        quote_currency: "MXN".to_string(),
+        requested_token_count: 3,
+        accounts: vec![first, second],
+    });
+    let value = serde_json::to_value(response).unwrap();
+
+    assert_eq!(value["status"], "partial");
+    assert_eq!(value["summary"]["requested_accounts"], 2);
+    assert_eq!(value["summary"]["requested_assets"], 3);
+    assert_eq!(value["summary"]["requested_resolution_items"], 6);
+    assert_eq!(value["summary"]["positions_returned"], 2);
+    assert_eq!(value["summary"]["skipped_items"], 1);
+    assert_eq!(value["summary"]["failed_items"], 1);
+}
+
+#[test]
+fn bulk_status_is_failed_when_all_supported_items_fail_across_accounts() {
+    let mut first = account_result(vec![BalanceItemOutcome::Failed {
+        target: target("usdc"),
+        code: BalanceItemErrorCode::BalanceProviderUnavailable,
+    }]);
+    first.account.address = "0x1111111111111111111111111111111111111111".to_string();
+
+    let mut second = account_result(vec![BalanceItemOutcome::Failed {
+        target: target("ethereum"),
+        code: BalanceItemErrorCode::BalanceResolutionFailed,
+    }]);
+    second.account.address = "0x2222222222222222222222222222222222222222".to_string();
+
+    let response = BalancesResponsePresenter.bulk(GetBalancesResult {
+        as_of: AsOf::Latest,
+        quote_currency: "MXN".to_string(),
+        requested_token_count: 2,
+        accounts: vec![first, second],
+    });
+    let value = serde_json::to_value(response).unwrap();
+
+    assert_eq!(value["status"], "failed");
+    assert_eq!(value["accounts"][0]["status"], "failed");
+    assert_eq!(value["accounts"][1]["status"], "failed");
+    assert_eq!(value["summary"]["positions_returned"], 0);
+    assert_eq!(value["summary"]["failed_items"], 2);
+}
+
+#[test]
 fn single_without_evidence_omits_observed_at_and_serializes_null_evidence() {
     let mut snapshot = snapshot(vec![BalanceItemOutcome::Skipped {
         network_slug: "base-mainnet".to_string(),
