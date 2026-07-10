@@ -6,14 +6,26 @@ use crate::{
         BalanceSkippedPayload, BalanceSummaryPayload, BulkBalanceResponse, SingleBalanceResponse,
     },
     application::balances::{
-        result::{BalancesAccountResult, GetBalancesResult},
-        service::{
-            BalanceItemErrorCode, BalanceItemOutcome, BalanceQuoteOutcome, BalanceTokenSelector,
-            ResolvedBalanceTarget,
+        error::BalanceItemErrorCode,
+        result::{
+            BalanceItemOutcome, BalanceQuoteOutcome, BalanceTokenSelector, BalancesAccountResult,
+            GetBalancesResult, ResolvedBalanceTarget,
         },
     },
     domain::onchain_time::as_of::AsOf,
 };
+
+struct ShapedAccount {
+    status: BalanceResponseStatus,
+    account: BalanceAccountIdentityPayload,
+    evidence: Option<BalanceEvidencePayload>,
+    positions: Vec<BalancePositionPayload>,
+    skipped: Vec<BalanceSkippedPayload>,
+    errors: Vec<BalanceErrorPayload>,
+    supported_balance_items: usize,
+    resolved_balance_items: usize,
+    failed_balance_items: usize,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BalancesResponsePresenterError {
@@ -26,21 +38,21 @@ pub(crate) struct BalancesResponsePresenter;
 impl BalancesResponsePresenter {
     pub(crate) fn single(
         &self,
-        snapshot: GetBalancesResult,
+        result: GetBalancesResult,
     ) -> Result<SingleBalanceResponse, BalancesResponsePresenterError> {
-        let mut accounts = snapshot.accounts;
+        let mut accounts = result.accounts;
         if accounts.len() != 1 {
             return Err(BalancesResponsePresenterError::ExpectedSingleAccount);
         }
 
         let account = shape_account(accounts.pop().expect("single account length checked"));
-        let as_of = shape_as_of(&snapshot.as_of, account.evidence.as_ref());
+        let as_of = shape_as_of(&result.as_of, account.evidence.as_ref());
         Ok(SingleBalanceResponse {
             ok: true,
             response_type: "balances".to_string(),
             status: account.status,
             as_of,
-            quote_currency: snapshot.quote_currency,
+            quote_currency: result.quote_currency,
             account: account.account,
             evidence: account.evidence,
             positions: account.positions,
@@ -49,10 +61,10 @@ impl BalancesResponsePresenter {
         })
     }
 
-    pub(crate) fn bulk(&self, snapshot: GetBalancesResult) -> BulkBalanceResponse {
-        let requested_accounts = snapshot.accounts.len();
-        let requested_assets = snapshot.requested_token_count;
-        let accounts = snapshot
+    pub(crate) fn bulk(&self, result: GetBalancesResult) -> BulkBalanceResponse {
+        let requested_accounts = result.accounts.len();
+        let requested_assets = result.requested_token_count;
+        let accounts = result
             .accounts
             .into_iter()
             .map(shape_account)
@@ -65,13 +77,13 @@ impl BalancesResponsePresenter {
             .sum();
         let status = aggregate_bulk_status(&accounts);
 
-        let as_of = shape_as_of(&snapshot.as_of, None);
+        let as_of = shape_as_of(&result.as_of, None);
         BulkBalanceResponse {
             ok: true,
             response_type: "balances_bulk".to_string(),
             status,
             as_of,
-            quote_currency: snapshot.quote_currency,
+            quote_currency: result.quote_currency,
             summary: BalanceSummaryPayload {
                 requested_accounts,
                 requested_assets,
@@ -193,18 +205,6 @@ fn shape_as_of(as_of: &AsOf, evidence: Option<&BalanceEvidencePayload>) -> Balan
             observed_at: None,
         },
     }
-}
-
-struct ShapedAccount {
-    status: BalanceResponseStatus,
-    account: BalanceAccountIdentityPayload,
-    evidence: Option<BalanceEvidencePayload>,
-    positions: Vec<BalancePositionPayload>,
-    skipped: Vec<BalanceSkippedPayload>,
-    errors: Vec<BalanceErrorPayload>,
-    supported_balance_items: usize,
-    resolved_balance_items: usize,
-    failed_balance_items: usize,
 }
 
 fn shape_quote(

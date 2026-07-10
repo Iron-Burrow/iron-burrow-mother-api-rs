@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::application::balances::service::BalanceEvidence;
-use crate::domain::accounts::OnchainAccount;
+use crate::{application::balances::result::BalanceEvidence, domain::accounts::OnchainAccount};
 
 #[allow(dead_code)]
 pub(crate) mod examples;

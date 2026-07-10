@@ -1,14 +1,16 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt,
-};
+use std::collections::{HashMap, HashSet};
 
 use tokio::task::JoinSet;
 use tracing::warn;
 
-use crate::domain::assets::balance_catalog::{
-    BalanceTarget, BalanceTargetKind, CatalogResolverError,
+use crate::application::balances::error::{
+    BalanceItemErrorCode, BalancePlanIssue, BalanceSnapshotServiceError,
 };
+use crate::application::balances::result::{
+    BalanceEvidence, BalanceItemOutcome, BalanceQuoteOutcome, BalanceTokenSelector,
+    RawBalanceItemOutcome, RawBalancesAccountResult, ResolvedBalanceTarget,
+};
+use crate::domain::assets::balance_catalog::{BalanceTarget, BalanceTargetKind};
 use crate::domain::assets::token_selector::TokenSelector;
 use crate::{adapters::bigwig::client::BigwigClient, domain::onchain_time::as_of::AsOf};
 use crate::{
@@ -180,167 +182,6 @@ impl BalanceSnapshotService {
         Ok(plans)
     }
 }
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BalanceEvidence {
-    pub network_slug: String,
-    pub observed_at: String,
-    pub block_number: String,
-    pub block_hash: String,
-    pub block_timestamp: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum BalanceItemOutcome {
-    Resolved {
-        target: ResolvedBalanceTarget,
-        raw_amount: String,
-        amount: Option<String>,
-        quote: BalanceQuoteOutcome,
-    },
-    Skipped {
-        network_slug: String,
-        asset_slug: String,
-    },
-    Failed {
-        target: ResolvedBalanceTarget,
-        code: BalanceItemErrorCode,
-    },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ResolvedBalanceTarget {
-    pub selector: BalanceTokenSelector,
-    pub network_slug: String,
-    pub chain_id: i64,
-    pub asset_slug: Option<String>,
-    pub symbol: Option<String>,
-    pub name: Option<String>,
-    pub decimals: Option<u8>,
-    pub pricing_asset_slug: Option<String>,
-    pub kind: BalanceTargetKind,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum BalanceTokenSelector {
-    AssetSlug(String),
-    ContractAddress(String),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BalanceItemErrorCode {
-    BalanceResolutionFailed,
-    BalanceProviderUnavailable,
-    PriceResolutionFailed,
-    PriceProviderUnavailable,
-    InternalError,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum BalanceQuoteOutcome {
-    Available {
-        currency: String,
-        unit_price: String,
-        value: String,
-        price_as_of: String,
-    },
-    Unavailable {
-        code: BalanceItemErrorCode,
-    },
-    Unsupported,
-}
-
-#[derive(Clone, Debug)]
-struct RawBalancesAccountResult {
-    account: OnchainAccount,
-    evidence: Option<BalanceEvidence>,
-    items: Vec<RawBalanceItemOutcome>,
-}
-
-#[derive(Clone, Debug)]
-enum RawBalanceItemOutcome {
-    Resolved {
-        target: ResolvedBalanceTarget,
-        raw_amount: String,
-    },
-    Skipped {
-        network_slug: String,
-        asset_slug: String,
-    },
-    Failed {
-        target: ResolvedBalanceTarget,
-        code: BalanceItemErrorCode,
-    },
-}
-
-#[derive(Debug)]
-pub enum BalanceSnapshotServiceError {
-    Catalog(CatalogResolverError),
-    UnsupportedNetwork {
-        network_slug: String,
-    },
-    UnsupportedAsset {
-        network_slug: String,
-        asset_slug: String,
-    },
-    RequestTooLarge {
-        network_slug: String,
-    },
-    InvalidPlan {
-        network_slug: String,
-        issue: BalancePlanIssue,
-    },
-    ExecutionTaskFailed,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BalancePlanIssue {
-    ResolutionCountMismatch,
-    UnexpectedResolutionNetwork,
-    InconsistentChainId,
-    TargetCollision,
-    ConflictingTargetMetadata,
-}
-
-impl From<CatalogResolverError> for BalanceSnapshotServiceError {
-    fn from(error: CatalogResolverError) -> Self {
-        Self::Catalog(error)
-    }
-}
-
-impl fmt::Display for BalanceSnapshotServiceError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Catalog(error) => write!(formatter, "balance catalog resolution failed: {error}"),
-            Self::UnsupportedNetwork { network_slug } => {
-                write!(formatter, "unsupported balance network: {network_slug}")
-            }
-            Self::UnsupportedAsset {
-                network_slug,
-                asset_slug,
-            } => write!(
-                formatter,
-                "unsupported balance asset {asset_slug} while planning network {network_slug}"
-            ),
-            Self::RequestTooLarge { network_slug } => {
-                write!(
-                    formatter,
-                    "Bigwig balance group is too large: {network_slug}"
-                )
-            }
-            Self::InvalidPlan {
-                network_slug,
-                issue,
-            } => write!(
-                formatter,
-                "invalid balance orchestration plan for {network_slug}: {issue:?}"
-            ),
-            Self::ExecutionTaskFailed => write!(formatter, "balance orchestration task failed"),
-        }
-    }
-}
-
-impl std::error::Error for BalanceSnapshotServiceError {}
 
 #[derive(Clone, Debug)]
 struct GroupedAccounts {
@@ -1178,28 +1019,3 @@ fn log_bigwig_group_error(network_slug: &str, error: &BigwigError) {
 
 #[cfg(test)]
 mod tests;
-
-// mod tests {
-//     use std::{
-//         io::{Read, Write},
-//         net::TcpListener,
-//         thread,
-//     };
-
-//     use reqwest::StatusCode;
-//     use serde_json::{json, Value};
-
-//     use super::*;
-//     use crate::test_utils::fixtures::global_assets::sample_assets;
-//     use crate::{
-//         adapters::bigwig::balances::{
-//             BigwigEvidenceBlock, BigwigEvidenceNetwork, BigwigItemError, BigwigItemErrorCode,
-//             BigwigRequestValidationCode,
-//         },
-//         adapters::postgres::global_assets::GlobalAssetRepository,
-//         adapters::price_indexer::PriceIndexerClient,
-//     };
-
-//     const ACCOUNT_A: &str = "0x1111111111111111111111111111111111111111";
-//     const ACCOUNT_B: &str = "0x2222222222222222222222222222222222222222";
-//     const ACCOUNT_C: &str = "0x3333333333333333333333333333333333333333";

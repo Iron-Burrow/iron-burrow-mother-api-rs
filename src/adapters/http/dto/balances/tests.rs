@@ -5,17 +5,13 @@ use super::requests::{BulkBalanceRequest, SingleBalanceRequest};
 use super::*;
 use crate::adapters::http::error::ApiError;
 use crate::adapters::http::presenters::balances::BalancesResponsePresenter;
-use crate::application::balances::result::{BalancesAccountResult, GetBalancesResult};
-use crate::application::balances::service::BalanceItemErrorCode;
-use crate::domain::onchain_time::as_of::AsOf;
-use crate::{
-    application::balances::service::{
-        BalanceEvidence, BalanceItemOutcome, BalanceQuoteOutcome, BalanceTokenSelector,
-        ResolvedBalanceTarget,
-    },
-    domain::assets::balance_catalog::BalanceTargetKind,
-    test_utils::json::json_object,
+use crate::application::balances::error::BalanceItemErrorCode;
+use crate::application::balances::result::{
+    BalanceItemOutcome, BalanceQuoteOutcome, BalanceTokenSelector, BalancesAccountResult,
+    GetBalancesResult, ResolvedBalanceTarget,
 };
+use crate::domain::onchain_time::as_of::AsOf;
+use crate::{domain::assets::balance_catalog::BalanceTargetKind, test_utils::json::json_object};
 
 #[test]
 fn documented_request_examples_match_public_dto_shape() {

@@ -1,0 +1,1266 @@
+use std::{
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
+};
+
+use axum::{http::StatusCode, response::IntoResponse, Router};
+use serde_json::{json, Value};
+
+use crate::{
+    adapters::{
+        bigwig::client::BigwigClient,
+        http::{presenters::balances::BalancesResponsePresenterError, router::build_router},
+        postgres::{errors::RepositoryError, global_assets::GlobalAssetRepository},
+        price_indexer::PriceIndexerClient,
+    },
+    config::Config,
+};
+use crate::{
+    application::balances::error::BalancePlanIssue,
+    test_utils::{
+        errors::assert_public_error, fixtures::global_assets::sample_assets, http::post_raw,
+    },
+};
+use crate::{
+    application::balances::error::BalanceSnapshotServiceError,
+    domain::assets::balance_catalog::CatalogResolverError,
+};
+
+use super::*;
+
+const ACCOUNT_A: &str = "0x1111111111111111111111111111111111111111";
+const ACCOUNT_B: &str = "0x2222222222222222222222222222222222222222";
+
+#[tokio::test]
+async fn single_route_returns_complete_snapshot() {
+    let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
+        "eth-mainnet",
+        1,
+        json!({"kind": "native"}),
+        &[(
+            "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+            "1000000000000000000",
+        )],
+    )) else {
+        return;
+    };
+    let Some((price_url, price_handle)) =
+        spawn_server(price_success("ethereum", "MXN", "35000.50"))
+    else {
+        return;
+    };
+    let app = balance_app(Some(&bigwig_url), Some(&price_url));
+    let body = json!({
+        "as_of": {"kind": "latest"},
+        "account": {
+            "network_slug": "eth-mainnet",
+            "address": "0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD",
+            "client_ref": "primary"
+        },
+        "quote_currency": " mxn ",
+        "tokens": {"asset_slugs": ["ethereum"], "contract_addresses": []}
+    });
+
+    let (status, response) = post_json(app, "/v1/balances", body).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["type"], "balances");
+    assert_eq!(response["status"], "complete");
+    assert_eq!(response["quote_currency"], "MXN");
+    assert_eq!(
+        response["account"]["address"],
+        "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+    );
+    assert_eq!(response["account"]["client_ref"], "primary");
+    assert_eq!(response["evidence"]["network_slug"], "eth-mainnet");
+    assert_eq!(response["positions"][0]["asset_slug"], "ethereum");
+    assert_eq!(
+        response["positions"][0]["balance"]["amount"],
+        "1.000000000000000000"
+    );
+    assert_eq!(
+        response["positions"][0]["quote"]["value"],
+        "35000.500000000000000000"
+    );
+    assert!(response["account"].get("chain").is_none());
+    assert!(response["account"].get("chain_id").is_none());
+    assert!(response["account"].get("chain_slug").is_none());
+    assert!(response["evidence"].get("chain_id").is_none());
+
+    let bigwig_request = bigwig_handle.await.unwrap();
+    assert!(bigwig_request.starts_with("POST /internal/v1/primitives/evm/balances HTTP/1.1"));
+    let bigwig_json = request_body_json(&bigwig_request);
+    assert_eq!(
+        bigwig_json,
+        json!({
+            "network_slug": "eth-mainnet",
+            "as_of": {"kind": "latest"},
+            "accounts": ["0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"],
+            "tokens": [{"kind": "native"}]
+        })
+    );
+    assert!(!bigwig_request.contains("client_ref"));
+    assert!(!bigwig_request.contains("quote_currency"));
+
+    let price_request = price_handle.await.unwrap();
+    assert!(price_request.starts_with("POST /prices/latest/batch HTTP/1.1"));
+    assert_eq!(
+        request_body_json(&price_request),
+        json!({"slugs": ["ethereum"], "quoteCurrency": "MXN"})
+    );
+}
+
+#[tokio::test]
+async fn timestamp_balance_forwards_historical_as_of_and_does_not_use_latest_quotes() {
+    let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
+        "eth-mainnet",
+        1,
+        json!({"kind": "native"}),
+        &[(ACCOUNT_A, "1000000000000000000")],
+    )) else {
+        return;
+    };
+    let Ok(price_listener) = TcpListener::bind("127.0.0.1:0") else {
+        return;
+    };
+    let price_url = format!("http://{}", price_listener.local_addr().unwrap());
+    let app = balance_app(Some(&bigwig_url), Some(&price_url));
+
+    let (status, response) = post_json(
+        app,
+        "/v1/balances",
+        json!({
+            "as_of": {
+                "kind": "timestamp",
+                "timestamp": "2026-07-03T00:00:00Z"
+            },
+            "account": {"network_slug": "eth-mainnet", "address": ACCOUNT_A},
+            "quote_currency": "USD",
+            "tokens": {"asset_slugs": ["ethereum"], "contract_addresses": []}
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        response["as_of"],
+        json!({"kind": "timestamp", "timestamp": "2026-07-03T00:00:00Z"})
+    );
+    assert_eq!(
+        response["positions"][0]["balance"]["raw_amount"],
+        "1000000000000000000"
+    );
+    assert_eq!(response["positions"][0]["quote"]["status"], "unavailable");
+    assert_eq!(response["errors"][0]["code"], "price_resolution_failed");
+
+    let bigwig_request = bigwig_handle.await.unwrap();
+    let bigwig_json = request_body_json(&bigwig_request);
+    assert_eq!(
+        bigwig_json["as_of"],
+        json!({"kind": "timestamp", "timestamp": "2026-07-03T00:00:00Z"})
+    );
+    assert_eq!(bigwig_json["accounts"], json!([ACCOUNT_A]));
+    assert_eq!(bigwig_json["tokens"], json!([{"kind": "native"}]));
+
+    price_listener.set_nonblocking(true).unwrap();
+    assert_eq!(
+        price_listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+}
+
+#[tokio::test]
+async fn block_number_balance_forwards_historical_as_of() {
+    let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
+        "eth-mainnet",
+        1,
+        json!({"kind": "native"}),
+        &[(ACCOUNT_A, "42")],
+    )) else {
+        return;
+    };
+    let app = balance_app(Some(&bigwig_url), None);
+
+    let (status, response) = post_json(
+        app,
+        "/v1/balances",
+        json!({
+            "as_of": {
+                "kind": "block_number",
+                "block_number": "19000000"
+            },
+            "account": {"network_slug": "eth-mainnet", "address": ACCOUNT_A},
+            "quote_currency": "USD",
+            "tokens": {"asset_slugs": ["ethereum"], "contract_addresses": []}
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        response["as_of"],
+        json!({"kind": "block_number", "block_number": "19000000"})
+    );
+    let bigwig_request = bigwig_handle.await.unwrap();
+    assert_eq!(
+        request_body_json(&bigwig_request)["as_of"],
+        json!({"kind": "block_number", "block_number": "19000000"})
+    );
+}
+
+#[tokio::test]
+async fn bulk_route_returns_complete_ordered_snapshot() {
+    let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
+        "eth-mainnet",
+        1,
+        json!({
+            "kind": "erc20",
+            "contract_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+        }),
+        &[(ACCOUNT_A, "1000000"), (ACCOUNT_B, "2000000")],
+    )) else {
+        return;
+    };
+    let Some((price_url, price_handle)) = spawn_server(price_success("usdc", "USD", "1.00")) else {
+        return;
+    };
+    let app = balance_app(Some(&bigwig_url), Some(&price_url));
+
+    let (status, response) = post_json(
+        app,
+        "/v1/balances/bulk",
+        json!({
+            "as_of": {"kind": "latest"},
+            "accounts": [
+                {"network_slug": "eth-mainnet", "address": ACCOUNT_A},
+                {"network_slug": "eth-mainnet", "address": ACCOUNT_B}
+            ],
+            "quote_currency": "USD",
+            "tokens": {"asset_slugs": ["usdc"], "contract_addresses": []}
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["type"], "balances_bulk");
+    assert_eq!(response["status"], "complete");
+    assert_eq!(response["summary"]["requested_accounts"], 2);
+    assert_eq!(response["summary"]["requested_resolution_items"], 2);
+    assert_eq!(response["summary"]["positions_returned"], 2);
+    assert_eq!(response["accounts"][0]["account"]["address"], ACCOUNT_A);
+    assert_eq!(response["accounts"][1]["account"]["address"], ACCOUNT_B);
+    assert_eq!(
+        response["accounts"][0]["account"]["network_slug"],
+        "eth-mainnet"
+    );
+    assert!(response["accounts"][0]["account"].get("chain").is_none());
+    assert!(response["accounts"][0]["evidence"]
+        .get("chain_id")
+        .is_none());
+    assert_eq!(
+        response["accounts"][0]["positions"][0]["balance"]["amount"],
+        "1.000000"
+    );
+    assert_eq!(
+        response["accounts"][1]["positions"][0]["balance"]["amount"],
+        "2.000000"
+    );
+
+    bigwig_handle.await.unwrap();
+    price_handle.await.unwrap();
+}
+
+#[tokio::test]
+async fn known_explicit_contract_returns_catalog_metadata_and_quote() {
+    let contract = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+    let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
+        "eth-mainnet",
+        1,
+        json!({"kind": "erc20", "contract_address": contract}),
+        &[(ACCOUNT_A, "1000000")],
+    )) else {
+        return;
+    };
+    let Some((price_url, price_handle)) = spawn_server(price_success("usdc", "USD", "1.00")) else {
+        return;
+    };
+    let app = balance_app(Some(&bigwig_url), Some(&price_url));
+
+    let (status, response) = post_json(
+        app,
+        "/v1/balances",
+        json!({
+            "as_of": {"kind": "latest"},
+            "account": {"network_slug": "eth-mainnet", "address": ACCOUNT_A},
+            "quote_currency": "USD",
+            "tokens": {"asset_slugs": [], "contract_addresses": [contract]}
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let position = &response["positions"][0];
+    assert_eq!(
+        position["selector"],
+        json!({"kind": "contract_address", "value": contract})
+    );
+    assert_eq!(position["contract_address"], contract);
+    assert_eq!(position["asset_slug"], "usdc");
+    assert_eq!(position["symbol"], "USDC");
+    assert_eq!(position["balance"]["amount"], "1.000000");
+    assert_eq!(position["balance"]["decimals"], 6);
+    assert_eq!(position["quote"]["status"], "available");
+
+    let bigwig_request = bigwig_handle.await.unwrap();
+    assert_eq!(
+        request_body_json(&bigwig_request)["tokens"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let price_request = price_handle.await.unwrap();
+    assert_eq!(
+        request_body_json(&price_request),
+        json!({"slugs": ["usdc"], "quoteCurrency": "USD"})
+    );
+}
+
+#[tokio::test]
+async fn unavailable_quote_keeps_position_and_returns_sanitized_item_error() {
+    let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
+        "eth-mainnet",
+        1,
+        json!({
+            "kind": "erc20",
+            "contract_address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+        }),
+        &[(ACCOUNT_A, "1000000")],
+    )) else {
+        return;
+    };
+    let Some((price_url, price_handle)) = spawn_server(price_unavailable("usdc", "USD")) else {
+        return;
+    };
+    let app = balance_app(Some(&bigwig_url), Some(&price_url));
+
+    let (status, response) = post_json(
+        app,
+        "/v1/balances",
+        json!({
+            "as_of": {"kind": "latest"},
+            "account": {"network_slug": "eth-mainnet", "address": ACCOUNT_A},
+            "quote_currency": "USD",
+            "tokens": {"asset_slugs": ["usdc"], "contract_addresses": []}
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["status"], "partial");
+    assert_eq!(response["positions"].as_array().unwrap().len(), 1);
+    assert_eq!(response["positions"][0]["balance"]["raw_amount"], "1000000");
+    assert_eq!(response["positions"][0]["quote"]["status"], "unavailable");
+    assert_eq!(response["positions"][0]["quote"]["currency"], Value::Null);
+    assert_eq!(response["errors"].as_array().unwrap().len(), 1);
+    assert_eq!(response["errors"][0]["code"], "price_resolution_failed");
+    assert_eq!(
+        response["errors"][0]["message"],
+        "Quote could not be resolved for this asset."
+    );
+    let serialized = response.to_string();
+    assert!(!serialized.contains("PriceIndexer"));
+    assert!(!serialized.contains("price-indexer"));
+    assert!(!serialized.contains("Bigwig"));
+
+    bigwig_handle.await.unwrap();
+    price_handle.await.unwrap();
+}
+
+#[tokio::test]
+async fn quote_provider_unavailable_keeps_position_and_sanitizes_error() {
+    let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
+        "eth-mainnet",
+        1,
+        json!({"kind": "native"}),
+        &[(ACCOUNT_A, "1000000000000000000")],
+    )) else {
+        return;
+    };
+    let app = balance_app(Some(&bigwig_url), None);
+
+    let (status, response) = post_json(
+        app,
+        "/v1/balances",
+        json!({
+            "as_of": {"kind": "latest"},
+            "account": {"network_slug": "eth-mainnet", "address": ACCOUNT_A},
+            "quote_currency": "USD",
+            "tokens": {"asset_slugs": ["ethereum"], "contract_addresses": []}
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["status"], "partial");
+    assert_eq!(response["positions"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        response["positions"][0]["balance"]["amount"],
+        "1.000000000000000000"
+    );
+    assert_eq!(response["positions"][0]["quote"]["status"], "unavailable");
+    assert_eq!(response["errors"].as_array().unwrap().len(), 1);
+    assert_eq!(response["errors"][0]["code"], "price_provider_unavailable");
+    assert_eq!(
+        response["errors"][0]["message"],
+        "Quote is temporarily unavailable for this asset."
+    );
+    let serialized = response.to_string();
+    assert!(!serialized.contains("PriceIndexer"));
+    assert!(!serialized.contains("price-indexer"));
+    assert!(!serialized.contains("Bigwig"));
+
+    bigwig_handle.await.unwrap();
+}
+
+#[tokio::test]
+async fn unknown_explicit_contract_returns_raw_balance_with_unsupported_quote() {
+    let contract = "0x9999999999999999999999999999999999999999";
+    let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
+        "eth-mainnet",
+        1,
+        json!({"kind": "erc20", "contract_address": contract}),
+        &[(ACCOUNT_A, "123456789")],
+    )) else {
+        return;
+    };
+    let app = balance_app(Some(&bigwig_url), None);
+
+    let (status, response) = post_json(
+        app,
+        "/v1/balances",
+        json!({
+            "as_of": {"kind": "latest"},
+            "account": {"network_slug": "eth-mainnet", "address": ACCOUNT_A},
+            "quote_currency": "USD",
+            "tokens": {"asset_slugs": [], "contract_addresses": [contract]}
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["status"], "partial");
+    let position = &response["positions"][0];
+    assert_eq!(
+        position["selector"],
+        json!({"kind": "contract_address", "value": contract})
+    );
+    assert_eq!(position["contract_address"], contract);
+    assert_eq!(position["asset_slug"], Value::Null);
+    assert_eq!(position["symbol"], Value::Null);
+    assert_eq!(position["balance"]["raw_amount"], "123456789");
+    assert_eq!(position["balance"]["amount"], Value::Null);
+    assert_eq!(position["balance"]["decimals"], Value::Null);
+    assert_eq!(position["quote"]["status"], "unsupported");
+    assert_eq!(response["errors"], json!([]));
+
+    let bigwig_request = bigwig_handle.await.unwrap();
+    assert_eq!(
+        request_body_json(&bigwig_request)["tokens"],
+        json!([{"kind": "erc20", "contract_address": contract}])
+    );
+}
+
+#[tokio::test]
+async fn duplicate_asset_and_contract_target_calls_bigwig_once_and_fans_out() {
+    let contract = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+    let Some((bigwig_url, bigwig_handle)) = spawn_server(bigwig_success(
+        "eth-mainnet",
+        1,
+        json!({"kind": "erc20", "contract_address": contract}),
+        &[(ACCOUNT_A, "2500000")],
+    )) else {
+        return;
+    };
+    let app = balance_app(Some(&bigwig_url), None);
+
+    let (status, response) = post_json(
+        app,
+        "/v1/balances",
+        json!({
+            "as_of": {"kind": "latest"},
+            "account": {"network_slug": "eth-mainnet", "address": ACCOUNT_A},
+            "quote_currency": "USD",
+            "tokens": {"asset_slugs": ["usdc"], "contract_addresses": [contract]}
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["positions"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        response["positions"][0]["selector"],
+        json!({"kind": "asset_slug", "value": "usdc"})
+    );
+    assert_eq!(
+        response["positions"][1]["selector"],
+        json!({"kind": "contract_address", "value": contract})
+    );
+    assert_eq!(response["positions"][0]["balance"]["raw_amount"], "2500000");
+    assert_eq!(response["positions"][1]["balance"]["raw_amount"], "2500000");
+
+    let bigwig_request = bigwig_handle.await.unwrap();
+    assert_eq!(
+        request_body_json(&bigwig_request)["tokens"],
+        json!([{"kind": "erc20", "contract_address": contract}])
+    );
+}
+
+#[tokio::test]
+async fn body_extraction_failures_use_invalid_request_envelope() {
+    let app = balance_app(None, None);
+    let requests = [
+            (
+                Some("application/json"),
+                br#"{"as_of":{"kind":"latest"}"#.as_slice(),
+            ),
+            (
+                Some("application/json"),
+                br#"{"as_of":{"kind":"latest"},"account":[],"quote_currency":"USD","tokens":{"asset_slugs":["ethereum"],"contract_addresses":[]}}"#
+                    .as_slice(),
+            ),
+            (
+                Some("application/json"),
+                br#"{"as_of":{"kind":"latest","timestamp":null},"account":{"network_slug":"eth-mainnet","address":"0x1111111111111111111111111111111111111111"},"quote_currency":"USD","tokens":{"asset_slugs":["ethereum"],"contract_addresses":[]}}"#
+                    .as_slice(),
+            ),
+            (
+                Some("application/json"),
+                br#"{"as_of":{"kind":"latest","block_number":null},"account":{"network_slug":"eth-mainnet","address":"0x1111111111111111111111111111111111111111"},"quote_currency":"USD","tokens":{"asset_slugs":["ethereum"],"contract_addresses":[]}}"#
+                    .as_slice(),
+            ),
+            (Some("application/json"), br#"[]"#.as_slice()),
+            (
+                None,
+                br#"{"as_of":{"kind":"latest"},"account":{"network_slug":"eth-mainnet","address":"0x1111111111111111111111111111111111111111"},"quote_currency":"USD","tokens":{"asset_slugs":["ethereum"],"contract_addresses":[]}}"#
+                    .as_slice(),
+            ),
+            (
+                Some("text/plain"),
+                br#"{"as_of":{"kind":"latest"},"account":{"network_slug":"eth-mainnet","address":"0x1111111111111111111111111111111111111111"},"quote_currency":"USD","tokens":{"asset_slugs":["ethereum"],"contract_addresses":[]}}"#
+                    .as_slice(),
+            ),
+        ];
+
+    for (content_type, body) in requests {
+        let (status, response) =
+            post_raw(app.clone(), "/v1/balances", content_type, body.to_vec()).await;
+        assert_public_error(
+            status,
+            &response,
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+        );
+    }
+}
+
+#[tokio::test]
+async fn balance_routes_reject_unknown_fields_with_unknown_field() {
+    let app = balance_app(None, None);
+    let single_cases = [
+        {
+            let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+            body["future"] = json!(true);
+            body
+        },
+        {
+            let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+            body["as_of"]["observed_at"] = json!("2026-06-18T12:00:00Z");
+            body
+        },
+        {
+            let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+            body["account"]["label"] = json!("primary");
+            body
+        },
+        {
+            let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+            body["tokens"]["symbol"] = json!("ETH");
+            body
+        },
+        {
+            let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+            body["assets"] = json!([{"asset_slug": "ethereum"}]);
+            body
+        },
+    ];
+
+    for body in single_cases {
+        let (status, response) = post_json(app.clone(), "/v1/balances", body).await;
+        assert_public_error(status, &response, StatusCode::BAD_REQUEST, "unknown_field");
+    }
+
+    let bulk_cases = [
+        {
+            let mut body = bulk_body("eth-mainnet", ACCOUNT_A, "ethereum");
+            body["future"] = json!(true);
+            body
+        },
+        {
+            let mut body = bulk_body("eth-mainnet", ACCOUNT_A, "ethereum");
+            body["as_of"]["observed_at"] = json!("2026-06-18T12:00:00Z");
+            body
+        },
+        {
+            let mut body = bulk_body("eth-mainnet", ACCOUNT_A, "ethereum");
+            body["accounts"][0]["label"] = json!("primary");
+            body
+        },
+        {
+            let mut body = bulk_body("eth-mainnet", ACCOUNT_A, "ethereum");
+            body["tokens"]["symbol"] = json!("ETH");
+            body
+        },
+        {
+            let mut body = bulk_body("eth-mainnet", ACCOUNT_A, "ethereum");
+            body["assets"] = json!([{"asset_slug": "ethereum"}]);
+            body
+        },
+    ];
+
+    for body in bulk_cases {
+        let (status, response) = post_json(app.clone(), "/v1/balances/bulk", body).await;
+        assert_public_error(status, &response, StatusCode::BAD_REQUEST, "unknown_field");
+    }
+}
+
+#[tokio::test]
+async fn balance_routes_reject_reserved_network_alias_fields() {
+    let app = balance_app(None, None);
+    let forbidden_single_account_fields = [
+        ("chain", json!("eth-mainnet")),
+        ("chain_id", json!(1)),
+        ("chain_slug", json!("eth-mainnet")),
+    ];
+
+    for (field, value) in forbidden_single_account_fields {
+        let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+        body["account"][field] = value;
+
+        let (status, response) = post_json(app.clone(), "/v1/balances", body).await;
+        assert_public_error(
+            status,
+            &response,
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+        );
+    }
+
+    for field in ["chain", "chain_id", "chain_slug"] {
+        let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+        body[field] = json!("eth-mainnet");
+
+        let (status, response) = post_json(app.clone(), "/v1/balances", body).await;
+        assert_public_error(
+            status,
+            &response,
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+        );
+    }
+
+    for field in ["chain", "chain_id", "chain_slug"] {
+        let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+        body["as_of"][field] = json!("eth-mainnet");
+
+        let (status, response) = post_json(app.clone(), "/v1/balances", body).await;
+        assert_public_error(
+            status,
+            &response,
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+        );
+    }
+
+    for field in ["chain", "chain_id", "chain_slug"] {
+        let mut body = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+        body["tokens"][field] = json!("eth-mainnet");
+
+        let (status, response) = post_json(app.clone(), "/v1/balances", body).await;
+        assert_public_error(
+            status,
+            &response,
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+        );
+    }
+
+    let mut both_names = single_body("eth-mainnet", ACCOUNT_A, "ethereum");
+    both_names["account"]["chain"] = json!("eth-mainnet");
+    both_names["future"] = json!(true);
+    let (status, response) = post_json(app.clone(), "/v1/balances", both_names).await;
+    assert_public_error(
+        status,
+        &response,
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+    );
+
+    for field in ["chain", "chain_id", "chain_slug"] {
+        let mut body = json!({
+            "as_of": {"kind": "latest"},
+            "accounts": [
+                {"network_slug": "eth-mainnet", "address": ACCOUNT_A}
+            ],
+            "quote_currency": "USD",
+            "tokens": {"asset_slugs": ["ethereum"], "contract_addresses": []}
+        });
+        body["accounts"][0][field] = json!("eth-mainnet");
+
+        let (status, response) = post_json(app.clone(), "/v1/balances/bulk", body).await;
+        assert_public_error(
+            status,
+            &response,
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+        );
+    }
+}
+
+#[tokio::test]
+async fn semantic_validation_codes_are_stable_and_ordered() {
+    let app = balance_app(None, None);
+    let valid_account = json!({"network_slug": "eth-mainnet", "address": ACCOUNT_A});
+    let valid_tokens = json!({"asset_slugs": ["ethereum"], "contract_addresses": []});
+    let cases = [
+        (
+            json!({
+                "as_of": {"kind": "historical"},
+                "accounts": [],
+                "quote_currency": "NOPE",
+                "tokens": valid_tokens.clone()
+            }),
+            "unsupported_as_of",
+        ),
+        (
+            json!({
+                "as_of": {
+                    "kind": "timestamp",
+                    "timestamp": "not-a-timestamp"
+                },
+                "accounts": [valid_account.clone()],
+                "quote_currency": "USD",
+                "tokens": valid_tokens.clone()
+            }),
+            "invalid_request",
+        ),
+        (
+            json!({
+                "as_of": {
+                    "kind": "block_number",
+                    "block_number": "19.5"
+                },
+                "accounts": [valid_account.clone()],
+                "quote_currency": "USD",
+                "tokens": valid_tokens.clone()
+            }),
+            "invalid_request",
+        ),
+        (
+            json!({
+                "as_of": {"kind": "latest"},
+                "accounts": [],
+                "quote_currency": "USD",
+                "tokens": valid_tokens.clone()
+            }),
+            "empty_accounts",
+        ),
+        (
+            json!({
+                "as_of": {"kind": "latest"},
+                "accounts": [valid_account.clone()],
+                "quote_currency": "USD",
+                "tokens": {"asset_slugs": [], "contract_addresses": []}
+            }),
+            "empty_tokens",
+        ),
+        (
+            json!({
+                "as_of": {"kind": "latest"},
+                "accounts": [valid_account.clone()],
+                "quote_currency": "USD"
+            }),
+            "empty_tokens",
+        ),
+        (
+            json!({
+                "as_of": {"kind": "latest"},
+                "accounts": [valid_account.clone()],
+                "quote_currency": "USD",
+                "tokens": {
+                    "asset_slugs": [],
+                    "contract_addresses": ["0x1234"]
+                }
+            }),
+            "invalid_contract_address",
+        ),
+        (
+            json!({
+                "as_of": {"kind": "latest"},
+                "accounts": [valid_account.clone()],
+                "quote_currency": "EUR",
+                "tokens": valid_tokens.clone()
+            }),
+            "unsupported_quote_currency",
+        ),
+        (
+            json!({
+                "as_of": {"kind": "latest"},
+                "accounts": [{
+                    "address": "0x1111111111111111111111111111111111111111"
+                }],
+                "quote_currency": "USD",
+                "tokens": valid_tokens.clone()
+            }),
+            "missing_network_slug",
+        ),
+        (
+            json!({
+                "as_of": {"kind": "latest"},
+                "accounts": [{
+                    "network_slug": "eth-mainnet",
+                    "address": "0x1234"
+                }],
+                "quote_currency": "USD",
+                "tokens": valid_tokens.clone()
+            }),
+            "invalid_address",
+        ),
+        (
+            json!({
+                "as_of": {"kind": "latest"},
+                "accounts": [
+                    {
+                        "network_slug": "eth-mainnet",
+                        "address": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+                    },
+                    {
+                        "network_slug": "eth-mainnet",
+                        "address": "0xABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD"
+                    }
+                ],
+                "quote_currency": "USD",
+                "tokens": valid_tokens.clone()
+            }),
+            "duplicate_account",
+        ),
+        (
+            json!({
+                "as_of": {"kind": "latest"},
+                "accounts": [valid_account],
+                "quote_currency": "USD",
+                "tokens": {
+                    "asset_slugs": ["ethereum", "ethereum"],
+                    "contract_addresses": []
+                }
+            }),
+            "duplicate_asset",
+        ),
+    ];
+
+    for (body, expected_code) in cases {
+        let (status, response) = post_json(app.clone(), "/v1/balances/bulk", body).await;
+        assert_public_error(status, &response, StatusCode::BAD_REQUEST, expected_code);
+    }
+}
+
+#[tokio::test]
+async fn canonical_identifiers_are_strict_and_catalog_admitted() {
+    let app = balance_app(None, None);
+
+    for network_slug in [
+        "base",
+        "mantle",
+        "arbitrum-one",
+        "bitcoin-mainnet",
+        "unknown-mainnet",
+        "ETH-MAINNET",
+    ] {
+        let (status, response) = post_json(
+            app.clone(),
+            "/v1/balances",
+            single_body(network_slug, ACCOUNT_A, "ethereum"),
+        )
+        .await;
+        assert_public_error(
+            status,
+            &response,
+            StatusCode::BAD_REQUEST,
+            "unsupported_network",
+        );
+    }
+
+    for asset_slug in ["ETHEREUM", " ethereum "] {
+        let (status, response) = post_json(
+            app.clone(),
+            "/v1/balances",
+            single_body("eth-mainnet", ACCOUNT_A, asset_slug),
+        )
+        .await;
+        assert_public_error(
+            status,
+            &response,
+            StatusCode::BAD_REQUEST,
+            "invalid_asset_slug",
+        );
+    }
+
+    for asset_slug in ["missing-asset"] {
+        let (status, response) = post_json(
+            app.clone(),
+            "/v1/balances",
+            single_body("eth-mainnet", ACCOUNT_A, asset_slug),
+        )
+        .await;
+        assert_public_error(
+            status,
+            &response,
+            StatusCode::BAD_REQUEST,
+            "unsupported_asset",
+        );
+    }
+}
+
+#[tokio::test]
+async fn unsupported_pairs_are_skipped_without_provider_clients() {
+    let (status, response) = post_json(
+        balance_app(None, None),
+        "/v1/balances",
+        single_body("base-mainnet", ACCOUNT_A, "mantle"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["status"], "complete");
+    assert_eq!(response["evidence"], Value::Null);
+    assert_eq!(response["positions"], json!([]));
+    assert_eq!(response["errors"], json!([]));
+    assert_eq!(
+        response["skipped"],
+        json!([{
+            "network_slug": "base-mainnet",
+            "asset_slug": "mantle",
+            "reason": "asset_not_supported_on_network"
+        }])
+    );
+}
+
+#[tokio::test]
+async fn provider_unavailability_remains_a_sanitized_item_level_200() {
+    let address = "0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD";
+    let normalized_address = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+    let (status, response) = post_json(
+        balance_app(None, None),
+        "/v1/balances",
+        single_body("eth-mainnet", address, "ethereum"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["status"], "failed");
+    assert_eq!(response["account"]["address"], normalized_address);
+    assert_eq!(response["evidence"], Value::Null);
+    assert_eq!(
+        response["errors"][0]["code"],
+        "balance_provider_unavailable"
+    );
+    assert!(response.to_string().find("Bigwig").is_none());
+}
+
+#[tokio::test]
+async fn same_address_on_different_networks_is_not_a_duplicate() {
+    let (status, response) = post_json(
+        balance_app(None, None),
+        "/v1/balances/bulk",
+        json!({
+            "as_of": {"kind": "latest"},
+            "accounts": [
+                {"network_slug": "eth-mainnet", "address": ACCOUNT_A},
+                {"network_slug": "base-mainnet", "address": ACCOUNT_A}
+            ],
+            "quote_currency": "USD",
+            "tokens": {"asset_slugs": ["usdc"], "contract_addresses": []}
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(response["accounts"].as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn missing_catalog_configuration_returns_service_unavailable() {
+    let app = build_router(AppState::new(Config::default()));
+    let (status, response) = post_json(
+        app,
+        "/v1/balances",
+        single_body("eth-mainnet", ACCOUNT_A, "ethereum"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response["error"]["code"], "asset_network_map_unavailable");
+}
+
+#[tokio::test]
+async fn repository_and_internal_failures_have_request_wide_mappings() {
+    let repository_error =
+        balance_service_error_to_api_error(BalanceSnapshotServiceError::Catalog(
+            CatalogResolverError::Repository(RepositoryError::test()),
+        ))
+        .into_response();
+    assert_eq!(repository_error.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response_error_code(repository_error).await,
+        "asset_network_map_unavailable"
+    );
+
+    for error in [
+        BalanceSnapshotServiceError::InvalidPlan {
+            network_slug: "eth-mainnet".to_string(),
+            issue: BalancePlanIssue::ResolutionCountMismatch,
+        },
+        BalanceSnapshotServiceError::ExecutionTaskFailed,
+    ] {
+        let response = balance_service_error_to_api_error(error).into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(response_error_code(response).await, "internal_error");
+    }
+
+    let response =
+        balance_assembler_error_to_api_error(BalancesResponsePresenterError::ExpectedSingleAccount)
+            .into_response();
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(response_error_code(response).await, "internal_error");
+}
+
+fn balance_app(bigwig_url: Option<&str>, price_url: Option<&str>) -> Router {
+    let bigwig_client =
+        bigwig_url.map(|url| BigwigClient::new(url, "test-bigwig-token", 2_000).unwrap());
+    let price_indexer_client =
+        price_url.map(|url| PriceIndexerClient::new(url, "test-price-token", 2_000).unwrap());
+
+    build_router(AppState {
+        config: Config::default(),
+        version: env!("CARGO_PKG_VERSION"),
+        database_pool: None,
+        api_key_repository: None,
+        api_key_minute_limiter: crate::adapters::http::rate_limit::ApiKeyMinuteLimiter::default(),
+        asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
+        price_indexer_client,
+        dis_client: None,
+        bigwig_client,
+    })
+}
+
+fn single_body(network_slug: &str, address: &str, asset_slug: &str) -> Value {
+    json!({
+        "as_of": {"kind": "latest"},
+        "account": {
+            "network_slug": network_slug,
+            "address": address
+        },
+        "quote_currency": "USD",
+        "tokens": {
+            "asset_slugs": [asset_slug],
+            "contract_addresses": []
+        }
+    })
+}
+
+fn bulk_body(network_slug: &str, address: &str, asset_slug: &str) -> Value {
+    json!({
+        "as_of": {"kind": "latest"},
+        "accounts": [{
+            "network_slug": network_slug,
+            "address": address
+        }],
+        "quote_currency": "USD",
+        "tokens": {
+            "asset_slugs": [asset_slug],
+            "contract_addresses": []
+        }
+    })
+}
+
+async fn post_json(app: Router, uri: &str, body: Value) -> (StatusCode, Value) {
+    post_raw(
+        app,
+        uri,
+        Some("application/json"),
+        serde_json::to_vec(&body).unwrap(),
+    )
+    .await
+}
+
+async fn response_error_code(response: axum::response::Response) -> String {
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    json["error"]["code"].as_str().unwrap().to_string()
+}
+
+fn bigwig_success(
+    network_slug: &str,
+    chain_id: i64,
+    target: Value,
+    accounts: &[(&str, &str)],
+) -> Value {
+    let items = accounts
+        .iter()
+        .map(|(address, raw_amount)| {
+            json!({
+                "account_address": address,
+                "requested_token": target.clone(),
+                "raw_balance": {
+                    "status": "resolved",
+                    "value": raw_amount
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+
+    json!({
+        "primitive": "evm_balances",
+        "status": "complete",
+        "network": {
+            "network_slug": network_slug,
+            "chain_id": chain_id
+        },
+        "requested_as_of": {"kind": "latest"},
+        "resolved_evidence": {
+            "kind": "observed_head",
+            "block_number": "123456",
+            "block_hash": format!("0x{}", "a".repeat(64)),
+            "block_timestamp": "2026-06-18T12:00:00Z"
+        },
+        "items": items
+    })
+}
+
+fn price_success(asset_slug: &str, quote_currency: &str, price: &str) -> Value {
+    json!({
+        "quoteCurrency": quote_currency,
+        "requestedCount": 1,
+        "uniqueCount": 1,
+        "results": [{
+            "requestedSlug": asset_slug,
+            "normalizedSlug": asset_slug,
+            "assetId": asset_slug,
+            "slug": asset_slug,
+            "name": asset_slug,
+            "status": "found",
+            "freshnessStatus": "fresh",
+            "price": {
+                "assetId": asset_slug,
+                "slug": asset_slug,
+                "quoteCurrency": quote_currency,
+                "price": price,
+                "sourceType": "test",
+                "publishedAt": "2026-06-18T11:59:59Z",
+                "recordedAt": "2026-06-18T11:59:59Z",
+                "freshnessStatus": "fresh",
+                "confidenceLabel": "high",
+                "isFallback": false,
+                "isDerived": false,
+                "staleness": {
+                    "ageSeconds": 1,
+                    "isStale": false,
+                    "warningThresholdSeconds": 300
+                }
+            },
+            "error": null
+        }]
+    })
+}
+
+fn price_unavailable(asset_slug: &str, quote_currency: &str) -> Value {
+    json!({
+        "quoteCurrency": quote_currency,
+        "requestedCount": 1,
+        "uniqueCount": 1,
+        "results": [{
+            "requestedSlug": asset_slug,
+            "normalizedSlug": asset_slug,
+            "assetId": null,
+            "slug": null,
+            "name": null,
+            "status": "unavailable",
+            "freshnessStatus": "unavailable",
+            "price": null,
+            "error": null
+        }]
+    })
+}
+
+fn spawn_server(body: Value) -> Option<(String, tokio::task::JoinHandle<String>)> {
+    let listener = match TcpListener::bind("127.0.0.1:0") {
+        Ok(listener) => listener,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
+        Err(error) => panic!("failed to bind balance test server: {error}"),
+    };
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let handle = tokio::task::spawn_blocking(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let request = read_http_request(&mut stream);
+        let body = body.to_string();
+        let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+        stream.write_all(response.as_bytes()).unwrap();
+        request
+    });
+
+    Some((url, handle))
+}
+
+fn read_http_request(stream: &mut TcpStream) -> String {
+    let mut bytes = Vec::new();
+    let mut buffer = [0u8; 4096];
+    let header_end = loop {
+        let read = stream.read(&mut buffer).unwrap();
+        if read == 0 {
+            panic!("connection closed before request was complete");
+        }
+        bytes.extend_from_slice(&buffer[..read]);
+        if let Some(index) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
+            break index + 4;
+        }
+    };
+    let headers = String::from_utf8_lossy(&bytes[..header_end]);
+    let content_length = headers
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().unwrap())
+        })
+        .unwrap_or(0);
+    while bytes.len() < header_end + content_length {
+        let read = stream.read(&mut buffer).unwrap();
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..read]);
+    }
+
+    String::from_utf8(bytes).unwrap()
+}
+
+fn request_body_json(request: &str) -> Value {
+    let (_, body) = request.split_once("\r\n\r\n").unwrap();
+    serde_json::from_str(body).unwrap()
+}

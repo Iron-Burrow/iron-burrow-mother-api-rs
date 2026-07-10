@@ -8,19 +8,22 @@ use reqwest::StatusCode;
 use serde_json::{json, Value};
 
 use super::*;
-use crate::test_utils::fixtures::global_assets::sample_assets;
 use crate::{
-    adapters::postgres::global_assets::GlobalAssetRepository, domain::onchain_time::as_of::AsOf,
+    adapters::postgres::global_assets::GlobalAssetRepository,
+    application::balances::error::BalanceItemErrorCode, domain::onchain_time::as_of::AsOf,
 };
 use crate::{
     application::balances::command::GetBalancesCommand,
     domain::{accounts::OnchainAccount, assets::token_selector::TokenSelector},
 };
 use crate::{
+    application::balances::result::BalanceItemOutcome,
+    test_utils::fixtures::global_assets::sample_assets,
+};
+use crate::{
     application::balances::{
-        catalog::CatalogBalanceTargetResolver,
-        quote::PriceQuoteClient,
-        service::{BalanceItemErrorCode, BalanceItemOutcome, BalanceSnapshotService},
+        catalog::CatalogBalanceTargetResolver, quote::PriceQuoteClient,
+        service::BalanceSnapshotService,
     },
     test_utils::constants::INFRA_GATEWAY_URL,
 };
