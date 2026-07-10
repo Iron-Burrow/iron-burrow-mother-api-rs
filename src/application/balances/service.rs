@@ -6,7 +6,6 @@ use std::{
 use tokio::task::JoinSet;
 use tracing::warn;
 
-use crate::adapters::bigwig::error::BigwigError;
 use crate::adapters::bigwig::{
     balances::{
         BigwigEvidenceItem, BigwigEvidenceStatus, BigwigPrimitive, BigwigRequest, BigwigResponse,
@@ -20,6 +19,9 @@ use crate::domain::assets::balance_catalog::{
 };
 use crate::domain::assets::token_selector::TokenSelector;
 use crate::{adapters::bigwig::client::BigwigClient, domain::onchain_time::as_of::AsOf};
+use crate::{
+    adapters::bigwig::error::BigwigError, application::balances::command::GetBalancesCommand,
+};
 
 use super::{
     catalog::{
@@ -56,7 +58,7 @@ impl BalanceSnapshotService {
 
     pub async fn resolve(
         &self,
-        request: BalanceSnapshotRequest,
+        request: GetBalancesCommand,
     ) -> Result<BalanceSnapshotResult, BalanceSnapshotServiceError> {
         let plans = self.plan_groups(&request).await?;
         let mut executions = (0..plans.len()).map(|_| None).collect::<Vec<_>>();
@@ -128,7 +130,7 @@ impl BalanceSnapshotService {
 
     async fn plan_groups(
         &self,
-        request: &BalanceSnapshotRequest,
+        request: &GetBalancesCommand,
     ) -> Result<Vec<NetworkGroupPlan>, BalanceSnapshotServiceError> {
         let grouped_accounts = group_accounts(&request.accounts);
         let mut plans = Vec::with_capacity(grouped_accounts.len());
@@ -172,14 +174,6 @@ impl BalanceSnapshotService {
 
         Ok(plans)
     }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BalanceSnapshotRequest {
-    pub as_of: AsOf,
-    pub accounts: Vec<OnchainAccount>,
-    pub tokens: TokenSelector,
-    pub quote_currency: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -1,4 +1,5 @@
-pub mod catalog;
-pub mod decimal;
-pub mod quote;
-pub mod service;
+pub(crate) mod catalog;
+pub(crate) mod command;
+pub(crate) mod decimal;
+pub(crate) mod quote;
+pub(crate) mod service;

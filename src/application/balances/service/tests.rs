@@ -31,7 +31,7 @@ async fn groups_networks_concurrently_and_restores_caller_order() {
         return;
     };
     let service = service(Some(bigwig_client(&base_url)));
-    let request = BalanceSnapshotRequest {
+    let request = GetBalancesCommand {
         as_of: AsOf::Latest,
         accounts: vec![
             account("base-mainnet", ACCOUNT_A, Some("base-a")),
@@ -122,7 +122,7 @@ async fn batches_deduplicated_quotes_once_and_fans_them_out_in_caller_order() {
     else {
         return;
     };
-    let request = BalanceSnapshotRequest {
+    let request = GetBalancesCommand {
         as_of: AsOf::Latest,
         accounts: vec![
             account("base-mainnet", ACCOUNT_A, Some("base")),
@@ -201,7 +201,7 @@ async fn historical_requests_do_not_use_latest_quote_lookup() {
         Some(bigwig_client(&bigwig_url)),
         Some(price_quote_client(&price_url)),
     )
-    .resolve(BalanceSnapshotRequest {
+    .resolve(GetBalancesCommand {
         as_of: AsOf::BlockNumber {
             block_number: "19000000".to_string(),
         },
@@ -416,7 +416,7 @@ async fn unresolved_explicit_contracts_skip_quote_lookup_and_return_unsupported(
         Some(bigwig_client(&bigwig_url)),
         Some(price_quote_client(&price_url)),
     )
-    .resolve(BalanceSnapshotRequest {
+    .resolve(GetBalancesCommand {
         as_of: AsOf::Latest,
         accounts: vec![account("eth-mainnet", ACCOUNT_A, None)],
         tokens: mixed_tokens(&[], &[contract]),
@@ -823,7 +823,7 @@ async fn deduplicates_targets_and_fans_out_duplicate_assets() {
         return;
     };
     let result = service(Some(bigwig_client(&base_url)))
-        .resolve(BalanceSnapshotRequest {
+        .resolve(GetBalancesCommand {
             as_of: AsOf::Latest,
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["usdc", "usdc"]),
@@ -875,7 +875,7 @@ async fn mixed_asset_and_explicit_contract_deduplicates_upstream_and_keeps_attri
         Some(bigwig_client(&bigwig_url)),
         Some(price_quote_client(&price_url)),
     )
-    .resolve(BalanceSnapshotRequest {
+    .resolve(GetBalancesCommand {
         as_of: AsOf::Latest,
         accounts: vec![account("eth-mainnet", ACCOUNT_A, None)],
         tokens: mixed_tokens(&["usdc"], &[contract]),
@@ -920,7 +920,7 @@ async fn skips_unsupported_pairs_without_calling_bigwig() {
     };
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let result = service(Some(bigwig_client(&base_url)))
-        .resolve(BalanceSnapshotRequest {
+        .resolve(GetBalancesCommand {
             as_of: AsOf::Latest,
             accounts: vec![account("mantle-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["wrapped-bitcoin"]),
@@ -951,7 +951,7 @@ async fn skipped_only_results_do_not_call_price_indexer() {
     };
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let result = service_with_quote(None, Some(price_quote_client(&base_url)))
-        .resolve(BalanceSnapshotRequest {
+        .resolve(GetBalancesCommand {
             as_of: AsOf::Latest,
             accounts: vec![account("mantle-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["wrapped-bitcoin"]),
@@ -974,7 +974,7 @@ async fn skipped_only_results_do_not_call_price_indexer() {
 #[tokio::test]
 async fn missing_bigwig_client_marks_supported_items_provider_unavailable() {
     let result = service(None)
-        .resolve(BalanceSnapshotRequest {
+        .resolve(GetBalancesCommand {
             as_of: AsOf::Latest,
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["usdc", "wrapped-bitcoin"]),
@@ -1004,7 +1004,7 @@ async fn planning_failure_prevents_all_bigwig_calls() {
     };
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let error = service(Some(bigwig_client(&base_url)))
-        .resolve(BalanceSnapshotRequest {
+        .resolve(GetBalancesCommand {
             as_of: AsOf::Latest,
             accounts: vec![
                 account("base-mainnet", ACCOUNT_A, None),
@@ -1031,7 +1031,7 @@ async fn planning_failure_prevents_all_bigwig_calls() {
 #[tokio::test]
 async fn unsupported_global_asset_is_a_whole_request_error() {
     let error = service(None)
-        .resolve(BalanceSnapshotRequest {
+        .resolve(GetBalancesCommand {
             as_of: AsOf::Latest,
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["missing-asset"]),
@@ -1101,7 +1101,7 @@ async fn malformed_raw_amount_invalidates_group_evidence_before_quote_lookup() {
     };
 
     let result = service(Some(bigwig_client(&base_url)))
-        .resolve(BalanceSnapshotRequest {
+        .resolve(GetBalancesCommand {
             as_of: AsOf::Latest,
             accounts: vec![account("base-mainnet", ACCOUNT_A, None)],
             tokens: token_slugs(["usdc"]),
