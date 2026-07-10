@@ -125,23 +125,35 @@ impl BalancesResponsePresenter {
         result: GetBalancesResult,
     ) -> Result<SingleBalanceResponse, BalancesResponsePresenterError> {
         let mut accounts = result.accounts;
+
         if accounts.len() != 1 {
             return Err(BalancesResponsePresenterError::ExpectedSingleAccount);
         }
 
-        let account = present_account(accounts.pop().expect("single account length checked"));
-        let as_of = shape_as_of(&result.as_of, account.payload.evidence.as_ref());
+        let presented = present_account(accounts.pop().expect("single account length checked"));
+
+        let BalanceAccountPayload {
+            status,
+            account,
+            evidence,
+            positions,
+            skipped,
+            errors,
+        } = presented.payload;
+
+        let as_of = present_as_of(&result.as_of, evidence.as_ref());
+
         Ok(SingleBalanceResponse {
             ok: true,
             response_type: "balances".to_string(),
-            status: account.payload.status,
+            status,
             as_of,
             quote_currency: result.quote_currency,
-            account: account.payload.account,
-            evidence: account.payload.evidence,
-            positions: account.payload.positions,
-            skipped: account.payload.skipped,
-            errors: account.payload.errors,
+            account,
+            evidence,
+            positions,
+            skipped,
+            errors,
         })
     }
 
@@ -161,7 +173,7 @@ impl BalancesResponsePresenter {
             ok: true,
             response_type: "balances_bulk".to_string(),
             status: stats.status(),
-            as_of: shape_as_of(&result.as_of, None),
+            as_of: present_as_of(&result.as_of, None),
             quote_currency: result.quote_currency,
             summary: stats.summary(requested_accounts, requested_assets),
             accounts: accounts
@@ -242,7 +254,7 @@ fn present_account(account: BalancesAccountResult) -> PresentedAccount {
     }
 }
 
-fn shape_as_of(as_of: &AsOf, evidence: Option<&BalanceEvidencePayload>) -> BalanceAsOfPayload {
+fn present_as_of(as_of: &AsOf, evidence: Option<&BalanceEvidencePayload>) -> BalanceAsOfPayload {
     match as_of {
         AsOf::Latest => BalanceAsOfPayload {
             kind: "latest".to_string(),
