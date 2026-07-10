@@ -96,7 +96,7 @@ fn validate_request(
     quote_currency: String,
     tokens: TokenSelectorRequest,
 ) -> Result<BalanceSnapshotRequest, ApiError> {
-    let as_of = validate_balance_as_of(as_of)?;
+    let as_of = AsOf::try_from(as_of)?;
     if accounts.is_empty() {
         return Err(ApiError::empty_accounts());
     }
@@ -169,36 +169,6 @@ fn validate_request(
         },
         quote_currency,
     })
-}
-
-fn validate_balance_as_of(as_of: AsOfRequest) -> Result<AsOf, ApiError> {
-    match as_of.kind.as_str() {
-        "latest" if as_of.timestamp.is_none() && as_of.block_number.is_none() => Ok(AsOf::Latest),
-        "timestamp" if as_of.block_number.is_none() => {
-            let Some(timestamp) = as_of.timestamp else {
-                return Err(ApiError::invalid_request());
-            };
-            if parse_rfc3339(&timestamp).is_none() {
-                return Err(ApiError::invalid_request());
-            }
-            Ok(AsOf::Timestamp { timestamp })
-        }
-        "block_number" if as_of.timestamp.is_none() => {
-            let Some(block_number) = as_of.block_number else {
-                return Err(ApiError::invalid_request());
-            };
-            if !block_number
-                .as_bytes()
-                .iter()
-                .all(|character| character.is_ascii_digit())
-            {
-                return Err(ApiError::invalid_request());
-            }
-            Ok(AsOf::BlockNumber { block_number })
-        }
-        "latest" | "timestamp" | "block_number" => Err(ApiError::invalid_request()),
-        _ => Err(ApiError::unsupported_as_of()),
-    }
 }
 
 fn is_evm_address(address: &str) -> bool {
