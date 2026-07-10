@@ -2,8 +2,19 @@ use std::fmt;
 
 use crate::domain::assets::balance_catalog::CatalogResolverError;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum GetBalancesCommandError {
+    EmptyAccounts,
+    EmptyTokens,
+    RequestTooLarge,
+    UnsupportedQuoteCurrency,
+    InvalidAccount,
+    DuplicateAccount,
+    DuplicateAsset,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BalanceItemErrorCode {
+pub(crate) enum BalanceItemErrorCode {
     BalanceResolutionFailed,
     BalanceProviderUnavailable,
     PriceResolutionFailed,
@@ -12,7 +23,7 @@ pub enum BalanceItemErrorCode {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BalancePlanIssue {
+pub(crate) enum BalancePlanIssue {
     ResolutionCountMismatch,
     UnexpectedResolutionNetwork,
     InconsistentChainId,

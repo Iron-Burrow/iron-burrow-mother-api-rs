@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use super::*;
 use crate::{
     adapters::bigwig::balances::BigwigRequestValidationCode,
+    application::balances::error::GetBalancesCommandError,
     test_utils::fixtures::global_assets::sample_assets,
 };
 use crate::{
@@ -835,10 +836,7 @@ fn rejects_duplicate_assets_in_command_construction() {
     )
     .unwrap_err();
 
-    assert_eq!(
-        error,
-        crate::application::balances::command::GetBalancesCommandError::DuplicateAsset
-    );
+    assert_eq!(error, GetBalancesCommandError::DuplicateAsset);
 }
 
 #[tokio::test]

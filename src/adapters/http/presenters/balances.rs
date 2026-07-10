@@ -1,9 +1,9 @@
 use crate::{
     adapters::http::dto::balances::{
-        BalanceAccountIdentityPayload, BalanceAccountPayload, BalanceAmountPayload,
-        BalanceAsOfPayload, BalanceErrorPayload, BalanceEvidencePayload, BalancePositionPayload,
-        BalanceQuotePayload, BalanceQuoteStatus, BalanceResponseStatus, BalanceSelectorPayload,
-        BalanceSkippedPayload, BalanceSummaryPayload, BulkBalanceResponse, SingleBalanceResponse,
+        BalanceAccountPayload, BalanceAmountPayload, BalanceAsOfPayload, BalanceErrorPayload,
+        BalanceEvidencePayload, BalancePositionPayload, BalanceQuotePayload,
+        BalanceQuoteStatus, BalanceResponseStatus, BalanceSelectorPayload, BalanceSkippedPayload,
+        BalanceSummaryPayload, BulkBalanceResponse, SingleBalanceResponse,
     },
     application::balances::{
         error::BalanceItemErrorCode,
@@ -15,16 +15,42 @@ use crate::{
     domain::onchain_time::as_of::AsOf,
 };
 
-struct ShapedAccount {
-    status: BalanceResponseStatus,
-    account: BalanceAccountIdentityPayload,
-    evidence: Option<BalanceEvidencePayload>,
-    positions: Vec<BalancePositionPayload>,
-    skipped: Vec<BalanceSkippedPayload>,
-    errors: Vec<BalanceErrorPayload>,
+struct PresentedAccount {
+    payload: BalanceAccountPayload,
+    stats: AccountPresentationStats,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct AccountPresentationStats {
     supported_balance_items: usize,
     resolved_balance_items: usize,
     failed_balance_items: usize,
+    degraded_quote: bool,
+}
+
+impl AccountPresentationStats {
+    fn record_resolved(&mut self, degraded_quote: bool) {
+        self.supported_balance_items += 1;
+        self.resolved_balance_items += 1;
+        self.degraded_quote |= degraded_quote;
+    }
+
+    fn record_failed(&mut self) {
+        self.supported_balance_items += 1;
+        self.failed_balance_items += 1;
+    }
+
+    fn status(&self) -> BalanceResponseStatus {
+        if self.supported_balance_items == 0 {
+            BalanceResponseStatus::Complete
+        } else if self.resolved_balance_items == 0 {
+            BalanceResponseStatus::Failed
+        } else if self.failed_balance_items > 0 || self.degraded_quote {
+            BalanceResponseStatus::Partial
+        } else {
+            BalanceResponseStatus::Complete
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -46,18 +72,18 @@ impl BalancesResponsePresenter {
         }
 
         let account = shape_account(accounts.pop().expect("single account length checked"));
-        let as_of = shape_as_of(&result.as_of, account.evidence.as_ref());
+        let as_of = shape_as_of(&result.as_of, account.payload.evidence.as_ref());
         Ok(SingleBalanceResponse {
             ok: true,
             response_type: "balances".to_string(),
-            status: account.status,
+            status: account.payload.status,
             as_of,
             quote_currency: result.quote_currency,
-            account: account.account,
-            evidence: account.evidence,
-            positions: account.positions,
-            skipped: account.skipped,
-            errors: account.errors,
+            account: account.payload.account,
+            evidence: account.payload.evidence,
+            positions: account.payload.positions,
+            skipped: account.payload.skipped,
+            errors: account.payload.errors,
         })
     }
 
@@ -69,11 +95,17 @@ impl BalancesResponsePresenter {
             .into_iter()
             .map(shape_account)
             .collect::<Vec<_>>();
-        let positions_returned = accounts.iter().map(|account| account.positions.len()).sum();
-        let skipped_items = accounts.iter().map(|account| account.skipped.len()).sum();
+        let positions_returned = accounts
+            .iter()
+            .map(|account| account.payload.positions.len())
+            .sum();
+        let skipped_items = accounts
+            .iter()
+            .map(|account| account.payload.skipped.len())
+            .sum();
         let failed_items = accounts
             .iter()
-            .map(|account| account.failed_balance_items)
+            .map(|account| account.stats.failed_balance_items)
             .sum();
         let status = aggregate_bulk_status(&accounts);
 
@@ -95,12 +127,12 @@ impl BalancesResponsePresenter {
             accounts: accounts
                 .into_iter()
                 .map(|account| BalanceAccountPayload {
-                    status: account.status,
-                    account: account.account,
-                    evidence: account.evidence,
-                    positions: account.positions,
-                    skipped: account.skipped,
-                    errors: account.errors,
+                    status: account.payload.status,
+                    account: account.payload.account,
+                    evidence: account.payload.evidence,
+                    positions: account.payload.positions,
+                    skipped: account.payload.skipped,
+                    errors: account.payload.errors,
                 })
                 .collect(),
             errors: Vec::new(),
@@ -108,14 +140,11 @@ impl BalancesResponsePresenter {
     }
 }
 
-fn shape_account(account: BalancesAccountResult) -> ShapedAccount {
+fn shape_account(account: BalancesAccountResult) -> PresentedAccount {
     let mut positions = Vec::new();
     let mut skipped = Vec::new();
     let mut errors = Vec::new();
-    let mut supported_balance_items = 0usize;
-    let mut resolved_balance_items = 0usize;
-    let mut failed_balance_items = 0usize;
-    let mut degraded_quote = false;
+    let mut stats = AccountPresentationStats::default();
 
     for item in account.items {
         match item {
@@ -125,10 +154,9 @@ fn shape_account(account: BalancesAccountResult) -> ShapedAccount {
                 amount,
                 quote,
             } => {
-                supported_balance_items += 1;
-                resolved_balance_items += 1;
+                let degraded_quote = !matches!(quote, BalanceQuoteOutcome::Available { .. });
+                stats.record_resolved(degraded_quote);
                 let (quote, error) = shape_quote(&target, quote);
-                degraded_quote |= quote.status != BalanceQuoteStatus::Available;
                 if let Some(error) = error {
                     errors.push(error);
                 }
@@ -157,30 +185,22 @@ fn shape_account(account: BalancesAccountResult) -> ShapedAccount {
                 reason: "asset_not_supported_on_network".to_string(),
             }),
             BalanceItemOutcome::Failed { target, code } => {
-                supported_balance_items += 1;
-                failed_balance_items += 1;
+                stats.record_failed();
                 errors.push(error_payload(&target, code));
             }
         }
     }
 
-    let status = account_status(
-        supported_balance_items,
-        resolved_balance_items,
-        failed_balance_items,
-        degraded_quote,
-    );
-
-    ShapedAccount {
-        status,
-        account: account.account.into(),
-        evidence: account.evidence.map(BalanceEvidencePayload::from),
-        positions,
-        skipped,
-        errors,
-        supported_balance_items,
-        resolved_balance_items,
-        failed_balance_items,
+    PresentedAccount {
+        payload: BalanceAccountPayload {
+            status: stats.status(),
+            account: account.account.into(),
+            evidence: account.evidence.map(BalanceEvidencePayload::from),
+            positions,
+            skipped,
+            errors,
+        },
+        stats,
     }
 }
 
@@ -309,31 +329,14 @@ fn contract_address(target: &ResolvedBalanceTarget) -> Option<String> {
     }
 }
 
-fn account_status(
-    supported_balance_items: usize,
-    resolved_balance_items: usize,
-    failed_balance_items: usize,
-    degraded_quote: bool,
-) -> BalanceResponseStatus {
-    if supported_balance_items == 0 {
-        BalanceResponseStatus::Complete
-    } else if resolved_balance_items == 0 {
-        BalanceResponseStatus::Failed
-    } else if failed_balance_items > 0 || degraded_quote {
-        BalanceResponseStatus::Partial
-    } else {
-        BalanceResponseStatus::Complete
-    }
-}
-
-fn aggregate_bulk_status(accounts: &[ShapedAccount]) -> BalanceResponseStatus {
+fn aggregate_bulk_status(accounts: &[PresentedAccount]) -> BalanceResponseStatus {
     let supported_balance_items = accounts
         .iter()
-        .map(|account| account.supported_balance_items)
+        .map(|account| account.stats.supported_balance_items)
         .sum::<usize>();
     let resolved_balance_items = accounts
         .iter()
-        .map(|account| account.resolved_balance_items)
+        .map(|account| account.stats.resolved_balance_items)
         .sum::<usize>();
 
     if supported_balance_items == 0 {
@@ -342,7 +345,7 @@ fn aggregate_bulk_status(accounts: &[ShapedAccount]) -> BalanceResponseStatus {
         BalanceResponseStatus::Failed
     } else if accounts
         .iter()
-        .any(|account| account.status != BalanceResponseStatus::Complete)
+        .any(|account| account.payload.status != BalanceResponseStatus::Complete)
     {
         BalanceResponseStatus::Partial
     } else {

@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use super::error::GetBalancesCommandError;
 use crate::domain::{
     accounts::OnchainAccount, assets::token_selector::TokenSelector, onchain_time::as_of::AsOf,
     validation::is_evm_address,
@@ -8,17 +9,6 @@ use crate::domain::{
 pub(crate) const MAX_ACCOUNTS: usize = 50;
 pub(crate) const MAX_TOKENS: usize = 20;
 pub(crate) const MAX_RESOLUTION_ITEMS: usize = 1_000;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum GetBalancesCommandError {
-    EmptyAccounts,
-    EmptyTokens,
-    RequestTooLarge,
-    UnsupportedQuoteCurrency,
-    InvalidAccount,
-    DuplicateAccount,
-    DuplicateAsset,
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GetBalancesCommand {

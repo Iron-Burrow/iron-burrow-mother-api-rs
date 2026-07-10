@@ -1,5 +1,5 @@
 use crate::{
-    adapters::http::error::ApiError, application::balances::command::GetBalancesCommandError,
+    adapters::http::error::ApiError, application::balances::error::GetBalancesCommandError,
 };
 
 pub(super) fn command_error_to_api_error(error: GetBalancesCommandError) -> ApiError {
