@@ -23,17 +23,21 @@ descriptions, user-facing HTML, public API documentation, or product copy.
 
 ## Summary
 
-Mother API should become the principal Iron Burrow product: one coherent place
-for a public homepage, account access, API credentials, the authenticated Iron
-Burrow Data Lab, and carefully authorized access to Iron Burrow data products.
-It remains a product and policy boundary, not a replacement for Bigwig, the
-Price Indexer, DIS, or the Read Model.
+El Vasco is Iron Burrow's source-aware on-chain Data Lab. Mother API is the
+runtime and policy boundary that delivers this product through multiple
+presentations: homepage and Data Lab pages, structured JSON responses, CLI
+consumers, and future agent-facing transports. It remains a product and policy
+boundary, not a replacement for Bigwig, the Price Indexer, DIS, or the Read
+Model.
 
 The product has two delivery surfaces with intentionally different promises:
 `/v1` is the small, stable, versioned production API for external
-integrations; `/app` is the authenticated Data Lab for people using Iron
-Burrow. Shared application services power both. A capability appearing in the
-Data Lab does not imply a corresponding public JSON endpoint.
+integrations; `/app` is the evolving Data Lab application surface for humans
+and software agents. Shared application services power both. A capability
+appearing in the Data Lab does not imply a corresponding public JSON endpoint.
+
+The primary product entry is `app.ironburrow.com`. The homepage is part of the
+product experience and does not depend on a separate marketing runtime.
 
 The recommended first delivery is a **single Mother API Rust runtime** with
 Askama server-rendered pages added in a later, dedicated SPEC. It shares
@@ -77,12 +81,26 @@ Mother into an unrestricted node gateway.
 
 ## Product vision
 
-Iron Burrow offers humans and agents an understandable front door to curated
-on-chain data. Visitors can learn about the product, evaluate existing basic
-operations with a constrained demo credential, establish an Iron Burrow
-Account, and later receive explicit paid or plan-derived access. Scan and Lab
-are product surfaces over shared application use cases, not independent node
-proxies.
+Iron Burrow offers humans and agents a source-aware Data Lab for understanding
+what happened on-chain, testing hypotheses against historical evidence, and
+iterating on useful analyses. Visitors can evaluate approved capabilities with
+constrained anonymous access, establish an Iron Burrow Account, organize
+Workspace context, and later receive paid or plan-derived access where
+applicable. Scan and Lab are product surfaces over shared application use
+cases, not independent node proxies.
+
+## Primary users
+
+1. Anonymous users exploring tightly limited Data Lab capabilities.
+2. Registered `IBAccount` users with persistent Workspaces and richer
+  functionality.
+3. Iron Burrow developers using the same product capabilities to design and
+  validate new features.
+4. Software agents that require structured, documented, source-aware
+  interfaces.
+
+El Vasco is agent-first and human-usable. Humans and agents use shared
+application capabilities; presentation and transport differ by consumer.
 
 ## Product access and growth principles
 
@@ -100,6 +118,40 @@ support, plan-based access, or billing. Protected private-Beta requests use
 the implemented consumer/key capability and per-key quota controls; Alpha
 public routes remain governed by `CONTRACTS.md`.
 
+## Workspace as product primitive
+
+Workspace is the first-class durable user boundary for Data Lab context and
+analysis. It is not a required ticket/notebook/investigation workflow. An
+`IBAccount` may own multiple Workspaces and explicitly select between them.
+
+A Workspace may progressively contain watch-only addresses and account context,
+labels, balances, transfers, positions, prices, treasury-oriented
+groupings/calculations, historical snapshots, hypotheses, saved analyses,
+reports, experimental capabilities, and append-only activity/evidence logs.
+
+The minimum viable Workspace is intentionally smaller:
+
+1. Workspace identity and account ownership.
+2. Name and optional description.
+3. One or more watch-only address registrations.
+4. Labels.
+5. Created and updated timestamps.
+6. List/select Workspace operations.
+7. Workspace-scoped balance and transfer views.
+8. Append-only Workspace activity log.
+
+## Treasury direction
+
+Treasury functionality is a Workspace capability family, not a separate
+standalone service in the first slice. Initial and future Workspace treasury
+capabilities may include grouped watch-only addresses, balance rollups,
+position snapshots, inflow/outflow analysis, valuation views, and
+evidence-aware reporting.
+
+MVP scope does not require all treasury features at once. Advanced treasury
+analytics remain progressive Data Lab capabilities and may be promoted to
+stable `/v1` only through the explicit promotion policy.
+
 ## Stable API and Data Lab boundary
 
 `/v1` and `/app` are different products of the same Mother application, not
@@ -108,7 +160,11 @@ two versions of one API.
 | Surface | Audience and promise | Delivery rule |
 | --- | --- | --- |
 | `/v1` | External developers and agents integrating against a stable, versioned production contract. | Keep intentionally small. Every addition needs demonstrated maturity, an accepted implementation spec, compatibility tests, OpenAPI coverage when applicable, and a coordinated `CONTRACTS.md` update. |
-| `/app` | Authenticated Iron Burrow Account holders using the Data Lab as a human product experience. | Pages call shared application services directly and evolve under product authorization and focused specs. A Data Lab capability does not automatically create a public JSON route. |
+| `/app` | Humans and software agents using the evolving Data Lab application contract. | HTML pages, structured responses, and other presenters call shared application services and evolve under product authorization and focused specs. A Data Lab capability does not automatically create a public `/v1` JSON route. |
+
+The accepted `/v1` production-beta surface remains operational for the
+remainder of calendar year 2026, subject only to documented compatibility and
+operational policy decisions.
 
 The current private-Beta production API is deliberately limited to
 `POST /v1/balances`, `POST /v1/balances/bulk`, and enabled
@@ -127,6 +183,8 @@ Planned Data Lab route groups include:
 /app/networks/{network_slug}
 /app/prices
 /app/prices/{asset_slug}
+/app/workspaces
+/app/workspaces/{workspace_id}
 /app/lab
 ```
 
@@ -134,16 +192,32 @@ These are route-design targets, not implemented runtime routes or public API
 promises. They require an authenticated account/session, page-specific
 authorization, and focused implementation specs before delivery.
 
-Feature promotion follows this lifecycle:
+Capability maturity follows this lifecycle:
+
+```text
+idea
+  ↓
+lab experiment
+  ↓
+workspace or application capability
+  ↓
+optional pre-production maturity state
+  ↓
+production beta capability
+  ↓
+stable /v1 capability
+```
+
+Feature promotion to `/v1` follows this lifecycle:
 
 ```text
 internal application capability
         ↓
-available in the authenticated Data Lab
+available in /app
         ↓
 validated through real usage
         ↓
-formal production-API specification
+formal production-API specification and compatibility decision
         ↓
 promoted to /v1 only when appropriate
 ```
@@ -151,6 +225,21 @@ promoted to /v1 only when appropriate
 This sequence is intentionally one-way: the existence of an application
 service or Data Lab page never creates an implied external compatibility
 promise.
+
+## Capability promotion policy
+
+Implementation alone is insufficient for `/v1` promotion. Promotion requires an
+explicit RFC, SPEC amendment, or production-readiness decision confirming:
+
+1. Real customer dependency or credible willingness to pay.
+2. Durable customer value.
+3. Stable request/response contract.
+4. Understood source/evidence semantics.
+5. Defined authorization and abuse model.
+6. Known operational cost and infrastructure behavior.
+7. Documentation and examples.
+8. Compatibility maintenance commitment.
+9. Long-term support willingness from Iron Burrow.
 
 ## Internal application functions and UI boundary
 
@@ -236,7 +325,9 @@ read-model operational feed.
 | Term | Meaning |
 | --- | --- |
 | `IBAccount` | Explicit product account identifier and status boundary; not a blockchain address or session. |
+| Workspace | Durable account-owned Data Lab boundary where watch-only context and analyses accumulate. |
 | API key | Bearer credential with an ID, prefix, secret hash, kind, status, and narrower grants. |
+| Client | Account-managed integration identity (for example CLI, agent, script, dashboard, bot) with isolated keys/scopes/audit. |
 | Principal | Authenticated browser-session or API-key subject. |
 | Capability | Application-defined permission such as `balances.read`. |
 | Grant | Capability plus scope/status/expiry granted to an account or key. |
@@ -313,15 +404,35 @@ JSON delivery behavior.
 
 | Surface | Responsibility | Access |
 | --- | --- | --- |
-| Homepage | Explain Iron Burrow, API documentation, Account, demo access, agent access, and Data Lab entry. | Public. |
-| Data Lab assets | `/app/assets` and `/app/assets/{asset_slug}` present asset identity, price composition, and charts through shared services. | Authenticated account and page-specific authorization. |
-| Data Lab networks and prices | `/app/networks`, `/app/networks/{network_slug}`, `/app/prices`, and `/app/prices/{asset_slug}` host validated product views and experiments. | Authenticated account and page-specific authorization. |
-| Account UI | `/app` account/session, verified identity, key management, entitlement, and usage views. | Browser session and application authorization. |
+| Homepage | Product entry at `app.ironburrow.com` with Data Lab entry, account entry, anonymous path, and docs links. | Public. |
+| Data Lab assets | `/app/assets` and `/app/assets/{asset_slug}` present asset identity, price composition, and charts through shared services. | Account or explicitly authorized client/agent context, plus page-specific authorization. |
+| Data Lab networks and prices | `/app/networks`, `/app/networks/{network_slug}`, `/app/prices`, and `/app/prices/{asset_slug}` host validated product views and experiments. | Account or explicitly authorized client/agent context, plus page-specific authorization. |
+| Workspaces | `/app/workspaces/*` manages durable Workspace context, watch-only membership, labels, and scoped activity. | Account-owned authorization, with optional delegated client access. |
+| Account and Client management | `/app` account/session, verified identity, key management, client registry, entitlement, and usage views. | Application authorization over browser or structured presenters. |
 | Data Lab | `/app/lab` hosts advanced, explicitly granted research, diagnostics, and datasets. | Capability and quota controlled. |
 | Machine API | `/v1` exposes only stable documented JSON operations. | API key and capability controlled. |
 
-Data Lab pages and the machine API are separate delivery surfaces over shared
-use cases, not separate applications in the initial deployment.
+Data Lab presenters and the machine API are separate delivery surfaces over
+shared use cases, not separate applications in the initial deployment.
+
+## Shared application capability model
+
+Business logic lives in Mother domain and application services. Presentation
+layers render those outcomes for different consumers.
+
+```text
+Domain and application services
+  ↓
+Presentation-independent results
+  ↓
+JSON/API presenter
+Askama/HTML presenter
+CLI presenter
+Future agent/MCP presenter
+```
+
+Route handlers and templates must not bypass application boundaries and query
+infrastructure adapters directly.
 
 ## Identity and IBAccount model
 
@@ -358,6 +469,11 @@ sequenceDiagram
 revocation timestamps, last-used metadata, and key-level grants. Raw secrets
 are shown once only. SHA-256 remains acceptable only for generated
 high-entropy keys; passwords use a different future mechanism.
+
+Future ownership variants are modeled explicitly: an API key may be owned by
+an `IBAccount`, by a `Client`, by an organization principal, or by no owner
+for explicitly anonymous access. A key must not simultaneously belong to
+unrelated principals.
 
 Account grants are the upper boundary. Key grants are evaluated dynamically,
 not copied as a replacement for the account boundary. A new key can be
@@ -444,7 +560,7 @@ explicit audited action, and never silently broadens it.
 
 ## Verified-account flow
 
-SPEC-015 defines email verification, a minimal recovery mechanism, sessions,
+SPEC-016 defines email verification, a minimal recovery mechanism, sessions,
 and active/suspended/closed rules. Account creation must have generic public
 responses to prevent email enumeration. Key issuance and browser actions use
 the same authorization service; browser possession does not bypass account
@@ -509,6 +625,23 @@ views, internal query-layer calls, and a future promoted public price API are
 distinct policies. No Data Lab price capability is a `/v1` endpoint unless it
 passes the promotion lifecycle above.
 
+## Source-awareness requirements
+
+Reliable data means source-aware data, not only numerically plausible values.
+Where relevant, application and presenter outputs should preserve or expose:
+
+1. Canonical `network_slug`.
+2. Upstream source identity.
+3. Block number.
+4. Block hash when available.
+5. Block timestamp.
+6. Request resolution time.
+7. Requested historical point and resolved historical point.
+8. Price source and price timestamp for valuation outputs.
+9. Data-completeness indicators and partial-failure reporting.
+10. Confidence or quality indicators when formally defined by the owning
+  service.
+
 ## Basic and custom RPC
 
 `rpc.basic` is a reviewed method profile with request/response/batch size
@@ -560,6 +693,17 @@ documentation, and product usage records. Bigwig owns private connectivity,
 Hub-to-edge routing, node adapters, node-close allowlists, infrastructure
 timeouts/limits, and supported-node discovery. Both layers deny independently.
 
+Mother is the product/business control plane and answers:
+
+> Should this caller be allowed to perform this Iron Burrow product action?
+
+Bigwig is the infrastructure safety plane and answers:
+
+> Can the underlying infrastructure safely execute this operation?
+
+Mother may impose stricter business/customer limits. Bigwig may independently
+impose stricter infrastructure safety limits.
+
 ## Proposed persistence model
 
 Immediate migration `0009` adds only the `capability`,
@@ -594,11 +738,12 @@ public machine contract only if it is separately promoted to `/v1` and added to
 
 | Route group | Proposed purpose |
 | --- | --- |
-| `/` | Homepage for `www.ironburrow.com`. |
+| `/` | Homepage delivered on `app.ironburrow.com` as product entry. |
 | `/docs` | Human API documentation plus link/download for OpenAPI. |
 | `/get-api-key` | Demo onboarding; never a privilege escalation endpoint. |
 | `/login`, `/verify-email` | Minimal verified-account flow. |
 | `/app` | Authenticated Data Lab home and account entry. |
+| `/app/workspaces`, `/app/workspaces/{workspace_id}` | Workspace creation, selection, membership management, scoped activity/evidence log. |
 | `/app/assets`, `/app/assets/{asset_slug}` | Asset pages over shared Mother asset services. |
 | `/app/networks`, `/app/networks/{network_slug}` | Network statistics and research views. |
 | `/app/prices`, `/app/prices/{asset_slug}` | Curated price views and trends. |
@@ -670,169 +815,105 @@ same `401`; a valid but deliberately narrowed future key receives stable `403`.
 
 ## SPECS required
 
-| SPEC | Purpose / key non-goal | Dependencies | Phase |
-| --- | --- | --- | --- |
-| SPEC-013 Capability authorization | Grants, scopes, decisions, legacy mapping. Not account UI or advanced operations. | RFC-003 | 1 |
-| SPEC-014 Web application and homepage | Askama, static assets, homepage/docs/session plumbing. Not account identity or demo issuance. | SPEC-013 | 2 |
-| SPEC-015 IBAccount and verified identity | IBAccount lifecycle, email verification, sessions, recovery. Not general identity federation. | 013, 014 | 3 |
-| SPEC-016 API-key lifecycle and classes | Account/demo/agent key lifecycle and upgrade path. Not payment settlement. | 013, 015 | 3 |
-| SPEC-017 Quotas, limits, and usage | Account/capability/method quotas and audit usage. Not billing UI. | 013, 016 | 3 |
-| SPEC-018 Anonymous and agent onboarding | Demo issuance, abuse controls, agent instructions. Not advanced node access. | 014, 016, 017 | 2/3 |
-| SPEC-019 402, MPP, payment entitlements | Challenge/provider/receipt/entitlement flow. Not a root credential or vendor lock-in. | 015–018 | 5 |
-| SPEC-020 Mother Scan | Network-scoped Scan routes and Askama views. Not raw RPC. | 014, 017 | 4 |
-| SPEC-021 Price API/query layer | Curated current/history/private query capability. Not direct Price Indexer DB access. | 013, 017 | 5 |
-| SPEC-022 Curated basic RPC gateway | Reviewed method profile and Bigwig contract. Not arbitrary RPC. | 013, 017 | 6 |
-| SPEC-023 Custom RPC grants | Explicit elevated per-method access. Not before basic RPC proves safe. | 022 | 6+ |
-| SPEC-024 Otterscan capability | Approved `ots_*`, probing, Bigwig path/policy. Not a raw Erigon tunnel. | 013, 017 | 6 |
-| SPEC-025 Bitcoin Core capability | Curated read-only calls. Not wallet/admin RPC. | 013, 017 | future RFC gate |
-| SPEC-026 Lightning capability | Curated read-only information. Not payment/admin operations. | 013, 017 | future RFC gate |
-| SPEC-027 Attached addresses | Watch-only labels, verification states, privacy. Not custody claims. | 015, 020 | 4+ |
-| SPEC-028 Public API documentation | OpenAPI/human docs/errors/compatibility. Not undocumented product expansion. | each public SPEC | continuous |
-| SPEC-029 Migration, rollout, legacy compatibility | IBAccount key migration, flags, monitoring, rollback. Not data deletion. | 013, 015–017 | 3 |
-| SPEC-030 Data Lab assets and prices | Authenticated `/app` asset and price pages using shared Mother services, including truthful optional-enrichment presentation. Not a new public JSON API, local price calculation, or read-model feed. | SPEC-002, 014–017 | 4 |
+The implementation map is intentionally split into:
 
-Each SPEC must state purpose, scope, non-goals, dependencies, security
-relevance, domain/database changes, public interfaces, acceptance criteria,
-and implementation phase before acceptance.
+1. Existing active/accepted specs already present in `docs/specs`.
+2. New draft specs required for the first end-to-end Data Lab slice.
+3. Deferred roadmap specs that are intentionally out of the first slice.
 
-### Delivery cards for deferred SPECS
+### Existing active/accepted baseline specs
 
-These concise cards are the required SPEC index, not implementation approval.
+| SPEC | Current role for El Vasco |
+| --- | --- |
+| SPEC-010 | Private-Beta API-key access-service foundation. |
+| SPEC-011 | Private-Beta route-surface consolidation for `/v1` operations. |
+| SPEC-012 | Balance endpoint v0.3 contract and historical-support semantics. |
+| SPEC-013 | Capability-authorization intersection foundation. |
+| SPEC-014 | Web/homepage runtime shell in the existing Mother deployment. |
+| SPEC-002 / SPEC-003 / SPEC-007 | Source-aware asset/price/transfer capability boundaries reused by Data Lab experiences. |
 
-| SPEC | Purpose and scope | Security / domain and database change | Public interface and acceptance |
-| --- | --- | --- | --- |
-| 015 | Verified IBAccount identity: lifecycle, email verification, recovery, sessions; no federation. Depends on 013/014; phase 3. | Adds `IBAccount`, identity, verification, and hashed-session models/tables; prevents enumeration, fixation, and CSRF. | Account/login/verification HTML only after contract review; activation, expiry, generic failures, and session rotation are tested. |
-| 016 | Account, anonymous-demo, and agent key lifecycle; no settlement. Depends on 013/015; phase 3. | Adds `ApiKeyKind`, IBAccount FK, rotation/revocation/display-once/upgrade fields; prevents secret leakage and key elevation. | Key-management UI/internal issuance APIs only; lifecycle, migration, and narrow-grant tests pass. |
-| 017 | Per-key/account/capability/method quotas, concurrency, usage/audit; no billing UI. Depends on 013/016; phase 3. | Adds policy/usage event model and atomic counters; prevents quota bypass/races. | No broad route promise; limit/expiry/concurrency/usage tests and metrics pass. |
-| 018 | Demo and agent onboarding, strict issuance controls, expiry and upgrade; no advanced access. Depends on 014/016/017; phase 2/3. | Adds anonymous principal/key metadata and abuse audit; prevents farming and account escalation. | A reviewed demo route/UI may issue only baseline scoped grants; display-once, revocation, abuse, and denial tests pass. |
-| 019 | 402/MPP/provider challenge, receipt verification, entitlement creation; no payment-root credential. Depends on 015–018; phase 5. | Adds challenge/receipt/entitlement tables and provider abstraction; prevents replay, forged receipt, and duplicate settlement. | Documented 402 challenge only after adapter acceptance; idempotency, confirmation, reversal, and expiry tests pass. |
-| 020 | Network-scoped Data Lab Scan views for transaction, evidence, balances, and transfers; no raw RPC. Depends on 014/017; phase 4. | Reuses authorization and adds Scan policy/view models; protects address privacy and Bigwig load. | `/app/scan/{network_slug}` only after browser authorization, confirmation, and upstream-denial tests pass; any machine API promotion is separate. |
-| 021 | Curated current/history price API and private query capability; no DB query endpoint. Depends on 013/017; phase 5. | Adds price query policy/limits and optional entitlement source; protects Price Indexer ownership and cost. | New documented endpoints only with parameter/limit/capability tests and read-only adapter contract. |
-| 022 | Curated basic RPC profile, validation, Bigwig policy contract; no arbitrary methods. Depends on 013/017; phase 6. | Adds approved method/group scope and request budgets; protects batches, oversized responses, and node resources. | Task-oriented or constrained RPC interface decided in spec; method, network, timeout, and Bigwig-denial tests pass. |
-| 023 | Elevated custom RPC per-method grants; no implementation before 022 is proven. Depends on 022; phase 6+. | Adds explicit approval/audit policy and stronger quotas; protects arbitrary method escalation. | No public interface until allowlist/approval and infrastructure tests are accepted. |
-| 024 | Approved Otterscan capability and Erigon compatibility discovery; no raw tunnel. Depends on 013/017; phase 6. | Adds `ots_*` method policy/discovery metadata; protects anonymous access and unsupported versions. | Exposes only approved task/constrained operations; API-level, policy, and Hub/edge rejection tests pass. |
-| 025 | Curated read-only Bitcoin Core information via Bigwig; no wallet/admin RPC. Deferred until a dedicated Bitcoin product-scope RFC is accepted. | Adds Bitcoin resource/network scope; explicitly blocks wallet/admin methods. | Documented reads only after allowlist, edge-protection tests, and RFC-gated activation pass. |
-| 026 | Curated read-only Lightning information; no payment execution/admin operations. Deferred until a dedicated Lightning product-scope RFC is accepted. | Adds read-only Lightning scope and edge adapter policy; blocks invoice/payment secrets and execution. | Documented node/channel/status reads only after policy tests and RFC-gated activation pass. |
-| 027 | Private attached EVM/Bitcoin watch-only addresses, labels, verification states; no custody claim. Depends on 015/020; phase 4+. | Adds association/verification/privacy-retention tables; protects cross-account access and ownership misrepresentation. | Account UI/Scan saved views only; label/privacy/deletion and verified-control tests pass. |
-| 028 | Public OpenAPI/human documentation, errors, auth/payment examples and compatibility checks; no undocumented endpoint. Depends on each public feature; continuous. | Adds no authority model; prevents codename leaks, secret examples, and contract drift. | Every public change has generated-document, example, and compatibility coverage. |
-| 029 | Legacy-key/IBAccount migration, flags, staged rollout, observability and rollback; no destructive data cleanup. Depends on 013/015–017; phase 3. | Adds mapping/audit fields and migration jobs; prevents accidental broadening or orphaned keys. | Existing keys preserve behavior; dry run, backfill, rollback, and production monitoring criteria pass. |
-| 030 | Authenticated Data Lab asset and price pages under `/app`, built from shared Mother services; no new public JSON API or local price calculation. Depends on 002/014–017; phase 4. | Reuses the accepted asset composition and preserves Price Indexer ownership; truthful partial-enrichment presentation prevents unavailable data from appearing complete. | Page authorization, loading/degradation UX, observability, and rollout are accepted before delivery; a `/v1` promotion requires a separate public-API spec. |
+### New or amended near-term specs
+
+| SPEC | Type | Purpose |
+| --- | --- | --- |
+| SPEC-015 | New draft | Workspace foundation and scoped analysis boundary. |
+| SPEC-016 | Planned draft | `IBAccount` verified identity and account entry/session lifecycle. |
+| SPEC-017 | Planned draft | API-key ownership expansion (`IBAccount`, anonymous, future client/org compatibility invariants). |
+| SPEC-018 | Planned draft | Quotas, allowances, and usage accounting model beyond current Beta defaults. |
+| SPEC-019 | Planned draft | Client registry and delegated key/access model. |
+| SPEC-020 | Planned draft | Workspace-scoped balance and transfer application views under `/app`. |
+| SPEC-021 | Planned draft | Workspace activity/evidence log and source-aware presentation policy. |
+
+### Deferred roadmap specs (not required for first slice)
+
+| Area | Deferred scope |
+| --- | --- |
+| Payment/402 | Entitlements and settlement integration. |
+| Advanced RPC/Otterscan | Additional capability families behind dedicated safety specs. |
+| Bitcoin/Lightning | Out of active implementation plan without a dedicated accepted RFC. |
+
+Each new draft spec must include purpose, scope, non-goals, dependencies,
+security relevance, domain/database changes, public interfaces, acceptance
+criteria, and implementation phase before acceptance.
 
 ## Phased implementation plan
 
 | Phase | Deliverable and dependency-aware exit |
 | --- | --- |
-| 0 | This RFC, SPEC plan, verified baseline, characterization tests, runtime decision. |
-| 1 | SPEC-013: legacy capability registry/grants/route mapping; no new node features. |
-| 2 | SPEC-014: homepage/docs plumbing; demo issuance only after key lifecycle/quota security design is accepted. |
-| 3 | SPEC-015, 016, 017, 029: verified IBAccounts, managed keys, quotas, migration. |
-| 4 | SPEC-020, 027, and 030: narrow Data Lab Scan, private address views, and authenticated asset/price pages using shared capabilities. |
-| 5 | SPEC-021 and 019: curated price access and one verified payment adapter. |
-| 6 | SPEC-022 and 024; SPEC-023 last only after basic RPC proves safe in production. |
-
-## Implementation plan addendum (2026-07-30)
-
-This addendum refines execution order without changing current public
-contracts. The production `/v1` boundary remains intentionally small and
-stable while the product experience is delivered under `/`, `/docs`,
-`/get-api-key`, and `/app/*` through focused SPECS.
-
-### Runtime strategy review
-
-| Option | Advantages | Tradeoffs | Decision |
-| --- | --- | --- | --- |
-| Single Axum runtime | Fastest iteration, shared authz and application services, lowest ops complexity. | Requires strong internal boundaries to avoid module sprawl. | **Continue as primary delivery model.** |
-| Multiple application runtimes in one repo | Independent deploy cadence and fault domains. | Duplicated session/auth concerns, cross-runtime contracts, and operational overhead too early. | Defer. |
-| Future extraction into separate services | Enables targeted scale/isolation when justified. | Premature extraction slows product delivery and hardens unstable boundaries too soon. | Plan seams now; extract only with explicit triggers. |
-
-Extraction triggers that require a separate RFC or ADR:
-
-1. Sustained scale asymmetry where one surface dominates capacity and cannot
-  be solved by in-process optimization.
-2. Fault-isolation requirements where incidents on one surface repeatedly
-  impact unrelated product capabilities.
-3. Deployment-cadence divergence where one surface needs materially different
-  release frequency or rollback policy.
-4. Compliance or data-boundary requirements that cannot be met safely in one
-  runtime.
+| 0 | This RFC update, gap reconciliation, and baseline spec map. |
+| 1 | Preserve current `/v1` contract operation with SPEC-010/011/012/013 controls. |
+| 2 | Product entry shell at `app.ironburrow.com` and Data Lab runtime seam via amended SPEC-014. |
+| 3 | Account entry and caller classification (`IBAccount` and anonymous) via SPEC-016/017. |
+| 4 | Workspace MVP (SPEC-015) plus Workspace-scoped balances and transfers (SPEC-020). |
+| 5 | Workspace source/evidence activity log and agent-facing structured equivalent (SPEC-021). |
+| 6 | Treasury and historical analysis capabilities evolve incrementally after the vertical slice is operational. |
 
 ### SPEC dependency graph
 
 ```mermaid
 flowchart TD
+  S010[SPEC-010 Beta API-key access]
+  S011[SPEC-011 Beta surface]
+  S012[SPEC-012 Balances v0.3]
   S013[SPEC-013 Capability authorization]
-  S014[SPEC-014 Homepage and docs]
-  S015[SPEC-015 IBAccount and identity]
-  S016[SPEC-016 API-key lifecycle]
-  S017[SPEC-017 Quotas and usage]
-  S018[SPEC-018 Anonymous and agent onboarding]
-  S019[SPEC-019 402 payment entitlements]
-  S020[SPEC-020 Scan MVP]
-  S021[SPEC-021 Curated price access]
-  S022[SPEC-022 Basic RPC]
-  S023[SPEC-023 Custom RPC]
-  S024[SPEC-024 Otterscan]
-  S027[SPEC-027 Attached addresses]
-  S029[SPEC-029 Migration and rollout]
-  S030[SPEC-030 Data Lab assets/prices]
-  S025[SPEC-025 Bitcoin Core - deferred]
-  S026[SPEC-026 Lightning - deferred]
+  S014[SPEC-014 Web and homepage shell]
+  S015[SPEC-015 Workspace foundation]
+  S016[SPEC-016 IBAccount entry and session]
+  S017[SPEC-017 Key ownership expansion]
+  S018[SPEC-018 Quotas and usage]
+  S019[SPEC-019 Client registry]
+  S020[SPEC-020 Workspace balances and transfers]
+  S021[SPEC-021 Workspace activity and evidence]
 
-  S013 --> S014
-  S013 --> S015
+  S010 --> S013
+  S011 --> S013
+  S012 --> S020
+  S013 --> S016
+  S013 --> S017
+  S013 --> S018
   S014 --> S015
-  S015 --> S016
+  S014 --> S016
+  S015 --> S020
   S016 --> S017
-  S014 --> S018
-  S016 --> S018
   S017 --> S018
-  S015 --> S019
-  S016 --> S019
-  S017 --> S019
   S018 --> S019
-  S014 --> S020
-  S017 --> S020
-  S015 --> S027
-  S020 --> S027
-  S013 --> S021
-  S017 --> S021
-  S013 --> S022
-  S017 --> S022
-  S022 --> S023
-  S013 --> S024
-  S017 --> S024
-  S014 --> S030
-  S015 --> S030
-  S016 --> S030
-  S017 --> S030
-  S013 --> S029
-  S015 --> S029
-  S016 --> S029
-  S017 --> S029
+  S018 --> S020
+  S020 --> S021
 ```
 
 ### Recommended implementation order
 
-1. Phase 1 foundation: SPEC-013.
-2. Phase 2 product shell: SPEC-014, then SPEC-018 once key lifecycle and quota
-  controls are ready.
-3. Phase 3 identity and controls: SPEC-015, SPEC-016, SPEC-017, SPEC-029.
-4. Phase 4 authenticated product experience: SPEC-020 and SPEC-030, then
-  SPEC-027.
-5. Phase 5 monetization and advanced data policy: SPEC-021 and SPEC-019.
-6. Phase 6 advanced node capabilities: SPEC-022, then SPEC-024, then SPEC-023
-  only after production evidence confirms safe basic RPC operations.
-7. Deferred track: SPEC-025 and SPEC-026 remain future work behind dedicated
-  RFC decisions.
-
-### Open questions requiring new RFCs
-
-1. Promotion policy from `/app` capability to `/v1` contract: objective entry
-  and rollback criteria.
-2. Bitcoin product scope and risk model before activating SPEC-025.
-3. Lightning product scope and risk model before activating SPEC-026.
-4. Runtime extraction policy thresholds and ownership split when single-runtime
-  triggers are met.
+1. Product homepage and Data Lab entry (`app.ironburrow.com`) with clear
+   anonymous or account path.
+2. Caller resolution model (anonymous vs registered).
+3. Account creation or account entry.
+4. Workspace creation, listing, and selection.
+5. Watch-only address registration.
+6. Workspace-scoped balance view.
+7. Workspace-scoped transfer view.
+8. Source/evidence display in Workspace context.
+9. Agent-facing structured equivalent over shared application capabilities.
+10. Treasury and broader historical capabilities incrementally afterward.
 
 ## Acceptance criteria
 
@@ -866,34 +947,20 @@ flowchart TD
 
 | Question | Recommended default |
 | --- | --- |
-| Homepage runtime | Existing binary first. |
-| Anonymous identity | No IBAccount; anonymous principal/key class. |
-| Public account name | “Iron Burrow Account”; domain type `IBAccount`. |
-| Account grants | Persist grants with plan/entitlement source; derive effective grants dynamically. |
-| Key grants | Dynamic intersection with account grants. |
-| Legacy migration | Explicit additive baseline grants, then later mapped IBAccounts. |
-| Demo baseline | Existing balances and transfers only after SPEC-018 validates network/abuse limits. |
-| Scan auth | Operation-specific: browser sessions and keys; no global bypass. |
-| Scan quota | Shared product accounting with separately configured operation costs. |
-| Capability naming | Stable domain identifiers, mapped from routes/operations. |
-| RPC allowlists | Both Mother product profile and Bigwig node-close policy. |
-| RPC delivery | Prefer task-oriented endpoints; constrained RPC only when compatibility requires it. |
-| Network/method composition | Both must match; neither implies the other. |
-| Paid entitlement renewal | Explicit expiry and provider-verified renewal, never receipt replay. |
-| Agent paid key | Extend an existing scoped key when authorized; otherwise issue a separate agent key. |
-| Minimum email verification | One hashed, short-lived, one-time link plus generic responses and session rotation. |
-| Private address data | Associations/labels/verification evidence; public chain facts are not private. |
-| Billing/security usage | Record minimal operation/outcome/cost metadata; separate retention policy. |
-| First premium Otterscan | Decide only in SPEC-024 after Bigwig capability discovery. |
-| Strictly internal Mother/Bigwig | Service credentials, edge topology, raw node diagnostics, and node administration. |
+| Client vs organization key precedence when both exist | Reserve architecture now; finalize conflict-resolution semantics in a dedicated authorization RFC before implementation. |
+| Cross-Workspace collaboration model | Keep first release single-account ownership; decide organization-shared Workspace semantics in a future RFC. |
+| Promotion governance body for `/app` to `/v1` decisions | Require explicit readiness review; assign owner/process in a lightweight governance RFC note. |
+| Runtime extraction trigger thresholds | Keep one deployable runtime now; finalize concrete trigger metrics in an ADR when scale pressure appears. |
 
 ## Recommended decisions
 
 Adopt the single-runtime Askama direction; make `IBAccount` the explicit
 future owner boundary; keep anonymous demos accountless and severely scoped;
-deliver human product capabilities through authenticated `/app` Data Lab
-pages before considering them for `/v1`; enforce dynamic account/owner ∩ key
-grants; treat payments as verified entitlement inputs; and defer every advanced
-node capability behind a focused SPEC and Bigwig defense-in-depth contract.
-The first slice already establishes the compatibility-safe authorization
-substrate for these decisions.
+ship the first product entry at `app.ironburrow.com`; establish Workspace as
+the durable Data Lab primitive; standardize `Client` as the integration term;
+deliver `/app` capabilities for humans and agents before considering `/v1`
+promotion; enforce dynamic account/owner ∩ key grants; treat payments as
+verified entitlement inputs; and defer advanced node capability families behind
+focused specs and Bigwig defense-in-depth boundaries. The first slice already
+establishes the compatibility-safe authorization substrate for these
+decisions.

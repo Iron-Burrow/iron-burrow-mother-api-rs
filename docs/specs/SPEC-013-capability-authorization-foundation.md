@@ -52,8 +52,21 @@ calls an upstream service. Logs include only non-secret identifiers/prefixes.
 - `NetworkScope`: `*` or canonical `network_slug`.
 - `CapabilityGrant`, `AuthorizationRequest`, `AuthorizationContext`, and
   `AuthorizationDecision`.
-- The current owner is explicitly a compatibility owner; SPEC-015/029 replace
-  it with `IBAccount` without permitting a broader key.
+- The current owner is explicitly a compatibility owner; planned account/key
+  model specs replace it with `IBAccount` without permitting a broader key.
+
+## Forward-compatible ownership notes
+
+This foundation intentionally does not implement `IBAccount`, anonymous keys,
+or `Client` ownership. It must, however, remain compatible with later models:
+
+1. Anonymous access where `owner = NULL` and capability scope remains explicitly
+   constrained.
+2. `IBAccount`-owned keys as the normal product path.
+3. Future `Client`-owned or organization-owned keys with unambiguous ownership
+   invariants.
+
+No future ownership model may allow a key to exceed its owner boundary.
 
 ## Database changes
 

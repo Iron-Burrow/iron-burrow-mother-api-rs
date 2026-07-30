@@ -9,8 +9,9 @@ agent_edit_policy: update_when_relevant
 
 ## Purpose
 
-Add the first repository-owned public web surface for `www.ironburrow.com`
-without creating a second service or duplicating Mother API application logic.
+Add the first repository-owned public web surface for
+`app.ironburrow.com` without creating a second service or duplicating Mother
+API application logic.
 
 ## Scope
 
@@ -19,12 +20,15 @@ without creating a second service or duplicating Mother API application logic.
 - Add bounded static asset delivery and deployment/Caddy configuration for the
   public host.
 - Render links to public API documentation, Account entry points, demo-key
-  onboarding, Scan, and Lab as those routes become available.
+  onboarding, Workspace entry, Scan, and Lab as those routes become available.
 - Add a public human-documentation route that links to the generated OpenAPI
   document, current authentication instructions, network support, errors, and
   examples.
 - Establish HTML response headers, template conventions, and a session
   middleware seam; do not implement authenticated account behavior yet.
+- Keep `/app` as an evolving application surface: Askama pages are first
+  presenters, while structured agent-facing presenters use the same application
+  services and authorization boundaries.
 
 ## Non-goals
 
@@ -37,22 +41,23 @@ without creating a second service or duplicating Mother API application logic.
 
 - RFC-003 and SPEC-013 for the authorization boundary.
 - Existing Axum router and deployment topology.
-- SPEC-028 is required before any new public machine API documentation is
-  promised; this SPEC may link to existing documentation only.
+- A dedicated documentation spec is required before any new public machine API
+  documentation promise beyond current contracts; this SPEC may link to
+  existing documentation only.
 
 ## Security relevance
 
 Askama templates must use normal escaping and no unreviewed raw HTML. Public
 pages set a reviewed CSP and safe content type; static asset paths are bounded;
 no API key or session secret is embedded in HTML, browser storage, logs, or
-analytics. Future state-changing forms require SPEC-015 session/CSRF policy.
+analytics. Future state-changing forms require SPEC-016 session/CSRF policy.
 
 ## Expected domain and database changes
 
 None required for the initial homepage. The router may gain delivery-only view
 models; templates must not import persistence adapters or make authorization
 decisions. A session middleware interface may be added without a session table
-until SPEC-015 is accepted.
+until SPEC-016 is accepted.
 
 ## Expected public interfaces
 
@@ -76,4 +81,4 @@ SPEC without an accepted dependent SPEC and matching `CONTRACTS.md` update.
 ## Suggested implementation phase
 
 Phase 2, after SPEC-013. Anonymous-key UI is explicitly deferred to SPEC-018;
-verified Account UI is deferred to SPEC-015/016.
+verified Account UI is deferred to SPEC-016.
