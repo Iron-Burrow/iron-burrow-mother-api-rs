@@ -7,7 +7,7 @@ agent_edit_policy: update_when_relevant
 
 # SPEC-009 - Mother API Database State Lifecycle
 
-Draft implementation specification for separating Mother API schema migrations
+Accepted implementation specification for separating Mother API schema migrations
 from required reference data.
 
 This specification defines the database lifecycle Mother API should use going
