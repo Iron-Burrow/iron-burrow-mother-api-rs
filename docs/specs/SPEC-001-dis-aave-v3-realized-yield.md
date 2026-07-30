@@ -73,6 +73,7 @@ yield, protocol positions, public portfolio routes, or a general
 protocol-intelligence API. It also does not define a production DIS dependency,
 an internal DIS contract, or a public wrapper for any DIS response.
 
-`SPEC-005` remains a draft, future Aave portfolio proposal. Its dependency on
-this boundary does not establish that either its portfolio endpoint or an Aave
-DIS client exists.
+Archived [SPEC-005](../archive/SPEC-005-aave-v3-portfolio-estimate.md)
+preserves the unimplemented ETH Mexico hackathon portfolio proposal. Its former
+dependency on this boundary did not establish that either its portfolio endpoint
+or an Aave DIS client exists.
