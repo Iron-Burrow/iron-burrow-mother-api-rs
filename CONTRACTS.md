@@ -272,6 +272,10 @@ Fields:
 `ok` is `false` when `checks.database` is `"unreachable"`. `"skipped"` is
 treated as healthy because the database is optional.
 
+The DIS check reflects dormant local configuration/client availability only. It
+does not indicate a live DIS probe, a production dependency, or an active
+DIS-backed Mother API capability.
+
 ---
 
 ### `GET /v1/assets`
@@ -2130,11 +2134,11 @@ not be assumed to exist or behave consistently if encountered:
   `iron-burrow-read-model` requires an accepted proposal, implementation,
   and CONTRACTS.md revision before it becomes part of this surface.
 - Aave V3 realized yield or any other DeFi-protocol-specific endpoint.
-  Mother API consumes
-  [`iron-burrow-defi-intelligence-service`](docs/specs/SPEC-001-dis-aave-v3-realized-yield.md)
-  internally for protocol intelligence; a public wrapper requires a
-  separate accepted spec and a CONTRACTS.md revision before it becomes
-  part of this surface.
+  Mother API currently has no DIS-backed protocol-intelligence capability.
+  [`SPEC-001`](docs/specs/SPEC-001-dis-aave-v3-realized-yield.md) retains a
+  dormant architectural boundary only; a future public wrapper requires an
+  accepted scope, implementation, and a CONTRACTS.md revision before it
+  becomes part of this surface.
 - Direct exposure of internal DIS or read-model service shapes. Price
   signal endpoints preserve price-indexer signal payload fields inside
   Mother API envelopes; other public responses are owned by this contract,

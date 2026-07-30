@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-06-01
+last_reviewed: 2026-07-30
 agent_edit_policy: update_when_relevant
 ---
 
@@ -123,8 +123,7 @@ The [README.md](README.md) endpoint section should stay brief and
 navigational. `CONTRACTS.md` is the authoritative reference for implemented
 Mother API endpoint promises.
 
-The first Mother API spec under [docs/specs/](docs/specs/) is
-`SPEC-001-dis-aave-v3-realized-yield.md`, which describes how Mother API
-will consume the DIS Aave V3 realized yield internal endpoint. It does not
-relieve the need for `CONTRACTS.md` covering Mother API's own public
-surface.
+`SPEC-001-dis-aave-v3-realized-yield.md` records the currently valid but
+dormant DIS protocol-intelligence boundary. It defines no implemented DIS
+endpoint or Mother API public surface, and it does not relieve the need for
+`CONTRACTS.md` covering Mother API's own public surface.

@@ -1,7 +1,7 @@
 ---
 status: draft
 owner: iron-burrow
-last_reviewed: 2026-06-25
+last_reviewed: 2026-07-30
 agent_edit_policy: update_when_relevant
 external_contract: iron-burrow-defi-intelligence-service/CONTRACTS.md@2026-06-01
 ---
@@ -27,17 +27,15 @@ POST /v1/portfolio/aave-v3/estimate
 
 ## Dependencies
 
-This spec composes two existing internal capabilities. It does not redefine or
-reimplement either of them.
+This draft describes a possible composition of future internal capabilities.
+It does not redefine or reimplement either of them.
 
-- **DIS Aave V3 realized yield** — Mother API consumes the internal DIS client
-  defined by
-  [SPEC-001](SPEC-001-dis-aave-v3-realized-yield.md). That client owns the DIS
-  request shape, response parsing, error mapping, retry, and decimal policy for
-  `POST /internal/v1/aave/v3/yield/realized`. SPEC-001 is a **prerequisite**:
-  this endpoint cannot ship until the SPEC-001 Aave realized-yield client
-  exists. SPEC-005 only constructs the resolved block range and consumes
-  `realized_yield`.
+- **Potential DIS Aave V3 realized-yield integration** —
+  [SPEC-001](SPEC-001-dis-aave-v3-realized-yield.md) preserves the service
+  boundary but defines no implemented Aave client, internal DIS contract, or
+  `realized_yield` capability. This draft cannot ship until a future accepted
+  scope defines and implements that integration, including its contract,
+  failure behavior, tests, and operational expectations.
 - **Price Indexer point-in-time price (`/prices/at`)** — Mother API also
   depends on the existing internal Price Indexer point-in-time price capability
   documented by the Price Indexer contract

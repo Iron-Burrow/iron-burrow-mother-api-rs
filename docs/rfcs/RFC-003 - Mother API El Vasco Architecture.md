@@ -50,7 +50,7 @@ and tests on 2026-07-30:
 | Enforcement | Beta middleware authenticates a bearer key, requires active consumer/key and unexpired key, then applies in-memory per-minute and Postgres daily per-key limits. |
 | Infrastructure | Balances and transfer extraction call fixed authenticated Bigwig internal endpoints. Mother has no generic RPC, Otterscan, Bitcoin, Lightning, or payment adapter. |
 | OpenAPI | Utoipa generates the current JSON API document. |
-| Data boundaries | Mother owns catalog data; Price Indexer is read-only for prices; DIS is read-only for DeFi intelligence. |
+| Data boundaries | Mother owns catalog data; Price Indexer is read-only for prices; DIS remains a dormant read-only DeFi-intelligence boundary and is not called by current Mother API production behavior. |
 
 The first slice adds `mother_api.capability`, compatibility owner grants, and
 key grants. Required capability declarations and compatibility-grant
@@ -177,8 +177,11 @@ flowchart LR
   Mother -->|fixed balance / transfer calls| Bigwig[Bigwig Hub]
   Bigwig --> Edge[Private edge / node adapters]
   Mother -->|read-only prices| PriceIndexer[Price Indexer]
-  Mother -->|read-only DeFi intelligence| DIS[DIS]
 ```
+
+DIS is intentionally absent from the current-runtime diagram: no current
+Mother API capability calls it. `SPEC-001` retains DIS as a possible future
+read-only protocol-intelligence boundary.
 
 ## Proposed architecture
 
