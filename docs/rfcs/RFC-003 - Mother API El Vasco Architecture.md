@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 owner: iron-burrow
 last_reviewed: 2026-07-30
 agent_edit_policy: update_when_relevant
@@ -9,8 +9,9 @@ agent_edit_policy: update_when_relevant
 
 ## Status
 
-Draft. This RFC is an internal implementation and release-coordination
-proposal. It changes no public route by itself.
+Accepted. This RFC is an internal architecture and release-coordination
+decision. It changes no public route by itself; public behavior still requires
+an accepted SPEC and the corresponding `CONTRACTS.md` update.
 
 ## Internal codename note
 
@@ -74,6 +75,22 @@ operations with a constrained demo credential, establish an Iron Burrow
 Account, and later receive explicit paid or plan-derived access. Scan and Lab
 are product surfaces over shared application use cases, not independent node
 proxies.
+
+## Product access and growth principles
+
+Mother API exposes curated, documented capabilities rather than becoming a
+generic blockchain data or RPC provider. New capability work starts from a
+demonstrated consumer problem, then proceeds through an implementation SPEC,
+an explicit contract decision where applicable, usage measurement, and
+stabilization. Speculative endpoints are not added merely because they might
+be useful.
+
+The current `friend`, `partner`, `public`, and `internal` values on
+`api_consumer` are operator-managed Beta consumer categories. They are
+administrative metadata, not promises of self-service onboarding, dedicated
+support, plan-based access, or billing. Protected private-Beta requests use
+the implemented consumer/key capability and per-key quota controls; Alpha
+public routes remain governed by `CONTRACTS.md`.
 
 ## Goals
 
