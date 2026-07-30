@@ -684,8 +684,8 @@ same `401`; a valid but deliberately narrowed future key receives stable `403`.
 | SPEC-022 Curated basic RPC gateway | Reviewed method profile and Bigwig contract. Not arbitrary RPC. | 013, 017 | 6 |
 | SPEC-023 Custom RPC grants | Explicit elevated per-method access. Not before basic RPC proves safe. | 022 | 6+ |
 | SPEC-024 Otterscan capability | Approved `ots_*`, probing, Bigwig path/policy. Not a raw Erigon tunnel. | 013, 017 | 6 |
-| SPEC-025 Bitcoin Core capability | Curated read-only calls. Not wallet/admin RPC. | 013, 017 | 6 |
-| SPEC-026 Lightning capability | Curated read-only information. Not payment/admin operations. | 013, 017 | 6 |
+| SPEC-025 Bitcoin Core capability | Curated read-only calls. Not wallet/admin RPC. | 013, 017 | future RFC gate |
+| SPEC-026 Lightning capability | Curated read-only information. Not payment/admin operations. | 013, 017 | future RFC gate |
 | SPEC-027 Attached addresses | Watch-only labels, verification states, privacy. Not custody claims. | 015, 020 | 4+ |
 | SPEC-028 Public API documentation | OpenAPI/human docs/errors/compatibility. Not undocumented product expansion. | each public SPEC | continuous |
 | SPEC-029 Migration, rollout, legacy compatibility | IBAccount key migration, flags, monitoring, rollback. Not data deletion. | 013, 015–017 | 3 |
@@ -711,8 +711,8 @@ These concise cards are the required SPEC index, not implementation approval.
 | 022 | Curated basic RPC profile, validation, Bigwig policy contract; no arbitrary methods. Depends on 013/017; phase 6. | Adds approved method/group scope and request budgets; protects batches, oversized responses, and node resources. | Task-oriented or constrained RPC interface decided in spec; method, network, timeout, and Bigwig-denial tests pass. |
 | 023 | Elevated custom RPC per-method grants; no implementation before 022 is proven. Depends on 022; phase 6+. | Adds explicit approval/audit policy and stronger quotas; protects arbitrary method escalation. | No public interface until allowlist/approval and infrastructure tests are accepted. |
 | 024 | Approved Otterscan capability and Erigon compatibility discovery; no raw tunnel. Depends on 013/017; phase 6. | Adds `ots_*` method policy/discovery metadata; protects anonymous access and unsupported versions. | Exposes only approved task/constrained operations; API-level, policy, and Hub/edge rejection tests pass. |
-| 025 | Curated read-only Bitcoin Core information via Bigwig; no wallet/admin RPC. Depends on 013/017; phase 6. | Adds Bitcoin resource/network scope; explicitly blocks wallet/admin methods. | Documented reads only after allowlist and edge-protection tests pass. |
-| 026 | Curated read-only Lightning information; no payment execution/admin operations. Depends on 013/017; phase 6. | Adds read-only Lightning scope and edge adapter policy; blocks invoice/payment secrets and execution. | Documented node/channel/status reads only after policy tests pass. |
+| 025 | Curated read-only Bitcoin Core information via Bigwig; no wallet/admin RPC. Deferred until a dedicated Bitcoin product-scope RFC is accepted. | Adds Bitcoin resource/network scope; explicitly blocks wallet/admin methods. | Documented reads only after allowlist, edge-protection tests, and RFC-gated activation pass. |
+| 026 | Curated read-only Lightning information; no payment execution/admin operations. Deferred until a dedicated Lightning product-scope RFC is accepted. | Adds read-only Lightning scope and edge adapter policy; blocks invoice/payment secrets and execution. | Documented node/channel/status reads only after policy tests and RFC-gated activation pass. |
 | 027 | Private attached EVM/Bitcoin watch-only addresses, labels, verification states; no custody claim. Depends on 015/020; phase 4+. | Adds association/verification/privacy-retention tables; protects cross-account access and ownership misrepresentation. | Account UI/Scan saved views only; label/privacy/deletion and verified-control tests pass. |
 | 028 | Public OpenAPI/human documentation, errors, auth/payment examples and compatibility checks; no undocumented endpoint. Depends on each public feature; continuous. | Adds no authority model; prevents codename leaks, secret examples, and contract drift. | Every public change has generated-document, example, and compatibility coverage. |
 | 029 | Legacy-key/IBAccount migration, flags, staged rollout, observability and rollback; no destructive data cleanup. Depends on 013/015–017; phase 3. | Adds mapping/audit fields and migration jobs; prevents accidental broadening or orphaned keys. | Existing keys preserve behavior; dry run, backfill, rollback, and production monitoring criteria pass. |
@@ -728,7 +728,111 @@ These concise cards are the required SPEC index, not implementation approval.
 | 3 | SPEC-015, 016, 017, 029: verified IBAccounts, managed keys, quotas, migration. |
 | 4 | SPEC-020, 027, and 030: narrow Data Lab Scan, private address views, and authenticated asset/price pages using shared capabilities. |
 | 5 | SPEC-021 and 019: curated price access and one verified payment adapter. |
-| 6 | SPEC-022, 024–026; SPEC-023 last: advanced node integrations independently. |
+| 6 | SPEC-022 and 024; SPEC-023 last only after basic RPC proves safe in production. |
+
+## Implementation plan addendum (2026-07-30)
+
+This addendum refines execution order without changing current public
+contracts. The production `/v1` boundary remains intentionally small and
+stable while the product experience is delivered under `/`, `/docs`,
+`/get-api-key`, and `/app/*` through focused SPECS.
+
+### Runtime strategy review
+
+| Option | Advantages | Tradeoffs | Decision |
+| --- | --- | --- | --- |
+| Single Axum runtime | Fastest iteration, shared authz and application services, lowest ops complexity. | Requires strong internal boundaries to avoid module sprawl. | **Continue as primary delivery model.** |
+| Multiple application runtimes in one repo | Independent deploy cadence and fault domains. | Duplicated session/auth concerns, cross-runtime contracts, and operational overhead too early. | Defer. |
+| Future extraction into separate services | Enables targeted scale/isolation when justified. | Premature extraction slows product delivery and hardens unstable boundaries too soon. | Plan seams now; extract only with explicit triggers. |
+
+Extraction triggers that require a separate RFC or ADR:
+
+1. Sustained scale asymmetry where one surface dominates capacity and cannot
+  be solved by in-process optimization.
+2. Fault-isolation requirements where incidents on one surface repeatedly
+  impact unrelated product capabilities.
+3. Deployment-cadence divergence where one surface needs materially different
+  release frequency or rollback policy.
+4. Compliance or data-boundary requirements that cannot be met safely in one
+  runtime.
+
+### SPEC dependency graph
+
+```mermaid
+flowchart TD
+  S013[SPEC-013 Capability authorization]
+  S014[SPEC-014 Homepage and docs]
+  S015[SPEC-015 IBAccount and identity]
+  S016[SPEC-016 API-key lifecycle]
+  S017[SPEC-017 Quotas and usage]
+  S018[SPEC-018 Anonymous and agent onboarding]
+  S019[SPEC-019 402 payment entitlements]
+  S020[SPEC-020 Scan MVP]
+  S021[SPEC-021 Curated price access]
+  S022[SPEC-022 Basic RPC]
+  S023[SPEC-023 Custom RPC]
+  S024[SPEC-024 Otterscan]
+  S027[SPEC-027 Attached addresses]
+  S029[SPEC-029 Migration and rollout]
+  S030[SPEC-030 Data Lab assets/prices]
+  S025[SPEC-025 Bitcoin Core - deferred]
+  S026[SPEC-026 Lightning - deferred]
+
+  S013 --> S014
+  S013 --> S015
+  S014 --> S015
+  S015 --> S016
+  S016 --> S017
+  S014 --> S018
+  S016 --> S018
+  S017 --> S018
+  S015 --> S019
+  S016 --> S019
+  S017 --> S019
+  S018 --> S019
+  S014 --> S020
+  S017 --> S020
+  S015 --> S027
+  S020 --> S027
+  S013 --> S021
+  S017 --> S021
+  S013 --> S022
+  S017 --> S022
+  S022 --> S023
+  S013 --> S024
+  S017 --> S024
+  S014 --> S030
+  S015 --> S030
+  S016 --> S030
+  S017 --> S030
+  S013 --> S029
+  S015 --> S029
+  S016 --> S029
+  S017 --> S029
+```
+
+### Recommended implementation order
+
+1. Phase 1 foundation: SPEC-013.
+2. Phase 2 product shell: SPEC-014, then SPEC-018 once key lifecycle and quota
+  controls are ready.
+3. Phase 3 identity and controls: SPEC-015, SPEC-016, SPEC-017, SPEC-029.
+4. Phase 4 authenticated product experience: SPEC-020 and SPEC-030, then
+  SPEC-027.
+5. Phase 5 monetization and advanced data policy: SPEC-021 and SPEC-019.
+6. Phase 6 advanced node capabilities: SPEC-022, then SPEC-024, then SPEC-023
+  only after production evidence confirms safe basic RPC operations.
+7. Deferred track: SPEC-025 and SPEC-026 remain future work behind dedicated
+  RFC decisions.
+
+### Open questions requiring new RFCs
+
+1. Promotion policy from `/app` capability to `/v1` contract: objective entry
+  and rollback criteria.
+2. Bitcoin product scope and risk model before activating SPEC-025.
+3. Lightning product scope and risk model before activating SPEC-026.
+4. Runtime extraction policy thresholds and ownership split when single-runtime
+  triggers are met.
 
 ## Acceptance criteria
 
