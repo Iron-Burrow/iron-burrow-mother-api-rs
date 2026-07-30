@@ -15,10 +15,11 @@ an accepted SPEC and the corresponding `CONTRACTS.md` update.
 
 ## Internal codename note
 
-The internal development codename is **El Vasco**. It may occur in internal
-planning and historical material only. It must not appear in public routes,
-OpenAPI descriptions, user-facing HTML, public API documentation, or product
-copy.
+The internal development codename **El Vasco** honors the musician Mezo
+Bigarrena. The older internal codename was **El Malo**, in honor of the
+musician Willie Colón. These names may occur in internal planning and
+historical material only. They must not appear in public routes, OpenAPI
+descriptions, user-facing HTML, public API documentation, or product copy.
 
 ## Summary
 
@@ -91,6 +92,37 @@ administrative metadata, not promises of self-service onboarding, dedicated
 support, plan-based access, or billing. Protected private-Beta requests use
 the implemented consumer/key capability and per-key quota controls; Alpha
 public routes remain governed by `CONTRACTS.md`.
+
+## Internal application functions and UI boundary
+
+El Vasco includes internal application and domain functions that support UI
+delivery, internal orchestration, and read-model coordination. These functions
+are not automatically public API routes and do not require a hardened
+`CONTRACTS.md` entry in the same way as the public balances and transfer
+operations. They still require clear ownership, authorization where relevant,
+tests, and an accepted implementation SPEC when they create a durable
+cross-service dependency.
+
+Any public route or stable machine-facing API remains subject to an accepted
+SPEC and the corresponding `CONTRACTS.md` update. Internal functions may use a
+separate internal caller contract and can evolve without expanding the public
+surface.
+
+### Read-model catalog synchronization
+
+The internal El Vasco application layer is the designated location for the
+future catalog-discovery/synchronization function used by
+`iron-burrow-read-model`. Mother API remains the owner of the canonical
+`mother_api.global_asset`, `network`, and `asset_chain_map` catalog; the Read
+Model remains the owner of refresh scheduling.
+
+The future internal function or feed may provide the minimal active catalog
+entries and refresh quote-currency information needed to build refresh
+attempts. It must not turn public `GET /v1/assets` into an operational feed,
+promise `/v1/assets/active`, move price derivation or historical price
+ownership into Mother API, or expose read-model-specific fields through the
+public contract. Its exact transport, visibility, response shape, freshness,
+and failure semantics require a focused implementation SPEC before delivery.
 
 ## Goals
 
