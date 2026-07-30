@@ -362,3 +362,16 @@ implementation, and documentation changes.
 - Added the stable `403 capability_not_granted` response, OpenAPI coverage,
   and domain/route characterization tests without adding any new public route
   or advanced node capability.
+- Accepted SPEC-002 as the implemented asset-detail enrichment record and
+  clarified that its one-call composition is the data foundation for a future
+  production asset-page view. RFC-003 now requires a focused follow-on SPEC
+  before an HTML asset page is delivered; the existing `/v1` contract remains
+  unchanged.
+- Established the `/v1` versus `/app` delivery boundary in RFC-003 and the
+  repository documentation: `/v1` remains the conservative, versioned
+  external API, while the future authenticated Data Lab evolves under `/app`
+  through shared application services.
+- Reoriented the planned asset, price, and Scan product routes under `/app`
+  and made `/v1` promotion a separate compatibility and contract decision.
+  No runtime route or existing public contract changed in this documentation
+  update.

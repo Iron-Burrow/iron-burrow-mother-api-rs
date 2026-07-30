@@ -77,6 +77,20 @@ unknown routes remain normal `404` responses.
 exact request bodies, response bodies, validation rules, limits, and error
 shapes.
 
+## Iron Burrow Data Lab
+
+The future authenticated Iron Burrow Data Lab will live under `/app`. It is a
+product experience for signed-in accounts, not another version of the public
+machine API. Asset pages, price trends, network views, diagnostics, research,
+and experimental datasets may evolve there through focused product specs and
+application authorization.
+
+The current Beta runtime does not yet implement account sessions or `/app`
+pages. When it does, a Data Lab capability will not automatically receive a
+corresponding `/v1` JSON endpoint. Promotion to `/v1` requires deliberate
+validation, a formal specification, and a `CONTRACTS.md` compatibility
+decision.
+
 ## Balance Lookup
 
 Single-account endpoint:
@@ -186,8 +200,9 @@ migration.
 
 ## What This Repository Is
 
-This repository contains the Mother API service: the public HTTP boundary for
-selected Iron Burrow capabilities.
+This repository contains the Mother API service: the stable public HTTP
+boundary for selected Iron Burrow capabilities and the future host of the
+authenticated Iron Burrow Data Lab.
 
 The Mother API is responsible for:
 
@@ -206,7 +221,8 @@ This repository is not:
 - a hackathon demo app;
 - a FIFA prediction service;
 - a betting or prediction-market API;
-- a frontend;
+- a separate frontend runtime; the future Data Lab is served by Mother only
+  after its account/session and page specifications are implemented;
 - a wallet;
 - a custody system;
 - an execution or trading service;

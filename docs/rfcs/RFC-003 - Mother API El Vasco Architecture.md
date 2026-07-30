@@ -24,10 +24,16 @@ descriptions, user-facing HTML, public API documentation, or product copy.
 ## Summary
 
 Mother API should become the principal Iron Burrow product: one coherent place
-for a public homepage, account access, API credentials, Scan and Lab
-experiences, and carefully authorized access to Iron Burrow data products.
+for a public homepage, account access, API credentials, the authenticated Iron
+Burrow Data Lab, and carefully authorized access to Iron Burrow data products.
 It remains a product and policy boundary, not a replacement for Bigwig, the
 Price Indexer, DIS, or the Read Model.
+
+The product has two delivery surfaces with intentionally different promises:
+`/v1` is the small, stable, versioned production API for external
+integrations; `/app` is the authenticated Data Lab for people using Iron
+Burrow. Shared application services power both. A capability appearing in the
+Data Lab does not imply a corresponding public JSON endpoint.
 
 The recommended first delivery is a **single Mother API Rust runtime** with
 Askama server-rendered pages added in a later, dedicated SPEC. It shares
@@ -43,8 +49,9 @@ and tests on 2026-07-30:
 
 | Area | Verified current behavior |
 | --- | --- |
-| Runtime | One `mother-api` Axum binary; no Cargo workspace, Askama dependency, browser session, or HTML route. |
-| Public Beta | `GET /health`; `POST /v1/balances`; `POST /v1/balances/bulk`; and feature-gated `POST /v1/erc20-transfers/search`. Exact contracts are in `CONTRACTS.md`. |
+| Runtime | One `mother-api` Axum binary; no Cargo workspace, Askama dependency, browser session, or `/app` route. |
+| Production API | `GET /health`; `POST /v1/balances`; `POST /v1/balances/bulk`; and feature-gated `POST /v1/erc20-transfers/search` are the current private-Beta production API surface. Exact contracts are in `CONTRACTS.md`. |
+| Alpha asset detail | `GET /v1/assets/{slug}` and its signal enrichments are implemented Alpha compatibility behavior governed by `CONTRACTS.md` and SPEC-002. They are not the model for new production API additions or the future Data Lab route design. |
 | Credentials | Operator CLI issues high-entropy `ib_live_<prefix>.<secret>` bearer keys. Only SHA-256 hashes and non-secret prefixes are stored. |
 | Ownership | `api_consumer` currently owns `api_key`; it is a Beta-consumer record, not an IBAccount. |
 | Enforcement | Beta middleware authenticates a bearer key, requires active consumer/key and unexpired key, then applies in-memory per-minute and Postgres daily per-key limits. |
@@ -93,6 +100,58 @@ support, plan-based access, or billing. Protected private-Beta requests use
 the implemented consumer/key capability and per-key quota controls; Alpha
 public routes remain governed by `CONTRACTS.md`.
 
+## Stable API and Data Lab boundary
+
+`/v1` and `/app` are different products of the same Mother application, not
+two versions of one API.
+
+| Surface | Audience and promise | Delivery rule |
+| --- | --- | --- |
+| `/v1` | External developers and agents integrating against a stable, versioned production contract. | Keep intentionally small. Every addition needs demonstrated maturity, an accepted implementation spec, compatibility tests, OpenAPI coverage when applicable, and a coordinated `CONTRACTS.md` update. |
+| `/app` | Authenticated Iron Burrow Account holders using the Data Lab as a human product experience. | Pages call shared application services directly and evolve under product authorization and focused specs. A Data Lab capability does not automatically create a public JSON route. |
+
+The current private-Beta production API is deliberately limited to
+`POST /v1/balances`, `POST /v1/balances/bulk`, and enabled
+`POST /v1/erc20-transfers/search`; `/health` remains the public liveness probe.
+The existing Alpha routes remain governed by their current contract while they
+exist, but must not be treated as a precedent for adding exploratory product
+capabilities to `/v1`.
+
+Planned Data Lab route groups include:
+
+```text
+/app
+/app/assets
+/app/assets/{asset_slug}
+/app/networks
+/app/networks/{network_slug}
+/app/prices
+/app/prices/{asset_slug}
+/app/lab
+```
+
+These are route-design targets, not implemented runtime routes or public API
+promises. They require an authenticated account/session, page-specific
+authorization, and focused implementation specs before delivery.
+
+Feature promotion follows this lifecycle:
+
+```text
+internal application capability
+        ↓
+available in the authenticated Data Lab
+        ↓
+validated through real usage
+        ↓
+formal production-API specification
+        ↓
+promoted to /v1 only when appropriate
+```
+
+This sequence is intentionally one-way: the existence of an application
+service or Data Lab page never creates an implied external compatibility
+promise.
+
 ## Internal application functions and UI boundary
 
 El Vasco includes internal application and domain functions that support UI
@@ -124,6 +183,28 @@ ownership into Mother API, or expose read-model-specific fields through the
 public contract. Its exact transport, visibility, response shape, freshness,
 and failure semantics require a focused implementation SPEC before delivery.
 
+### Data Lab asset-page capability
+
+The implemented `GET /v1/assets/{slug}` Alpha composition provides useful
+evidence for the future Data Lab asset-page view: canonical Mother-owned asset
+identity and network maps, an always-present latest-price block, and optional
+`priceStats`, `priceTrend`, and `priceSeries` enrichments. It is not the
+required future Data Lab transport.
+
+The Price Indexer remains the read-only owner of price availability,
+derivation, statistics, trend formulas, time-series points, confidence, and
+warnings. Mother composes the response, preserves successful provider payloads,
+and returns an honest partial response when an optional enrichment is
+unavailable; it does not calculate or reinterpret price intelligence locally.
+
+The current JSON behavior remains governed by `CONTRACTS.md` and accepted
+SPEC-002 while it exists. A later Data Lab asset-page implementation SPEC must
+decide the `/app` route, template/view model, account authorization, loading
+and partial-enrichment presentation, observability, and rollout. It must call
+the shared asset application service rather than introduce a parallel public
+asset or price API, and it must not turn the public asset catalog into a
+read-model operational feed.
+
 ## Goals
 
 - Preserve every existing production client route and key behavior.
@@ -131,6 +212,11 @@ and failure semantics require a focused implementation SPEC before delivery.
 - Add account, key, entitlement, quota, session, and payment concepts in
   separately reviewable steps.
 - Serve the homepage and future authenticated HTML from this repository.
+- Deliver Data Lab capabilities through authenticated `/app` pages and shared
+  application services before considering them for the stable production API.
+- Incorporate the implemented asset-detail composition into a Data Lab asset
+  page through a focused follow-on SPEC, without duplicating price
+  intelligence or creating an implied new JSON contract.
 - Keep Mother as the public policy boundary and Bigwig as infrastructure
   protection close to nodes.
 
@@ -141,6 +227,8 @@ and failure semantics require a focused implementation SPEC before delivery.
 - Arbitrary database queries, raw Erigon tunnels, Bitcoin wallet RPC,
   Lightning payment execution, or admin node RPC.
 - Changing existing JSON route names or request/response shapes.
+- Treating `/app` pages or internal application services as undocumented
+  alternate public APIs.
 - Implementing all planned products in this RFC.
 
 ## Terminology
@@ -187,8 +275,8 @@ read-only protocol-intelligence boundary.
 
 ```mermaid
 flowchart TB
-  Browser[Browser] --> HTML[Askama HTML delivery]
-  Agent[Agent/API client] --> JSON[JSON/OpenAPI delivery]
+  Browser[Signed-in account holder] --> HTML[/app Data Lab delivery]
+  Agent[External developer or agent] --> JSON[/v1 JSON/OpenAPI delivery]
   HTML --> App[Application services]
   JSON --> App
   App --> Authz[Authorization service]
@@ -200,10 +288,11 @@ flowchart TB
   Bigwig --> Edges[Hub, Tailscale, edges, nodes]
 ```
 
-The delivery layer has JSON API, HTML, OpenAPI, sessions, and CSRF protection.
-Application services own onboarding, issuance, authorization, Scan
-orchestration, and payments. Adapters contain PostgreSQL, email, Bigwig, Price
-Indexer, and provider concerns.
+The delivery layer has a conservative JSON API and an authenticated HTML Data
+Lab, plus OpenAPI, sessions, and CSRF protection. Application services own
+onboarding, issuance, authorization, Data Lab composition, Scan orchestration,
+and payments. Adapters contain PostgreSQL, email, Bigwig, Price Indexer, and
+provider concerns.
 
 ## UI runtime and Cargo workspace decision
 
@@ -215,22 +304,24 @@ Three options were evaluated:
 | Add a separate Rust binary/crate in this repository | Defer. It becomes justified only if independent scaling, isolation, or deployment cadence is concrete. |
 | Separate UI application in this repository | Defer. It adds a second runtime, client-side authorization risk, and duplicated contract concerns before the product needs them. |
 
-SPEC-014 adds Askama and static assets to the existing runtime. It must keep
-HTML routes outside `/v1`, use progressive enhancement only where it improves
-copying/forms, and preserve JSON delivery behavior.
+SPEC-014 adds Askama and static assets to the existing runtime. It must place
+authenticated product pages under `/app`, keep them outside `/v1`, use
+progressive enhancement only where it improves copying/forms, and preserve
+JSON delivery behavior.
 
 ## Product surfaces
 
 | Surface | Responsibility | Access |
 | --- | --- | --- |
-| Homepage | Explain Iron Burrow, API documentation, Account, demo access, agent access, Scan and Lab links. | Public. |
-| Account UI | IBAccount session, verified identity, key management, entitlement/usage views. | Browser session and application authorization. |
-| Scan | Network-scoped human inspection of supported addresses, transactions, evidence, balances, and transfers. | Public/Account/API-key policy decided per operation. |
-| Lab | Advanced, explicitly granted interactions with curated prices and node-backed capabilities. | Capability and quota controlled. |
-| Machine API | Stable documented JSON operations. | API key and capability controlled. |
+| Homepage | Explain Iron Burrow, API documentation, Account, demo access, agent access, and Data Lab entry. | Public. |
+| Data Lab assets | `/app/assets` and `/app/assets/{asset_slug}` present asset identity, price composition, and charts through shared services. | Authenticated account and page-specific authorization. |
+| Data Lab networks and prices | `/app/networks`, `/app/networks/{network_slug}`, `/app/prices`, and `/app/prices/{asset_slug}` host validated product views and experiments. | Authenticated account and page-specific authorization. |
+| Account UI | `/app` account/session, verified identity, key management, entitlement, and usage views. | Browser session and application authorization. |
+| Data Lab | `/app/lab` hosts advanced, explicitly granted research, diagnostics, and datasets. | Capability and quota controlled. |
+| Machine API | `/v1` exposes only stable documented JSON operations. | API key and capability controlled. |
 
-Scan and Lab are separate route groups and capability levels over shared use
-cases, not separate applications in the initial deployment.
+Data Lab pages and the machine API are separate delivery surfaces over shared
+use cases, not separate applications in the initial deployment.
 
 ## Identity and IBAccount model
 
@@ -400,22 +491,23 @@ retention/deletion policy and must not alter public chain facts.
 
 ## Scan architecture
 
-Initial Scan is `/scan/{network_slug}` plus task-oriented address/transaction
-routes, not a raw RPC surface. Its MVP is Ethereum-mainnet transaction lookup,
+Initial Scan is `/app/scan/{network_slug}` plus task-oriented Data Lab views,
+not a raw RPC surface. Its MVP is Ethereum-mainnet transaction lookup,
 confirmation evidence, address balances, and ERC-20 transfers using existing
-Mother/Bigwig capabilities. Browser sessions and API keys can each request
-operations only when their route policy and scopes allow them; public Scan
-visibility is an explicit operation-level decision, not implied by machine API
-visibility. Historical evidence and advanced data arrive in later SPECS.
+Mother/Bigwig capabilities. Browser sessions can request operations only when
+their page policy and scopes allow them; any machine API delivery requires a
+separate promotion decision. Historical evidence and advanced data arrive in
+later SPECS.
 
 ## Price access
 
-Mother presents curated public price endpoints and scoped premium historical
-access while the Price Indexer remains owner of availability, derivation, and
+The Data Lab presents curated price views, trends, and scoped historical
+research while the Price Indexer remains owner of availability, derivation, and
 historical data. `prices.private_query` means a curated application query with
-validated parameters and limits, never direct database access. Public current
-or curated prices, internal query-layer calls, and premium history are distinct
-policies.
+validated parameters and limits, never direct database access. Data Lab price
+views, internal query-layer calls, and a future promoted public price API are
+distinct policies. No Data Lab price capability is a `/v1` endpoint unless it
+passes the promotion lifecycle above.
 
 ## Basic and custom RPC
 
@@ -493,10 +585,12 @@ is an IBAccount.
 | `payment_challenges` | UUID/public challenge ID, provider/config snapshot, amount/asset/network, nonce/idempotency, expiry/status. |
 | `payment_receipts` | UUID, challenge FK, provider transaction uniqueness, verified amount/status/confirmation, reversal/audit fields. |
 
-## API and HTML routes
+## API and Data Lab routes
 
-The following are proposals, not accepted public contracts until their SPECS
-and `CONTRACTS.md` changes are accepted:
+The following Data Lab routes are proposals, not implemented runtime routes.
+They require their owning SPECS and browser authorization. A route becomes a
+public machine contract only if it is separately promoted to `/v1` and added to
+`CONTRACTS.md`:
 
 | Route group | Proposed purpose |
 | --- | --- |
@@ -504,12 +598,17 @@ and `CONTRACTS.md` changes are accepted:
 | `/docs` | Human API documentation plus link/download for OpenAPI. |
 | `/get-api-key` | Demo onboarding; never a privilege escalation endpoint. |
 | `/login`, `/verify-email` | Minimal verified-account flow. |
-| `/account`, `/account/api-keys` | Authenticated account/key management. |
-| `/scan/{network_slug}` | Scan landing and task-oriented detail views. |
-| `/lab` | Explicitly authorized advanced product tools. |
+| `/app` | Authenticated Data Lab home and account entry. |
+| `/app/assets`, `/app/assets/{asset_slug}` | Asset pages over shared Mother asset services. |
+| `/app/networks`, `/app/networks/{network_slug}` | Network statistics and research views. |
+| `/app/prices`, `/app/prices/{asset_slug}` | Curated price views and trends. |
+| `/app/lab` | Explicitly authorized diagnostics, research, and experimental datasets. |
+| `/app/scan/{network_slug}` | Account-authorized Scan landing and task-oriented detail views. |
 
-Existing `/v1/*` paths remain unchanged. Future JSON endpoints use a versioned
-contract, exact route-to-capability mapping, and OpenAPI compatibility tests.
+Existing `/v1/*` paths remain governed by their current contracts. Future
+Data Lab pages call shared application services directly. A future JSON
+endpoint uses a versioned contract, exact route-to-capability mapping, and
+OpenAPI compatibility tests only after deliberate promotion to `/v1`.
 
 ## Security analysis
 
@@ -590,6 +689,7 @@ same `401`; a valid but deliberately narrowed future key receives stable `403`.
 | SPEC-027 Attached addresses | Watch-only labels, verification states, privacy. Not custody claims. | 015, 020 | 4+ |
 | SPEC-028 Public API documentation | OpenAPI/human docs/errors/compatibility. Not undocumented product expansion. | each public SPEC | continuous |
 | SPEC-029 Migration, rollout, legacy compatibility | IBAccount key migration, flags, monitoring, rollback. Not data deletion. | 013, 015–017 | 3 |
+| SPEC-030 Data Lab assets and prices | Authenticated `/app` asset and price pages using shared Mother services, including truthful optional-enrichment presentation. Not a new public JSON API, local price calculation, or read-model feed. | SPEC-002, 014–017 | 4 |
 
 Each SPEC must state purpose, scope, non-goals, dependencies, security
 relevance, domain/database changes, public interfaces, acceptance criteria,
@@ -606,7 +706,7 @@ These concise cards are the required SPEC index, not implementation approval.
 | 017 | Per-key/account/capability/method quotas, concurrency, usage/audit; no billing UI. Depends on 013/016; phase 3. | Adds policy/usage event model and atomic counters; prevents quota bypass/races. | No broad route promise; limit/expiry/concurrency/usage tests and metrics pass. |
 | 018 | Demo and agent onboarding, strict issuance controls, expiry and upgrade; no advanced access. Depends on 014/016/017; phase 2/3. | Adds anonymous principal/key metadata and abuse audit; prevents farming and account escalation. | A reviewed demo route/UI may issue only baseline scoped grants; display-once, revocation, abuse, and denial tests pass. |
 | 019 | 402/MPP/provider challenge, receipt verification, entitlement creation; no payment-root credential. Depends on 015–018; phase 5. | Adds challenge/receipt/entitlement tables and provider abstraction; prevents replay, forged receipt, and duplicate settlement. | Documented 402 challenge only after adapter acceptance; idempotency, confirmation, reversal, and expiry tests pass. |
-| 020 | Network-scoped Scan task routes/views for transaction, evidence, balances, transfers; no raw RPC. Depends on 014/017; phase 4. | Reuses authorization and adds Scan policy/view models; protects address privacy and Bigwig load. | `/scan/{network_slug}` only after contract decision; route-to-capability, confirmation, and upstream-denial tests pass. |
+| 020 | Network-scoped Data Lab Scan views for transaction, evidence, balances, and transfers; no raw RPC. Depends on 014/017; phase 4. | Reuses authorization and adds Scan policy/view models; protects address privacy and Bigwig load. | `/app/scan/{network_slug}` only after browser authorization, confirmation, and upstream-denial tests pass; any machine API promotion is separate. |
 | 021 | Curated current/history price API and private query capability; no DB query endpoint. Depends on 013/017; phase 5. | Adds price query policy/limits and optional entitlement source; protects Price Indexer ownership and cost. | New documented endpoints only with parameter/limit/capability tests and read-only adapter contract. |
 | 022 | Curated basic RPC profile, validation, Bigwig policy contract; no arbitrary methods. Depends on 013/017; phase 6. | Adds approved method/group scope and request budgets; protects batches, oversized responses, and node resources. | Task-oriented or constrained RPC interface decided in spec; method, network, timeout, and Bigwig-denial tests pass. |
 | 023 | Elevated custom RPC per-method grants; no implementation before 022 is proven. Depends on 022; phase 6+. | Adds explicit approval/audit policy and stronger quotas; protects arbitrary method escalation. | No public interface until allowlist/approval and infrastructure tests are accepted. |
@@ -616,6 +716,7 @@ These concise cards are the required SPEC index, not implementation approval.
 | 027 | Private attached EVM/Bitcoin watch-only addresses, labels, verification states; no custody claim. Depends on 015/020; phase 4+. | Adds association/verification/privacy-retention tables; protects cross-account access and ownership misrepresentation. | Account UI/Scan saved views only; label/privacy/deletion and verified-control tests pass. |
 | 028 | Public OpenAPI/human documentation, errors, auth/payment examples and compatibility checks; no undocumented endpoint. Depends on each public feature; continuous. | Adds no authority model; prevents codename leaks, secret examples, and contract drift. | Every public change has generated-document, example, and compatibility coverage. |
 | 029 | Legacy-key/IBAccount migration, flags, staged rollout, observability and rollback; no destructive data cleanup. Depends on 013/015–017; phase 3. | Adds mapping/audit fields and migration jobs; prevents accidental broadening or orphaned keys. | Existing keys preserve behavior; dry run, backfill, rollback, and production monitoring criteria pass. |
+| 030 | Authenticated Data Lab asset and price pages under `/app`, built from shared Mother services; no new public JSON API or local price calculation. Depends on 002/014–017; phase 4. | Reuses the accepted asset composition and preserves Price Indexer ownership; truthful partial-enrichment presentation prevents unavailable data from appearing complete. | Page authorization, loading/degradation UX, observability, and rollout are accepted before delivery; a `/v1` promotion requires a separate public-API spec. |
 
 ## Phased implementation plan
 
@@ -623,9 +724,9 @@ These concise cards are the required SPEC index, not implementation approval.
 | --- | --- |
 | 0 | This RFC, SPEC plan, verified baseline, characterization tests, runtime decision. |
 | 1 | SPEC-013: legacy capability registry/grants/route mapping; no new node features. |
-| 2 | SPEC-014 then SPEC-018 prerequisites: homepage/docs plumbing; demo issuance only after key lifecycle/quota security design is accepted. |
+| 2 | SPEC-014: homepage/docs plumbing; demo issuance only after key lifecycle/quota security design is accepted. |
 | 3 | SPEC-015, 016, 017, 029: verified IBAccounts, managed keys, quotas, migration. |
-| 4 | SPEC-020/027: narrow Ethereum Scan using existing capabilities. |
+| 4 | SPEC-020, 027, and 030: narrow Data Lab Scan, private address views, and authenticated asset/price pages using shared capabilities. |
 | 5 | SPEC-021 and 019: curated price access and one verified payment adapter. |
 | 6 | SPEC-022, 024–026; SPEC-023 last: advanced node integrations independently. |
 
@@ -637,6 +738,8 @@ These concise cards are the required SPEC index, not implementation approval.
 - Existing keys have explicit, non-broadened grants after migration.
 - No new raw RPC, Otterscan, Bitcoin, Lightning, payment, or public HTML
   capability is introduced by the first slice.
+- No Data Lab capability creates a `/v1` route or public compatibility promise
+  without a deliberate promotion spec and coordinated contract update.
 - Each later product capability has an accepted dependency SPEC before code.
 - Public docs contain no internal codename.
 
@@ -652,6 +755,8 @@ These concise cards are the required SPEC index, not implementation approval.
   near the node as a second enforcement layer.
 - Give anonymous demos a provisional account: deferred; a dedicated anonymous
   principal is simpler and avoids weak/fictional identity records.
+- Treat the Data Lab as an unversioned public JSON API: rejected; its browser
+  product behavior evolves independently while `/v1` remains conservative.
 
 ## Open questions
 
@@ -682,7 +787,9 @@ These concise cards are the required SPEC index, not implementation approval.
 
 Adopt the single-runtime Askama direction; make `IBAccount` the explicit
 future owner boundary; keep anonymous demos accountless and severely scoped;
-enforce dynamic account/owner ∩ key grants; treat payments as verified
-entitlement inputs; and defer every advanced node capability behind a focused
-SPEC and Bigwig defense-in-depth contract. The first slice already establishes
-the compatibility-safe authorization substrate for these decisions.
+deliver human product capabilities through authenticated `/app` Data Lab
+pages before considering them for `/v1`; enforce dynamic account/owner ∩ key
+grants; treat payments as verified entitlement inputs; and defer every advanced
+node capability behind a focused SPEC and Bigwig defense-in-depth contract.
+The first slice already establishes the compatibility-safe authorization
+substrate for these decisions.
