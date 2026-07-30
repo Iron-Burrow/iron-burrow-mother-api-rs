@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-08
+last_reviewed: 2026-07-30
 agent_edit_policy: update_when_relevant
 ---
 
@@ -179,7 +179,10 @@ credentials return `401 unauthorized`.
 If authentication storage is temporarily unavailable while Mother API checks a
 valid-format key, the request returns `503 database_unavailable`. If a valid
 key exceeds its configured request limits, the request returns
-`429 rate_limited`.
+`429 rate_limited`. A valid key without the required operation capability
+receives `403 capability_not_granted`; existing Beta keys retain the balance
+and transfer capabilities they had before this internal authorization
+migration.
 
 ## What This Repository Is
 

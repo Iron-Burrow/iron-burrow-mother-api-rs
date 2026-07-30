@@ -9,6 +9,7 @@ use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use super::errors::RepositoryError;
+use crate::domain::capabilities::{Capability, CapabilityGrant, GrantStatus, NetworkScope};
 
 #[derive(Clone, Debug)]
 pub(crate) enum ApiKeyRepository {
@@ -24,6 +25,7 @@ pub(crate) enum ApiKeyRepository {
 pub(crate) struct InMemoryApiKeys {
     keys: Vec<InMemoryApiKey>,
     policies: HashMap<Uuid, ApiKeyPolicy>,
+    authorization_grants: HashMap<Uuid, ApiKeyAuthorizationGrants>,
     usage: HashMap<Uuid, InMemoryApiKeyUsage>,
 }
 
@@ -89,7 +91,17 @@ impl ApiKeyRepository {
         keys: Vec<(String, Vec<u8>, ApiKeyLookup)>,
         policies: HashMap<Uuid, ApiKeyPolicy>,
     ) -> Self {
+        Self::in_memory_with_policies_and_grants(keys, policies, HashMap::new())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn in_memory_with_policies_and_grants(
+        keys: Vec<(String, Vec<u8>, ApiKeyLookup)>,
+        policies: HashMap<Uuid, ApiKeyPolicy>,
+        authorization_grants: HashMap<Uuid, ApiKeyAuthorizationGrants>,
+    ) -> Self {
         let mut defaulted_policies = policies;
+        let mut defaulted_grants = authorization_grants;
         let keys = keys
             .into_iter()
             .map(|(key_prefix, key_hash, lookup)| {
@@ -100,6 +112,9 @@ impl ApiKeyRepository {
                         requests_per_minute: 60,
                         requests_per_day: 5000,
                     });
+                defaulted_grants
+                    .entry(lookup.api_key_id)
+                    .or_insert_with(ApiKeyAuthorizationGrants::legacy_default);
 
                 InMemoryApiKey {
                     key_prefix,
@@ -112,6 +127,7 @@ impl ApiKeyRepository {
         Self::InMemory(Arc::new(Mutex::new(InMemoryApiKeys {
             keys,
             policies: defaulted_policies,
+            authorization_grants: defaulted_grants,
             usage: HashMap::new(),
         })))
     }
@@ -196,6 +212,66 @@ impl ApiKeyRepository {
         Ok(row.map(Into::into))
     }
 
+    pub(crate) async fn find_authorization_grants(
+        &self,
+        api_key_id: Uuid,
+    ) -> Result<ApiKeyAuthorizationGrants, RepositoryError> {
+        #[cfg(test)]
+        if let Self::InMemory(keys) = self {
+            return Ok(keys
+                .lock()
+                .expect("in-memory API-key repository mutex poisoned")
+                .authorization_grants
+                .get(&api_key_id)
+                .cloned()
+                .unwrap_or_default());
+        }
+
+        #[cfg(test)]
+        if matches!(self, Self::Unavailable) {
+            return Err(RepositoryError::test());
+        }
+
+        let pool = self.database_pool()?;
+        let owner_grants = sqlx::query_as::<_, CapabilityGrantRow>(
+            r#"
+            select capability_id, network_scope, status,
+                expires_at is not null and expires_at <= now() as is_expired
+            from mother_api.api_consumer_capability_grant
+            where consumer_id = (
+                select consumer_id from mother_api.api_key where id = $1
+            )
+            "#,
+        )
+        .bind(api_key_id)
+        .fetch_all(pool)
+        .await
+        .map_err(RepositoryError::new)?;
+        let key_grants = sqlx::query_as::<_, CapabilityGrantRow>(
+            r#"
+            select capability_id, network_scope, status,
+                expires_at is not null and expires_at <= now() as is_expired
+            from mother_api.api_key_capability_grant
+            where api_key_id = $1
+            "#,
+        )
+        .bind(api_key_id)
+        .fetch_all(pool)
+        .await
+        .map_err(RepositoryError::new)?;
+
+        Ok(ApiKeyAuthorizationGrants {
+            owner_grants: owner_grants
+                .into_iter()
+                .filter_map(CapabilityGrantRow::into_domain)
+                .collect(),
+            key_grants: key_grants
+                .into_iter()
+                .filter_map(CapabilityGrantRow::into_domain)
+                .collect(),
+        })
+    }
+
     pub(crate) async fn issue_api_key(
         &self,
         input: IssueApiKeyInput,
@@ -224,6 +300,8 @@ impl ApiKeyRepository {
             input.requests_per_day,
         )
         .await?;
+        insert_legacy_grants_for_issue(&mut transaction, consumer.consumer_id, api_key.api_key_id)
+            .await?;
 
         transaction
             .commit()
@@ -631,6 +709,55 @@ impl ApiKeyRepository {
     }
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ApiKeyAuthorizationGrants {
+    pub(crate) owner_grants: Vec<CapabilityGrant>,
+    pub(crate) key_grants: Vec<CapabilityGrant>,
+}
+
+impl ApiKeyAuthorizationGrants {
+    #[cfg(test)]
+    pub(crate) fn legacy_default() -> Self {
+        let grants = Capability::ALL
+            .into_iter()
+            .map(|capability| CapabilityGrant::active(capability, NetworkScope::Any))
+            .collect::<Vec<_>>();
+
+        Self {
+            owner_grants: grants.clone(),
+            key_grants: grants,
+        }
+    }
+}
+
+#[derive(FromRow)]
+struct CapabilityGrantRow {
+    capability_id: String,
+    network_scope: String,
+    status: String,
+    is_expired: bool,
+}
+
+impl CapabilityGrantRow {
+    fn into_domain(self) -> Option<CapabilityGrant> {
+        let capability = Capability::parse(&self.capability_id)?;
+        let network_scope = NetworkScope::parse(&self.network_scope)?;
+        let status = if self.is_expired {
+            GrantStatus::Expired
+        } else {
+            match self.status.as_str() {
+                "active" => GrantStatus::Active,
+                "revoked" => GrantStatus::Revoked,
+                _ => return None,
+            }
+        };
+
+        let mut grant = CapabilityGrant::active(capability, network_scope);
+        grant.status = status;
+        Some(grant)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct IssueApiKeyInput {
     pub(crate) consumer_slug: String,
@@ -830,6 +957,50 @@ async fn insert_policy_for_issue(
     .execute(&mut **transaction)
     .await
     .map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?;
+
+    Ok(())
+}
+
+async fn insert_legacy_grants_for_issue(
+    transaction: &mut Transaction<'_, Postgres>,
+    consumer_id: Uuid,
+    api_key_id: Uuid,
+) -> Result<(), ApiKeyIssueRepositoryError> {
+    for capability in Capability::ALL {
+        sqlx::query(
+            r#"
+            insert into mother_api.api_consumer_capability_grant (
+                consumer_id,
+                capability_id,
+                network_scope
+            )
+            values ($1, $2, '*')
+            on conflict (consumer_id, capability_id, network_scope) do nothing
+            "#,
+        )
+        .bind(consumer_id)
+        .bind(capability.id())
+        .execute(&mut **transaction)
+        .await
+        .map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?;
+
+        sqlx::query(
+            r#"
+            insert into mother_api.api_key_capability_grant (
+                api_key_id,
+                capability_id,
+                network_scope
+            )
+            values ($1, $2, '*')
+            on conflict (api_key_id, capability_id, network_scope) do nothing
+            "#,
+        )
+        .bind(api_key_id)
+        .bind(capability.id())
+        .execute(&mut **transaction)
+        .await
+        .map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?;
+    }
 
     Ok(())
 }

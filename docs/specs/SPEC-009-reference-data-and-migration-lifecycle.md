@@ -1,7 +1,7 @@
 ---
 status: accepted
 owner: iron-burrow
-last_reviewed: 2026-07-01
+last_reviewed: 2026-07-30
 agent_edit_policy: update_when_relevant
 ---
 
@@ -29,8 +29,9 @@ This spec does not change the public HTTP API surface.
 
 This spec changes the database-state model going forward:
 
-* future assets, networks, aliases, mappings, catalog metadata, statuses, and
-  sort order changes must not be added through new migrations;
+* future assets, networks, aliases, mappings, capability registry entries,
+  catalog metadata, statuses, and sort order changes must not be added through
+  new migrations;
 * existing mixed migrations remain historical records and must not be edited;
 * `0004_seed_mxnb_global_asset.sql` is an example of the old mixed data
   migration pattern, not the model to copy;
@@ -272,8 +273,8 @@ Examples:
 * required asset aliases;
 * required catalog metadata;
 * required lifecycle status;
-* required API-key scopes, plans, or policy rows, if the API-key subsystem
-  introduces such static catalogs.
+* required API-key capability IDs, scopes, plans, or policy rows, if the
+  API-key subsystem introduces such static catalogs.
 
 Required reference data must not include:
 
@@ -305,8 +306,9 @@ reference-data/catalog.json
 The Mother API binary must embed that file, for example with `include_str!`, and
 parse it with the existing `serde_json` dependency.
 
-The reference-data file must declare assets, networks, and asset/network mappings
-together so relationship validation can happen before writes.
+The reference-data file must declare capabilities, assets, networks, and
+asset/network mappings together so relationship validation can happen before
+writes.
 
 The production reference-data path must not require:
 
@@ -457,6 +459,7 @@ Schema migrations create the structural model:
 
 Required reference data may create static policy rows if needed:
 
+* capability and permission names;
 * default scopes;
 * permission names;
 * plan identifiers;
@@ -505,19 +508,21 @@ CI must prove:
 6. a second identical run preserves `created_at`;
 7. a second identical run preserves `updated_at`;
 8. required canonical assets, networks, and mappings have expected values;
-9. every declared mapping resolves exactly once;
-10. invalid reference data fails atomically;
-11. invalid reference data leaves the pre-run catalog unchanged;
-12. the production image can run `mother-api db apply`;
-13. the production image can run `mother-api serve`;
-14. the production image does not require `sqlx-cli`;
-15. the production image does not require `psql`;
-16. adding one new asset to the JSON file inserts only that missing row and any
+9. required capability registry rows and compatibility-policy reconciliation
+   have expected values;
+10. every declared mapping resolves exactly once;
+11. invalid reference data fails atomically;
+12. invalid reference data leaves the pre-run catalog unchanged;
+13. the production image can run `mother-api db apply`;
+14. the production image can run `mother-api serve`;
+15. the production image does not require `sqlx-cli`;
+16. the production image does not require `psql`;
+17. adding one new asset to the JSON file inserts only that missing row and any
     newly declared related mappings;
-17. invalid duplicate slugs, unresolved mappings, native mappings with
+18. invalid duplicate slugs, unresolved mappings, native mappings with
     deployment addresses, and deployed mappings without deployment addresses fail
     before writes;
-18. production image commands do not require seed scripts or a separate
+19. production image commands do not require seed scripts or a separate
     migration image.
 
 ---

@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-07-08
+last_reviewed: 2026-07-30
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -75,6 +75,15 @@ credentials return the same `401 Unauthorized` envelope with
 checking a valid-format API key, the request returns `503 Service Unavailable`
 with `error.code="database_unavailable"`.
 
+A valid API key is a bearer credential, not blanket permission. Each
+protected operation requires its registered capability at both the existing
+API-consumer compatibility boundary and the individual key boundary. The
+current private-Beta migration grants existing issued keys the exact legacy
+capabilities needed for the listed balance and transfer routes. A valid key
+that lacks the operation capability receives `403 Forbidden` with
+`error.code="capability_not_granted"`; this response does not reveal grants,
+consumer details, or other resources.
+
 Protected beta route requests are subject to per-key request limits. When a
 valid API key exceeds a configured limit, Mother API returns `429 Too Many
 Requests` with `error.code="rate_limited"` and does not call the protected
@@ -90,7 +99,8 @@ The OpenAPI security scheme for protected Beta routes is named
 Authorization: Bearer <api_key>
 ```
 
-The bearer value is an issued private Beta API key. The scheme has no scopes.
+The bearer value is an issued private Beta API key. The OpenAPI scheme has no
+client-declared scopes; Mother evaluates server-side operation capabilities.
 Mother API does not expose public API-key management routes, self-service
 customer dashboards, billing, x402, OAuth, or JWT authentication in this
 release.
@@ -119,6 +129,18 @@ credentials all use the same public shape.
   "error": {
     "code": "rate_limited",
     "message": "The valid API key exceeded a request limit."
+  }
+}
+```
+
+**Capability not granted response — `403 Forbidden`:**
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "capability_not_granted",
+    "message": "The API key is not authorized for this operation."
   }
 }
 ```
@@ -2042,6 +2064,7 @@ Fields:
 | HTTP | `error.code`            | Trigger                                                                |
 | ---- | ----------------------- | ---------------------------------------------------------------------- |
 | 401  | `unauthorized`          | A Beta protected route request lacks a valid active API key.            |
+| 403  | `capability_not_granted` | A valid Beta API key lacks the capability required by the requested operation. |
 | 429  | `rate_limited`          | A valid Beta API key exceeded a configured request limit.               |
 | 403  | `endpoint_disabled`     | A known Alpha-only endpoint is intentionally disabled by the Beta route surface. |
 | 400  | `invalid_request`       | A JSON body is malformed/missing required fields, includes a reserved balance network alias field, or non-balance public parameters are invalid or incompatible. |

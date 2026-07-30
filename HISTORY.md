@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-06-25
+last_reviewed: 2026-07-30
 agent_edit_policy: append_only
 ---
 
@@ -352,3 +352,13 @@ implementation, and documentation changes.
   `CONTRACTS.md`, README, OpenAPI examples, runbooks, smoke docs, and
   `HISTORY.md`.
 - Promoted SPEC-012 to accepted and aligned the release version at `0.3.0`.
+
+## 2026-07-30
+
+- Added the first capability-authorization compatibility slice for protected
+  Beta balance and ERC-20 transfer routes. Required capability declarations
+  and legacy consumer/key grants are applied by the embedded reference-data
+  lifecycle; key grants cannot broaden the owner boundary.
+- Added the stable `403 capability_not_granted` response, OpenAPI coverage,
+  and domain/route characterization tests without adding any new public route
+  or advanced node capability.

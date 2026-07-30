@@ -64,6 +64,14 @@ impl ApiError {
         }
     }
 
+    pub fn capability_not_granted() -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            code: "capability_not_granted",
+            message: "The API key is not authorized for this operation.".to_string(),
+        }
+    }
+
     pub fn query_too_long() -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,

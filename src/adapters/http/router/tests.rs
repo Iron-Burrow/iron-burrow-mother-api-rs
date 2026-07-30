@@ -17,11 +17,16 @@ use crate::test_utils::fixtures::global_assets::sample_assets;
 use crate::{
     adapters::http::rate_limit::ApiKeyMinuteLimiter,
     adapters::postgres::{
-        api_keys::ApiKeyLookup, global_assets::GlobalAssetRepository, ApiKeyRepository,
+        api_keys::{ApiKeyAuthorizationGrants, ApiKeyLookup},
+        global_assets::GlobalAssetRepository,
+        ApiKeyRepository,
     },
     adapters::price_indexer::PriceIndexerClient,
     config::{Config, PublicApiSurface},
-    domain::api_keys::hash_presented_api_key,
+    domain::{
+        api_keys::hash_presented_api_key,
+        capabilities::{Capability, CapabilityGrant, NetworkScope},
+    },
 };
 use crate::{domain::assets::global_assets::GlobalAsset, state::AppState};
 
@@ -361,6 +366,74 @@ async fn beta_auth_allows_valid_key_to_reach_protected_route_handler() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn beta_route_capabilities_preserve_balance_access_and_restrict_transfer_access() {
+    let lookup = active_api_key_lookup();
+    let balance_only_grants = ApiKeyAuthorizationGrants {
+        owner_grants: vec![CapabilityGrant::active(
+            Capability::BalancesRead,
+            NetworkScope::Any,
+        )],
+        key_grants: vec![CapabilityGrant::active(
+            Capability::BalancesRead,
+            NetworkScope::Any,
+        )],
+    };
+    let repository = ApiKeyRepository::in_memory_with_policies_and_grants(
+        vec![(
+            TEST_API_KEY_PREFIX.to_string(),
+            hash_presented_api_key(TEST_API_KEY).to_vec(),
+            lookup.clone(),
+        )],
+        Default::default(),
+        std::collections::HashMap::from([(lookup.api_key_id, balance_only_grants)]),
+    );
+    let app = build_router(AppState {
+        config: Config {
+            public_api_surface: PublicApiSurface::Beta,
+            erc20_transfers_enabled: true,
+            ..Config::default()
+        },
+        version: env!("CARGO_PKG_VERSION"),
+        database_pool: None,
+        api_key_repository: Some(repository),
+        api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
+        asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
+        price_indexer_client: None,
+        dis_client: None,
+        bigwig_client: None,
+    });
+
+    let balance = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/balances")
+                .header("content-type", "application/json")
+                .header(AUTHORIZATION, format!("Bearer {TEST_API_KEY}"))
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(balance.status(), StatusCode::BAD_REQUEST);
+
+    let transfer = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/erc20-transfers/search")
+                .header("content-type", "application/json")
+                .header(AUTHORIZATION, format!("Bearer {TEST_API_KEY}"))
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_public_auth_error(transfer, StatusCode::FORBIDDEN, "capability_not_granted").await;
 }
 
 #[tokio::test]

@@ -10,9 +10,17 @@ use uuid::Uuid;
 use crate::{
     adapters::{
         http::error::ApiError,
-        postgres::api_keys::{ApiKeyLookup, DailyAcceptedOutcome, UsageResponseClass},
+        postgres::api_keys::{
+            ApiKeyAuthorizationGrants, ApiKeyLookup, DailyAcceptedOutcome, UsageResponseClass,
+        },
     },
-    domain::api_keys::{hash_presented_api_key, parse_presented_api_key},
+    domain::{
+        api_keys::{hash_presented_api_key, parse_presented_api_key},
+        capabilities::{
+            evaluate_authorization, AuthorizationContext, AuthorizationDecision,
+            AuthorizationRequest, Capability,
+        },
+    },
     state::AppState,
 };
 
@@ -28,6 +36,23 @@ pub(crate) struct ApiKeyPrincipal {
 
 pub(crate) async fn require_api_key(
     State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    require_api_key_for(Capability::BalancesRead, state, request, next).await
+}
+
+pub(crate) async fn require_transfer_api_key(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    require_api_key_for(Capability::Erc20TransfersRead, state, request, next).await
+}
+
+async fn require_api_key_for(
+    required_capability: Capability,
+    state: AppState,
     mut request: Request,
     next: Next,
 ) -> Response {
@@ -57,6 +82,26 @@ pub(crate) async fn require_api_key(
                     return ApiError::database_unavailable_for_auth().into_response();
                 }
             };
+
+            let grants = match repository
+                .find_authorization_grants(principal.api_key_id)
+                .await
+            {
+                Ok(grants) => grants,
+                Err(error) => {
+                    warn!(
+                        %error,
+                        api_key_id = %principal.api_key_id,
+                        key_prefix = %principal.key_prefix,
+                        "API-key capability-grant lookup failed"
+                    );
+                    return ApiError::database_unavailable_for_auth().into_response();
+                }
+            };
+
+            if !is_authorized_for_route(&grants, required_capability) {
+                return ApiError::capability_not_granted().into_response();
+            }
 
             let Some(minute_reservation) = state
                 .api_key_minute_limiter
@@ -107,6 +152,19 @@ pub(crate) async fn require_api_key(
             ApiError::database_unavailable_for_auth().into_response()
         }
     }
+}
+
+fn is_authorized_for_route(
+    grants: &ApiKeyAuthorizationGrants,
+    required_capability: Capability,
+) -> bool {
+    evaluate_authorization(
+        &AuthorizationContext {
+            owner_grants: grants.owner_grants.clone(),
+            key_grants: grants.key_grants.clone(),
+        },
+        &AuthorizationRequest::route(required_capability),
+    ) == AuthorizationDecision::Allow
 }
 
 async fn record_rate_limited(
@@ -256,11 +314,14 @@ mod tests {
     use super::*;
     use crate::{
         adapters::postgres::{
-            api_keys::{ApiKeyPolicy, InMemoryApiKeyUsageSnapshot},
+            api_keys::{ApiKeyAuthorizationGrants, ApiKeyPolicy, InMemoryApiKeyUsageSnapshot},
             ApiKeyRepository,
         },
         config::{Config, PublicApiSurface},
-        domain::api_keys::hash_presented_api_key,
+        domain::{
+            api_keys::hash_presented_api_key,
+            capabilities::{Capability, CapabilityGrant, NetworkScope},
+        },
     };
 
     const TEST_KEY: &str =
@@ -323,6 +384,57 @@ mod tests {
                 ..InMemoryApiKeyUsageSnapshot::default()
             }
         );
+    }
+
+    #[tokio::test]
+    async fn owner_or_key_grant_denial_stops_the_handler_before_usage_is_consumed() {
+        for (name, grants) in [
+            (
+                "owner",
+                ApiKeyAuthorizationGrants {
+                    owner_grants: vec![],
+                    key_grants: vec![CapabilityGrant::active(
+                        Capability::BalancesRead,
+                        NetworkScope::Any,
+                    )],
+                },
+            ),
+            (
+                "key",
+                ApiKeyAuthorizationGrants {
+                    owner_grants: vec![CapabilityGrant::active(
+                        Capability::BalancesRead,
+                        NetworkScope::Any,
+                    )],
+                    key_grants: vec![],
+                },
+            ),
+        ] {
+            let lookup = active_lookup();
+            let repository = ApiKeyRepository::in_memory_with_policies_and_grants(
+                vec![(
+                    TEST_PREFIX.to_string(),
+                    hash_presented_api_key(TEST_KEY).to_vec(),
+                    lookup.clone(),
+                )],
+                HashMap::new(),
+                HashMap::from([(lookup.api_key_id, grants)]),
+            );
+            let app = Router::new()
+                .route("/protected", get(|| async { StatusCode::OK }))
+                .route_layer(middleware::from_fn_with_state(
+                    state_with_repository(repository.clone()),
+                    require_api_key,
+                ));
+
+            let response = app.oneshot(authorized_request("/protected")).await.unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{name}");
+            assert_eq!(
+                repository.in_memory_usage(lookup.api_key_id),
+                InMemoryApiKeyUsageSnapshot::default(),
+                "{name}"
+            );
+        }
     }
 
     #[tokio::test]
