@@ -882,10 +882,10 @@ or draft artifact in this repository. Unchecked items remain planned.
 - [x] Keep OpenAPI and `CONTRACTS.md` aligned with the protected Beta route surface and capability-aware errors.
 - [x] Capture the `/app` runtime shell and homepage work in a dedicated follow-on spec (SPEC-014).
 - [x] Capture the Workspace foundation in a dedicated follow-on spec (SPEC-015).
-- [ ] Phase 2: add the repository-owned homepage at `/` for `app.ironburrow.com` in the existing Mother runtime.
-- [ ] Add the first `/app` runtime seam and server-rendered HTML delivery without creating a second service.
-- [ ] Add bounded static asset delivery, reviewed HTML headers/CSP, and the public docs entry route described by SPEC-014.
-- [ ] Ensure public HTML and docs surfaces contain no internal codename leaks.
+- [x] Phase 2: add the repository-owned homepage at `/` for `app.ironburrow.com` in the existing Mother runtime.
+- [x] Add the first `/app` runtime seam and server-rendered HTML delivery without creating a second service.
+- [x] Add bounded static asset delivery, reviewed HTML headers/CSP, and the public docs entry route described by SPEC-014.
+- [x] Ensure public HTML and docs surfaces contain no internal codename leaks.
 - [ ] Phase 3: implement caller resolution for verified accounts and anonymous callers.
 - [ ] Implement `IBAccount` identity, verified email flow, browser sessions, and session/CSRF policy through SPEC-016.
 - [ ] Expand API-key ownership beyond the legacy compatibility owner so keys can belong to `IBAccount`, anonymous demo, and later client/org principals through SPEC-017.

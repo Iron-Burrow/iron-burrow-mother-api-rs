@@ -1,7 +1,7 @@
 ---
-status: draft
+status: accepted
 owner: iron-burrow
-last_reviewed: 2026-07-30
+last_reviewed: 2026-07-31
 agent_edit_policy: update_when_relevant
 ---
 
@@ -15,15 +15,15 @@ API application logic.
 
 ## Scope
 
-- Add Askama to the existing `mother-api` runtime and create a public `/`
-  homepage outside `/v1`.
+- Add Askama to the existing `mother-api` runtime and create public `/`,
+  `/app`, and `/docs` HTML routes outside `/v1`.
 - Add bounded static asset delivery and deployment/Caddy configuration for the
   public host.
 - Render links to public API documentation, Account entry points, demo-key
   onboarding, Workspace entry, Scan, and Lab as those routes become available.
-- Add a public human-documentation route that links to the generated OpenAPI
-  document, current authentication instructions, network support, errors, and
-  examples.
+- Add a public human-documentation route and a same-runtime
+  `/docs/openapi.json` download that reflects the active feature-gated OpenAPI
+  document.
 - Establish HTML response headers, template conventions, and a session
   middleware seam; do not implement authenticated account behavior yet.
 - Keep `/app` as an evolving application surface: Askama pages are first
@@ -61,9 +61,12 @@ until SPEC-016 is accepted.
 
 ## Expected public interfaces
 
-- `GET /` returns an accessible, server-rendered homepage.
-- Proposed `GET /docs` serves human documentation or redirects to a stable
-  repository-owned documentation route.
+- `GET /` returns an accessible, server-rendered product homepage.
+- `GET /app` returns a public, non-functional Data Lab holding page. It does
+  not authenticate callers, expose account data, or authorize capabilities.
+- `GET /docs` returns human-readable current Beta API documentation.
+- `GET /docs/openapi.json` returns the generated OpenAPI document for the
+  active runtime configuration.
 - All existing `/v1/*` and `/health` contracts remain unchanged.
 
 No proposed Account, demo, Scan, or Lab path becomes a public promise in this
@@ -75,6 +78,8 @@ SPEC without an accepted dependent SPEC and matching `CONTRACTS.md` update.
 - Homepage tests prove route registration, content type, no codename leak, and
   links to the currently documented API surface.
 - Static asset traversal is impossible and cache policy is explicit.
+- HTML responses use the reviewed CSP and security headers both directly from
+  Mother and through Caddy; no inline scripts or styles are required.
 - HTML templates do not bypass application authorization or expose secrets.
 - Existing JSON route/OpenAPI compatibility tests remain green.
 

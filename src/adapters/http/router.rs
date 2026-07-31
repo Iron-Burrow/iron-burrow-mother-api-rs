@@ -3,10 +3,10 @@ use axum::{
     http::{header::USER_AGENT, HeaderMap, Method, StatusCode, Uri},
     middleware,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{get, get_service, post},
     Router,
 };
-use tower_http::trace::TraceLayer;
+use tower_http::{services::ServeDir, set_header::SetResponseHeaderLayer, trace::TraceLayer};
 use tracing::{debug, warn};
 
 use crate::{
@@ -21,6 +21,7 @@ use crate::{
             resolve::assets_resolve,
             status::status,
         },
+        web,
     },
     config::PublicApiSurface,
     state::AppState,
@@ -62,7 +63,17 @@ pub fn build_router(state: AppState) -> Router {
         v1_routes = v1_routes.merge(alpha_v1_routes());
     }
 
+    let static_assets = get_service(
+        ServeDir::new("public").append_index_html_on_directories(false),
+    )
+    .layer(SetResponseHeaderLayer::overriding(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("public, max-age=3600"),
+    ));
+
     Router::new()
+        .merge(web::routes())
+        .nest_service("/assets", static_assets)
         .route("/health", get(health))
         .nest("/v1", v1_routes)
         .fallback(unmatched_route)

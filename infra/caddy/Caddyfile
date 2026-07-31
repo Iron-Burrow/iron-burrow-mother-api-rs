@@ -15,13 +15,13 @@
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		X-Frame-Options "DENY"
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'"
 	}
 
-	@api {
-		path /health /v1/*
+	@mother {
+		path / /app /app/* /docs /docs/* /assets/* /health /v1/*
 	}
-	handle @api {
+	handle @mother {
 		reverse_proxy mother-api:3000
 	}
 

@@ -1,0 +1,52 @@
+:root {
+  color-scheme: dark;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  background: #101512;
+  color: #edf4ee;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; line-height: 1.6; }
+
+.site-header, main, footer {
+  width: min(100% - 2rem, 72rem);
+  margin-inline: auto;
+}
+
+.site-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 0;
+}
+
+.brand { font-weight: 750; font-size: 1.2rem; }
+
+nav { display: flex; gap: 1.25rem; }
+
+a { color: #a9e9bd; }
+
+main { padding: 4rem 0; }
+
+section { max-width: 48rem; margin-bottom: 3.5rem; }
+
+.hero { padding: 2rem 0; }
+
+h1 { font-size: clamp(2.4rem, 7vw, 4.5rem); line-height: 1.08; margin: 0.25rem 0 1rem; }
+h2 { margin-top: 0; }
+
+.eyebrow { color: #a9e9bd; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+
+.actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1.5rem; }
+
+.button { background: #a9e9bd; border-radius: .35rem; color: #101512; font-weight: 700; padding: .65rem 1rem; text-decoration: none; }
+.button.secondary { background: transparent; border: 1px solid #a9e9bd; color: #a9e9bd; }
+
+code { background: #1d2921; border-radius: .2rem; padding: .1rem .25rem; }
+
+footer { border-top: 1px solid #344238; color: #b2c3b6; padding: 1.5rem 0 2.5rem; }
+
+@media (max-width: 36rem) {
+  .site-header { align-items: flex-start; flex-direction: column; gap: .75rem; }
+}

@@ -4,7 +4,9 @@ WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
+COPY templates ./templates
 COPY migrations ./migrations
+COPY public ./public
 COPY reference-data ./reference-data
 
 RUN cargo build --release --locked --bin mother-api
@@ -20,6 +22,7 @@ RUN useradd --system --uid 10001 --home /nonexistent --shell /usr/sbin/nologin m
 WORKDIR /app
 
 COPY --from=builder /app/target/release/mother-api /usr/local/bin/mother-api
+COPY --from=builder /app/public /app/public
 
 ENV APP_ENV=production
 ENV HTTP_HOST=0.0.0.0

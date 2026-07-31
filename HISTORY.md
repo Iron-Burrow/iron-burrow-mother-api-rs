@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-30
+last_reviewed: 2026-07-31
 agent_edit_policy: append_only
 ---
 
@@ -375,3 +375,15 @@ implementation, and documentation changes.
   and made `/v1` promotion a separate compatibility and contract decision.
   No runtime route or existing public contract changed in this documentation
   update.
+
+## 2026-07-31
+
+- Completed RFC-003 Phase 2 in the existing Mother API runtime: added the
+  public homepage, non-functional `/app` Data Lab entry, rendered `/docs`, and
+  feature-aware `/docs/openapi.json` download.
+- Added Askama templates, a bounded same-origin stylesheet, anonymous browser
+  context seam, reviewed HTML headers/CSP, and Caddy routing for the web
+  surface without adding account, session, API-key, database, or `/v1`
+  behavior.
+- Accepted SPEC-014 and updated `CONTRACTS.md` and README to document the
+  public web delivery surface while preserving the private-Beta machine API.
