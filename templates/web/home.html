@@ -1,0 +1,20 @@
+{% extends "web/base.html" %}
+
+{% block title %}Iron Burrow — Source-aware on-chain intelligence{% endblock %}
+
+{% block content %}
+<section class="hero" aria-labelledby="home-title">
+  <p class="eyebrow">Source-aware on-chain intelligence</p>
+  <h1 id="home-title">Understand what happened on-chain.</h1>
+  <p>Iron Burrow helps people, applications, and agents inspect on-chain data with clear sources and bounded capabilities.</p>
+  <div class="actions">
+    <a class="button" href="/scan">Open Scan</a>
+    <a class="button secondary" href="/access">Get API access</a>
+    <a class="button secondary" href="/docs">Read the API docs</a>
+  </div>
+</section>
+<section aria-labelledby="api-title">
+  <h2 id="api-title">A small, protected API</h2>
+  <p>The current private Beta supports balance lookups and bounded ERC-20 transfer searches through issued API keys.</p>
+</section>
+{% endblock %}

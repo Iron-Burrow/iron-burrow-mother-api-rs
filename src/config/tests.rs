@@ -45,6 +45,7 @@ fn default_config_matches_public_contract() {
     assert_eq!(config.public_api_surface, PublicApiSurface::Alpha);
     assert_eq!(config.http_host, "0.0.0.0");
     assert_eq!(config.http_port, 3000);
+    assert_eq!(config.public_api_base_url, "http://localhost:3000");
     assert_eq!(config.database_url, None);
     assert_eq!(config.price_indexer_url, None);
     assert_eq!(config.price_ql_internal_token, None);
@@ -311,6 +312,24 @@ fn from_env_parses_public_api_surface_config() {
     assert_eq!(
         Config::from_env().unwrap().public_api_surface,
         PublicApiSurface::Alpha
+    );
+}
+
+#[test]
+fn from_env_uses_trimmed_public_api_base_url_or_local_default() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let _snapshot = EnvVarSnapshot::capture("PUBLIC_API_BASE_URL");
+
+    std::env::remove_var("PUBLIC_API_BASE_URL");
+    assert_eq!(
+        Config::from_env().unwrap().public_api_base_url,
+        "http://localhost:3000"
+    );
+
+    std::env::set_var("PUBLIC_API_BASE_URL", " https://api.example.test/ ");
+    assert_eq!(
+        Config::from_env().unwrap().public_api_base_url,
+        "https://api.example.test/"
     );
 }
 

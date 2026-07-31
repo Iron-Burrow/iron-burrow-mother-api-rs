@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-30
+last_reviewed: 2026-07-31
 agent_edit_policy: update_when_relevant
 ---
 
@@ -77,19 +77,20 @@ unknown routes remain normal `404` responses.
 exact request bodies, response bodies, validation rules, limits, and error
 shapes.
 
-## Iron Burrow Data Lab
+## Iron Burrow Web Entry
 
-The future authenticated Iron Burrow Data Lab will live under `/app`. It is a
-product experience for signed-in accounts, not another version of the public
-machine API. Asset pages, price trends, network views, diagnostics, research,
-and experimental datasets may evolve there through focused product specs and
-application authorization.
+`https://www.ironburrow.com` serves the public Iron Burrow homepage, Scan
+holding pages, API-access information, and `/docs` for the human-readable API
+guide. The web entry runs in the same Mother API binary; it is not a second
+frontend service or another version of the public machine API.
 
-The current Beta runtime does not yet implement account sessions or `/app`
-pages. When it does, a Data Lab capability will not automatically receive a
-corresponding `/v1` JSON endpoint. Promotion to `/v1` requires deliberate
-validation, a formal specification, and a `CONTRACTS.md` compatibility
-decision.
+`https://api.ironburrow.com/openapi.json` remains the machine-readable API
+contract. `app.ironburrow.com` is not configured in this phase. The current
+web pages do not implement account sessions, Workspaces, API-key management,
+or Scan data access. When those arrive, a human product capability will not
+automatically receive a corresponding `/v1` JSON endpoint; promotion still
+requires deliberate validation, a formal specification, and a `CONTRACTS.md`
+compatibility decision.
 
 ## Balance Lookup
 

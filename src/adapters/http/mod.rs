@@ -8,3 +8,4 @@ pub(crate) mod router;
 pub(crate) mod routes;
 pub(crate) mod types;
 pub(crate) mod validation;
+pub(crate) mod web;

@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-07-30
+last_reviewed: 2026-07-31
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -23,10 +23,42 @@ This contract evolves with [HISTORY.md](HISTORY.md). Behavior changes that
 affect any field below require a coordinated update to both files in the
 same change.
 
+## Public web delivery
+
+The repository-owned public web entry is served at
+`https://www.ironburrow.com`. These routes are presentation surfaces, not
+additional `/v1` machine API capabilities. Their copy and visual design may
+evolve, but they do not authenticate a browser, issue a credential, expose
+account data, or grant access to protected operations.
+
+| Method | Path | Content type | Current purpose |
+| ------ | ---- | ------------ | --------------- |
+| `GET` | `/` | `text/html; charset=utf-8` | Public product homepage. |
+| `GET` | `/scan` | `text/html; charset=utf-8` | Public Scan holding page. |
+| `GET` | `/scan/{network_slug}` | `text/html; charset=utf-8` | Public network-specific Scan holding page. |
+| `GET` | `/access` | `text/html; charset=utf-8` | Private-Beta API access information. |
+| `GET` | `/docs` | `text/html; charset=utf-8` | Human-readable current private-Beta API documentation. |
+
+Static files are served only below `/assets/` and are not a machine API
+surface. `/app` and `/app/assets/*` are not public delivery surfaces.
+
+The machine-readable OpenAPI document is served at
+`https://api.ironburrow.com/openapi.json`. It reflects whether feature-gated
+transfer search is enabled, documents the existing `/v1` route surface, and
+does not create another version of that API. Caddy exposes it only on the API
+hostname.
+
+All HTML responses set `Content-Security-Policy`, `X-Content-Type-Options:
+nosniff`, `X-Frame-Options: DENY`, and `Referrer-Policy:
+strict-origin-when-cross-origin`. The initial pages require no browser
+credentials, cookies, forms, inline scripts, inline styles, or third-party
+assets. Future account/session behavior requires SPEC-016.
+
 ## Conventions
 
-- Base URL in production is `https://api.ironburrow.com`.
-- All responses are JSON. `Content-Type: application/json`.
+- Machine API base URL in production is `https://api.ironburrow.com`.
+- Production web entry URL is `https://www.ironburrow.com`.
+- Machine API responses are JSON. `Content-Type: application/json`.
 - All timestamps are ISO-8601 with explicit UTC offset (`Z` or
   `+00:00`).
 - Success envelopes set `"ok": true`. Error envelopes set `"ok": false`

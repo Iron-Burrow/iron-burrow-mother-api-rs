@@ -1,4 +1,4 @@
-{$CADDY_DOMAIN} {
+{$CADDY_API_DOMAIN} {
 	encode zstd gzip
 
 	log {
@@ -15,13 +15,45 @@
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		X-Frame-Options "DENY"
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'"
 	}
 
 	@api {
-		path /health /v1/*
+		path /v1/* /health /openapi.json
 	}
 	handle @api {
+		reverse_proxy mother-api:3000
+	}
+
+	handle {
+		respond "not found" 404
+	}
+}
+
+{$CADDY_WEB_DOMAIN} {
+	encode zstd gzip
+
+	log {
+		output stdout
+		format json
+	}
+
+	request_body {
+		max_size 1MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'"
+	}
+
+	@web {
+		path / /scan /scan/* /access /docs /docs/* /assets/*
+	}
+	handle @web {
 		reverse_proxy mother-api:3000
 	}
 

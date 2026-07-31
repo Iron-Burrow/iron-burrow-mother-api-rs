@@ -15,6 +15,7 @@ pub(crate) struct Config {
     pub(crate) public_api_surface: PublicApiSurface,
     pub(crate) http_host: String,
     pub(crate) http_port: u16,
+    pub(crate) public_api_base_url: String,
     pub(crate) database_url: Option<String>,
     pub(crate) price_indexer_url: Option<String>,
     pub(crate) price_ql_internal_token: Option<String>,
@@ -46,6 +47,8 @@ impl Config {
                     .map_err(|_| ConfigError::InvalidHttpPort(value))?,
                 Err(_) => DEFAULT_HTTP_PORT,
             },
+            public_api_base_url: optional_env("PUBLIC_API_BASE_URL")
+                .unwrap_or_else(|| DEFAULT_PUBLIC_API_BASE_URL.to_string()),
             database_url: optional_env("DATABASE_URL"),
             price_indexer_url: optional_env("PRICE_INDEXER_URL"),
             price_ql_internal_token: optional_env("PRICE_QL_INTERNAL_TOKEN"),
@@ -122,6 +125,7 @@ impl Default for Config {
             public_api_surface: PublicApiSurface::Alpha,
             http_host: DEFAULT_HTTP_HOST.to_string(),
             http_port: DEFAULT_HTTP_PORT,
+            public_api_base_url: DEFAULT_PUBLIC_API_BASE_URL.to_string(),
             database_url: None,
             price_indexer_url: None,
             price_ql_internal_token: None,
@@ -147,6 +151,7 @@ impl std::fmt::Debug for Config {
             .field("public_api_surface", &self.public_api_surface)
             .field("http_host", &self.http_host)
             .field("http_port", &self.http_port)
+            .field("public_api_base_url", &self.public_api_base_url)
             .field("database_url", &self.database_url)
             .field("price_indexer_url", &self.price_indexer_url)
             .field(

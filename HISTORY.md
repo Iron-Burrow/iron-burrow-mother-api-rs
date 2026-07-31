@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-30
+last_reviewed: 2026-07-31
 agent_edit_policy: append_only
 ---
 
@@ -375,3 +375,25 @@ implementation, and documentation changes.
   and made `/v1` promotion a separate compatibility and contract decision.
   No runtime route or existing public contract changed in this documentation
   update.
+
+## 2026-07-31
+
+- Completed RFC-003 Phase 2 in the existing Mother API runtime: added the
+  public homepage, Scan and API-access holding pages, rendered `/docs`, and a
+  feature-aware `/openapi.json` download link on the API hostname.
+- Added Askama templates, a bounded same-origin stylesheet, anonymous browser
+  context seam, reviewed HTML headers/CSP, and Caddy routing for the web
+  surface without adding account, session, API-key, database, or `/v1`
+  behavior.
+- Accepted SPEC-014 and updated `CONTRACTS.md` and README to document the
+  public web delivery surface while preserving the private-Beta machine API.
+- Served the bounded Phase 2 stylesheet from `/assets/*`, preserving existing
+  cache and HTML security policies while `/app` remains retired.
+- Adopted the consumer-based public-domain strategy in ADR-001: the same
+  Mother API runtime now serves human pages on `www.ironburrow.com` and the
+  stable machine API on `api.ironburrow.com` through Caddy-enforced route
+  allowlists.
+- Retired `/app` and `/app/assets/*`; added public Scan and API-access holding
+  pages at `/scan`, `/scan/{network_slug}`, and `/access`; moved static files
+  to `/assets/*`; and moved generated OpenAPI to `/openapi.json` on the API
+  hostname.

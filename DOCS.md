@@ -121,20 +121,22 @@ plus `/health`. Per the rules above, those promises must remain captured in
 
 ## Delivery surfaces
 
-Mother has two deliberately different delivery surfaces:
+Mother has two deliberately different public delivery surfaces:
 
-- `/v1` is the stable, versioned machine API for external integrations. A
-  capability belongs here only after an accepted implementation spec and a
-  coordinated `CONTRACTS.md` update make its compatibility promise explicit.
-- `/app` is the future authenticated Iron Burrow Data Lab for people with an
-  authorized Iron Burrow Account. Its pages may call Mother application
-  services directly. Availability in the Data Lab does not by itself create a
-  `/v1` endpoint or a public JSON compatibility promise.
+- `https://api.ironburrow.com` is the stable machine API for external
+  integrations. It exposes `/v1/*`, `/health`, and `/openapi.json`. A
+  capability belongs under `/v1` only after an accepted implementation spec
+  and a coordinated `CONTRACTS.md` update make its compatibility promise
+  explicit.
+- `https://www.ironburrow.com` is the human web surface. Its public pages may
+  call Mother application services directly, but availability in the web
+  product does not by itself create a `/v1` endpoint or a public JSON
+  compatibility promise.
 
-The Data Lab remains subject to focused specs, authorization, tests, and clear
-user-facing documentation. It is not a shortcut around the public API
-contract. Until an `/app` runtime is implemented, documentation must describe
-it as planned rather than as an available route.
+The web product remains subject to focused specs, authorization, tests, and
+clear user-facing documentation. It is not a shortcut around the public API
+contract. `app.ironburrow.com` is reserved for a future, clearly distinct
+authenticated product only; it is not configured in the current deployment.
 
 The [README.md](README.md) endpoint section should stay brief and
 navigational. `CONTRACTS.md` is the authoritative reference for implemented

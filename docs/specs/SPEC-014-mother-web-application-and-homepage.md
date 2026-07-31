@@ -1,7 +1,7 @@
 ---
-status: draft
+status: accepted
 owner: iron-burrow
-last_reviewed: 2026-07-30
+last_reviewed: 2026-07-31
 agent_edit_policy: update_when_relevant
 ---
 
@@ -10,25 +10,26 @@ agent_edit_policy: update_when_relevant
 ## Purpose
 
 Add the first repository-owned public web surface for
-`app.ironburrow.com` without creating a second service or duplicating Mother
+`www.ironburrow.com` without creating a second service or duplicating Mother
 API application logic.
 
 ## Scope
 
-- Add Askama to the existing `mother-api` runtime and create a public `/`
-  homepage outside `/v1`.
-- Add bounded static asset delivery and deployment/Caddy configuration for the
-  public host.
+- Add Askama to the existing `mother-api` runtime and create public `/`,
+  `/scan`, `/scan/{network_slug}`, `/access`, and `/docs` HTML routes outside
+  `/v1`.
+- Add bounded static asset delivery only below `/assets/*` and
+  deployment/Caddy configuration for the public host.
 - Render links to public API documentation, Account entry points, demo-key
   onboarding, Workspace entry, Scan, and Lab as those routes become available.
-- Add a public human-documentation route that links to the generated OpenAPI
-  document, current authentication instructions, network support, errors, and
-  examples.
+- Add a public human-documentation route and a same-runtime `/openapi.json`
+  document that reflects the active feature-gated OpenAPI document; Caddy
+  exposes that document only on the API hostname.
 - Establish HTML response headers, template conventions, and a session
   middleware seam; do not implement authenticated account behavior yet.
-- Keep `/app` as an evolving application surface: Askama pages are first
-  presenters, while structured agent-facing presenters use the same application
-  services and authorization boundaries.
+- Keep the web product as an evolving application surface: Askama pages are
+  first presenters, while structured agent-facing presenters use the same
+  application services and authorization boundaries.
 
 ## Non-goals
 
@@ -48,9 +49,10 @@ API application logic.
 ## Security relevance
 
 Askama templates must use normal escaping and no unreviewed raw HTML. Public
-pages set a reviewed CSP and safe content type; static asset paths are bounded;
-no API key or session secret is embedded in HTML, browser storage, logs, or
-analytics. Future state-changing forms require SPEC-016 session/CSRF policy.
+pages set a reviewed CSP and safe content type; static asset paths are bounded
+below `/assets/*`; no API key or session secret is embedded in HTML,
+browser storage, logs, or analytics. Future state-changing forms require
+SPEC-016 session/CSRF policy.
 
 ## Expected domain and database changes
 
@@ -61,9 +63,16 @@ until SPEC-016 is accepted.
 
 ## Expected public interfaces
 
-- `GET /` returns an accessible, server-rendered homepage.
-- Proposed `GET /docs` serves human documentation or redirects to a stable
-  repository-owned documentation route.
+- `GET /` returns an accessible, server-rendered product homepage.
+- `GET /scan` and `GET /scan/{network_slug}` return public, non-functional
+  Scan holding pages. They do not authenticate callers, expose account data,
+  or authorize capabilities.
+- `GET /access` returns public private-Beta API access information.
+- `GET /docs` returns human-readable current Beta API documentation.
+- `GET /openapi.json` returns the generated OpenAPI document for the active
+  runtime configuration. Production Caddy exposes it only on the API hostname.
+- `GET /assets/*` serves bounded static delivery; `/app/assets/*` is not a
+  static delivery surface.
 - All existing `/v1/*` and `/health` contracts remain unchanged.
 
 No proposed Account, demo, Scan, or Lab path becomes a public promise in this
@@ -74,7 +83,10 @@ SPEC without an accepted dependent SPEC and matching `CONTRACTS.md` update.
 - The existing binary serves the homepage and API without a second deployable.
 - Homepage tests prove route registration, content type, no codename leak, and
   links to the currently documented API surface.
-- Static asset traversal is impossible and cache policy is explicit.
+- Static delivery is limited to `/assets/*`, traversal is impossible, and
+  cache policy is explicit.
+- HTML responses use the reviewed CSP and security headers both directly from
+  Mother and through Caddy; no inline scripts or styles are required.
 - HTML templates do not bypass application authorization or expose secrets.
 - Existing JSON route/OpenAPI compatibility tests remain green.
 
