@@ -44,7 +44,7 @@ flows below are deliberate human-web contracts.
 | `POST` | `/logout` | `text/html; charset=utf-8` | Invalidates the current browser session. |
 | `GET`/`POST` | `/workspaces` | `text/html; charset=utf-8` | Signed-in account Workspace list and creation. |
 | `GET` | `/workspaces/{workspace_id}` | `text/html; charset=utf-8` | Signed-in account-owned Workspace view. |
-| `POST` | `/workspaces/{workspace_id}/rename`, `/archive`, `/restore` | `text/html; charset=utf-8` | CSRF-protected Workspace lifecycle actions. |
+| `POST` | `/workspaces/{workspace_id}/rename`, `/workspaces/{workspace_id}/archive`, `/workspaces/{workspace_id}/restore` | `text/html; charset=utf-8` | CSRF-protected Workspace lifecycle actions. |
 | `POST` | `/workspaces/{workspace_id}/addresses` | `text/html; charset=utf-8` | Registers a watch-only EVM address. |
 | `GET`/`POST` | `/workspaces/{workspace_id}/addresses/{member_id}/*` | `text/html; charset=utf-8` | Account-owned address labels plus scoped balance and transfer views. |
 

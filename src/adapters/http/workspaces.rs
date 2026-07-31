@@ -24,7 +24,7 @@ use crate::{
         erc20_transfers::service::{
             build_search_plan, execute_search_plan, Erc20TransferSearchInput,
         },
-        workspaces::WorkspaceService,
+        workspaces::{WorkspaceService, WorkspaceServiceError},
     },
     domain::{
         accounts::OnchainAccount,
@@ -108,6 +108,9 @@ fn csrf_valid(
 fn csrf_token(headers: &HeaderMap) -> Option<String> {
     web::cookie_value(headers, "__Host-ib_csrf").map(str::to_string)
 }
+fn page_csrf_token(headers: &HeaderMap) -> Result<String, Response> {
+    csrf_token(headers).ok_or_else(|| StatusCode::FORBIDDEN.into_response())
+}
 fn unavailable() -> Response {
     StatusCode::SERVICE_UNAVAILABLE.into_response()
 }
@@ -116,6 +119,12 @@ fn not_found() -> Response {
 }
 fn invalid() -> Response {
     StatusCode::BAD_REQUEST.into_response()
+}
+fn workspace_error(error: WorkspaceServiceError) -> Response {
+    match error {
+        WorkspaceServiceError::Input(_) => invalid(),
+        WorkspaceServiceError::Repository(_) => unavailable(),
+    }
 }
 
 async fn list_workspaces(
@@ -126,8 +135,12 @@ async fn list_workspaces(
     let Some((account_id, _)) = authenticated(principal) else {
         return Redirect::to("/login").into_response();
     };
-    let (Some(service), Some(csrf)) = (service(&state), csrf_token(&headers)) else {
+    let Some(service) = service(&state) else {
         return unavailable();
+    };
+    let csrf = match page_csrf_token(&headers) {
+        Ok(csrf) => csrf,
+        Err(response) => return response,
     };
     match service.list(account_id).await {
         Ok(workspaces) => web::private_html_response(WorkspaceListTemplate { workspaces, csrf }),
@@ -163,7 +176,7 @@ async fn create_workspace(
         Ok(workspace) => {
             Redirect::to(&format!("/workspaces/{}", workspace.public_id)).into_response()
         }
-        Err(_) => invalid(),
+        Err(error) => workspace_error(error),
     }
 }
 
@@ -176,8 +189,12 @@ async fn workspace_detail(
     let Some((account_id, _)) = authenticated(principal) else {
         return Redirect::to("/login").into_response();
     };
-    let (Some(service), Some(csrf)) = (service(&state), csrf_token(&headers)) else {
+    let Some(service) = service(&state) else {
         return unavailable();
+    };
+    let csrf = match page_csrf_token(&headers) {
+        Ok(csrf) => csrf,
+        Err(response) => return response,
     };
     let workspace = match service.find(account_id, &workspace_id).await {
         Ok(Some(value)) => value,
@@ -218,7 +235,7 @@ async fn rename_workspace(
     match service.rename(account_id, &workspace_id, &form.name).await {
         Ok(true) => Redirect::to(&format!("/workspaces/{workspace_id}")).into_response(),
         Ok(false) => not_found(),
-        Err(_) => invalid(),
+        Err(error) => workspace_error(error),
     }
 }
 
@@ -306,7 +323,7 @@ async fn add_address(
         .await
     {
         Ok(_) => Redirect::to(&format!("/workspaces/{workspace_id}")).into_response(),
-        Err(_) => invalid(),
+        Err(error) => workspace_error(error),
     }
 }
 
@@ -319,8 +336,12 @@ async fn member_detail(
     let Some((account_id, _)) = authenticated(principal) else {
         return Redirect::to("/login").into_response();
     };
-    let (Some(service), Some(csrf)) = (service(&state), csrf_token(&headers)) else {
+    let Some(service) = service(&state) else {
         return unavailable();
+    };
+    let csrf = match page_csrf_token(&headers) {
+        Ok(csrf) => csrf,
+        Err(response) => return response,
     };
     match service
         .find_member(account_id, &workspace_id, &member_id)
@@ -412,7 +433,7 @@ async fn mutate_label(
     match result {
         Ok(()) => Redirect::to(&format!("/workspaces/{workspace_id}/addresses/{member_id}"))
             .into_response(),
-        Err(_) => invalid(),
+        Err(error) => workspace_error(error),
     }
 }
 
@@ -677,7 +698,13 @@ struct DataViewTemplate {
 
 #[cfg(test)]
 mod tests {
-    use super::{non_empty, split_values};
+    use axum::http::{HeaderMap, StatusCode};
+
+    use crate::{
+        adapters::postgres::errors::RepositoryError, application::workspaces::WorkspaceInputError,
+    };
+
+    use super::{non_empty, page_csrf_token, split_values, workspace_error, WorkspaceServiceError};
 
     #[test]
     fn optional_form_fields_drop_blank_values() {
@@ -691,5 +718,26 @@ mod tests {
             split_values(Some(" ethereum, ,usdc ".to_string())),
             vec!["ethereum", "usdc"]
         );
+    }
+
+    #[test]
+    fn missing_page_csrf_cookie_is_forbidden() {
+        let response = page_csrf_token(&HeaderMap::new()).unwrap_err();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn workspace_input_errors_are_bad_requests() {
+        let response = workspace_error(WorkspaceInputError::InvalidName.into());
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn workspace_repository_errors_are_unavailable() {
+        let response = workspace_error(WorkspaceServiceError::Repository(RepositoryError::test()));
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 }

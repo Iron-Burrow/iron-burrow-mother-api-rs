@@ -2,7 +2,7 @@ use uuid::Uuid;
 
 use crate::{
     adapters::postgres::{
-        workspaces::{Workspace, WorkspaceMemberAddress},
+        workspaces::{AddMemberOutcome, Workspace, WorkspaceMemberAddress},
         WorkspaceRepository,
     },
     domain::validation::is_evm_address,
@@ -116,9 +116,6 @@ impl WorkspaceService {
         address: &str,
         client_ref: Option<&str>,
     ) -> Result<bool, WorkspaceServiceError> {
-        if workspace.status != "active" {
-            return Ok(false);
-        }
         if !crate::adapters::postgres::workspaces::BALANCE_NETWORKS.contains(&network_slug) {
             return Err(WorkspaceInputError::UnsupportedNetwork.into());
         }
@@ -128,13 +125,21 @@ impl WorkspaceService {
         }
         let client_ref =
             normalize_optional(client_ref, 120).ok_or(WorkspaceInputError::InvalidClientRef)?;
-        if self.repository.members(workspace.id).await?.len() >= MAX_WORKSPACE_ADDRESSES {
-            return Err(WorkspaceInputError::AddressLimit.into());
-        }
-        Ok(self
+        match self
             .repository
-            .add_member(workspace.id, network_slug, &address, client_ref.as_deref())
-            .await?)
+            .add_member(
+                workspace.id,
+                network_slug,
+                &address,
+                client_ref.as_deref(),
+                MAX_WORKSPACE_ADDRESSES,
+            )
+            .await?
+        {
+            AddMemberOutcome::Added => Ok(true),
+            AddMemberOutcome::AlreadyPresent | AddMemberOutcome::Inactive => Ok(false),
+            AddMemberOutcome::LimitReached => Err(WorkspaceInputError::AddressLimit.into()),
+        }
     }
     pub(crate) async fn add_label(
         &self,
@@ -187,5 +192,146 @@ fn normalize_optional(value: Option<&str>, maximum: usize) -> Option<Option<Stri
         Some(value) if value.chars().count() <= maximum => Some(Some(value.to_string())),
         None => Some(None),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use sqlx::PgPool;
+    use uuid::Uuid;
+
+    use crate::{adapters::postgres::WorkspaceRepository, test_utils::postgres::migrated_pool};
+
+    use super::{
+        Workspace, WorkspaceInputError, WorkspaceService, WorkspaceServiceError,
+        MAX_WORKSPACE_ADDRESSES,
+    };
+
+    async fn create_workspace(pool: &PgPool) -> (Uuid, WorkspaceService, Workspace) {
+        let account_id = Uuid::new_v4();
+        sqlx::query("insert into mother_api.ib_account (id, public_id) values ($1, $2)")
+            .bind(account_id)
+            .bind(format!("iba_{}", account_id.simple()))
+            .execute(pool)
+            .await
+            .unwrap();
+
+        let service = WorkspaceService::new(WorkspaceRepository::database(pool.clone()));
+        let workspace = service
+            .create(account_id, "Workspace test", None)
+            .await
+            .unwrap();
+
+        (account_id, service, workspace)
+    }
+
+    async fn seed_members(pool: &PgPool, workspace_id: Uuid, count: usize) {
+        for index in 0..count {
+            let member_id = Uuid::new_v4();
+            sqlx::query("insert into mother_api.workspace_member_address (id, public_id, workspace_id, network_slug, address) values ($1, $2, $3, 'eth-mainnet', $4)")
+                .bind(member_id)
+                .bind(format!("wma_{}", member_id.simple()))
+                .bind(workspace_id)
+                .bind(address(index))
+                .execute(pool)
+                .await
+                .unwrap();
+        }
+    }
+
+    async fn remove_workspace(pool: &PgPool, account_id: Uuid, workspace_id: Uuid) {
+        sqlx::query("delete from mother_api.workspace_member_address where workspace_id = $1")
+            .bind(workspace_id)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("delete from mother_api.workspace where id = $1")
+            .bind(workspace_id)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("delete from mother_api.ib_account where id = $1")
+            .bind(account_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    fn address(index: usize) -> String {
+        format!("0x{index:040x}")
+    }
+
+    #[tokio::test]
+    async fn workspace_member_limit_rejects_new_addresses_but_allows_duplicates() {
+        let Some(pool) = migrated_pool().await else {
+            return;
+        };
+        let (account_id, service, workspace) = create_workspace(&pool).await;
+        seed_members(&pool, workspace.id, MAX_WORKSPACE_ADDRESSES).await;
+
+        assert!(!service
+            .add_member(&workspace, "eth-mainnet", &address(0), None)
+            .await
+            .unwrap());
+        assert!(matches!(
+            service
+                .add_member(
+                    &workspace,
+                    "eth-mainnet",
+                    &address(MAX_WORKSPACE_ADDRESSES),
+                    None,
+                )
+                .await,
+            Err(WorkspaceServiceError::Input(
+                WorkspaceInputError::AddressLimit
+            ))
+        ));
+
+        remove_workspace(&pool, account_id, workspace.id).await;
+    }
+
+    #[tokio::test]
+    async fn concurrent_workspace_member_additions_do_not_exceed_the_limit() {
+        let Some(pool) = migrated_pool().await else {
+            return;
+        };
+        let (account_id, service, workspace) = create_workspace(&pool).await;
+        seed_members(&pool, workspace.id, MAX_WORKSPACE_ADDRESSES - 1).await;
+        let first_address = address(MAX_WORKSPACE_ADDRESSES - 1);
+        let second_address = address(MAX_WORKSPACE_ADDRESSES);
+
+        let (first, second) = tokio::join!(
+            service.add_member(&workspace, "eth-mainnet", &first_address, None,),
+            service.add_member(&workspace, "eth-mainnet", &second_address, None,),
+        );
+
+        let added_count = [matches!(&first, Ok(true)), matches!(&second, Ok(true))]
+            .into_iter()
+            .filter(|added| *added)
+            .count();
+        assert_eq!(added_count, 1);
+        assert!(
+            matches!(
+                &first,
+                Err(WorkspaceServiceError::Input(
+                    WorkspaceInputError::AddressLimit
+                ))
+            ) || matches!(
+                &second,
+                Err(WorkspaceServiceError::Input(
+                    WorkspaceInputError::AddressLimit
+                ))
+            )
+        );
+        let member_count = sqlx::query_scalar::<_, i64>(
+            "select count(*) from mother_api.workspace_member_address where workspace_id = $1",
+        )
+        .bind(workspace.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(member_count, MAX_WORKSPACE_ADDRESSES as i64);
+
+        remove_workspace(&pool, account_id, workspace.id).await;
     }
 }

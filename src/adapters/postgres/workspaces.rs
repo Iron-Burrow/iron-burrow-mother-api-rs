@@ -27,6 +27,14 @@ pub(crate) struct WorkspaceMemberAddress {
     pub(crate) labels: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AddMemberOutcome {
+    Added,
+    AlreadyPresent,
+    Inactive,
+    LimitReached,
+}
+
 impl WorkspaceRepository {
     pub(crate) fn database(pool: PgPool) -> Self {
         Self(pool)
@@ -110,12 +118,59 @@ impl WorkspaceRepository {
         network_slug: &str,
         address: &str,
         client_ref: Option<&str>,
-    ) -> Result<bool, RepositoryError> {
-        let id = Uuid::new_v4();
-        let public_id = format!("wma_{}", id.simple());
-        let result = sqlx::query("insert into mother_api.workspace_member_address (id, public_id, workspace_id, network_slug, address, client_ref) values ($1, $2, $3, $4, $5, $6) on conflict (workspace_id, network_slug, address) do nothing")
-            .bind(id).bind(public_id).bind(workspace_id).bind(network_slug).bind(address).bind(client_ref).execute(&self.0).await.map_err(RepositoryError::new)?;
-        Ok(result.rows_affected() == 1)
+        maximum_members: usize,
+    ) -> Result<AddMemberOutcome, RepositoryError> {
+        let mut transaction = self.0.begin().await.map_err(RepositoryError::new)?;
+        let status = sqlx::query_scalar::<_, String>(
+            "select status from mother_api.workspace where id = $1 for update",
+        )
+        .bind(workspace_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(RepositoryError::new)?;
+
+        let outcome = if status.as_deref() != Some("active") {
+            AddMemberOutcome::Inactive
+        } else {
+            let already_present = sqlx::query_scalar::<_, bool>(
+                "select exists (select 1 from mother_api.workspace_member_address where workspace_id = $1 and network_slug = $2 and address = $3)",
+            )
+            .bind(workspace_id)
+            .bind(network_slug)
+            .bind(address)
+            .fetch_one(&mut *transaction)
+            .await
+            .map_err(RepositoryError::new)?;
+
+            if already_present {
+                AddMemberOutcome::AlreadyPresent
+            } else {
+                let member_count = sqlx::query_scalar::<_, i64>(
+                    "select count(*) from mother_api.workspace_member_address where workspace_id = $1",
+                )
+                .bind(workspace_id)
+                .fetch_one(&mut *transaction)
+                .await
+                .map_err(RepositoryError::new)?;
+
+                if member_count >= maximum_members as i64 {
+                    AddMemberOutcome::LimitReached
+                } else {
+                    let id = Uuid::new_v4();
+                    let public_id = format!("wma_{}", id.simple());
+                    let result = sqlx::query("insert into mother_api.workspace_member_address (id, public_id, workspace_id, network_slug, address, client_ref) values ($1, $2, $3, $4, $5, $6) on conflict (workspace_id, network_slug, address) do nothing")
+                        .bind(id).bind(public_id).bind(workspace_id).bind(network_slug).bind(address).bind(client_ref).execute(&mut *transaction).await.map_err(RepositoryError::new)?;
+                    if result.rows_affected() == 1 {
+                        AddMemberOutcome::Added
+                    } else {
+                        AddMemberOutcome::AlreadyPresent
+                    }
+                }
+            }
+        };
+
+        transaction.commit().await.map_err(RepositoryError::new)?;
+        Ok(outcome)
     }
 
     pub(crate) async fn add_label(
