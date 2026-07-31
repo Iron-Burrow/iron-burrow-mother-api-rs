@@ -19,7 +19,7 @@
 	}
 
 	@mother {
-		path / /app /app/* /docs /docs/* /assets/* /health /v1/*
+		path / /app /app/* /docs /docs/* /app/assets/* /health /v1/*
 	}
 	handle @mother {
 		reverse_proxy mother-api:3000

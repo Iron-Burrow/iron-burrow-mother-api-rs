@@ -17,8 +17,8 @@ API application logic.
 
 - Add Askama to the existing `mother-api` runtime and create public `/`,
   `/app`, and `/docs` HTML routes outside `/v1`.
-- Add bounded static asset delivery and deployment/Caddy configuration for the
-  public host.
+- Add bounded static asset delivery only below `/app/assets/*` and
+  deployment/Caddy configuration for the public host.
 - Render links to public API documentation, Account entry points, demo-key
   onboarding, Workspace entry, Scan, and Lab as those routes become available.
 - Add a public human-documentation route and a same-runtime
@@ -48,9 +48,10 @@ API application logic.
 ## Security relevance
 
 Askama templates must use normal escaping and no unreviewed raw HTML. Public
-pages set a reviewed CSP and safe content type; static asset paths are bounded;
-no API key or session secret is embedded in HTML, browser storage, logs, or
-analytics. Future state-changing forms require SPEC-016 session/CSRF policy.
+pages set a reviewed CSP and safe content type; static asset paths are bounded
+below `/app/assets/*`; no API key or session secret is embedded in HTML,
+browser storage, logs, or analytics. Future state-changing forms require
+SPEC-016 session/CSRF policy.
 
 ## Expected domain and database changes
 
@@ -67,6 +68,8 @@ until SPEC-016 is accepted.
 - `GET /docs` returns human-readable current Beta API documentation.
 - `GET /docs/openapi.json` returns the generated OpenAPI document for the
   active runtime configuration.
+- `GET /app/assets/*` serves bounded static delivery; `/assets/*` is not a
+  static delivery surface.
 - All existing `/v1/*` and `/health` contracts remain unchanged.
 
 No proposed Account, demo, Scan, or Lab path becomes a public promise in this
@@ -77,7 +80,8 @@ SPEC without an accepted dependent SPEC and matching `CONTRACTS.md` update.
 - The existing binary serves the homepage and API without a second deployable.
 - Homepage tests prove route registration, content type, no codename leak, and
   links to the currently documented API surface.
-- Static asset traversal is impossible and cache policy is explicit.
+- Static delivery is limited to `/app/assets/*`, traversal is impossible, and
+  cache policy is explicit.
 - HTML responses use the reviewed CSP and security headers both directly from
   Mother and through Caddy; no inline scripts or styles are required.
 - HTML templates do not bypass application authorization or expose secrets.

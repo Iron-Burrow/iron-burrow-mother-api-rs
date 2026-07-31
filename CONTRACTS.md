@@ -40,8 +40,8 @@ account data, or grant access to protected operations.
 
 `/docs/openapi.json` reflects whether feature-gated transfer search is enabled.
 It documents the existing `/v1` route surface; it does not create another
-version of that API. Static files are served only below `/assets/` and are not
-a machine API surface.
+version of that API. Static files are served only below `/app/assets/` and are
+not a machine API surface; `/assets/*` is not a static delivery surface.
 
 All HTML responses set `Content-Security-Policy`, `X-Content-Type-Options:
 nosniff`, `X-Frame-Options: DENY`, and `Referrer-Policy:

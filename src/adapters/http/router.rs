@@ -73,7 +73,7 @@ pub fn build_router(state: AppState) -> Router {
 
     Router::new()
         .merge(web::routes())
-        .nest_service("/assets", static_assets)
+        .nest_service("/app/assets", static_assets)
         .route("/health", get(health))
         .nest("/v1", v1_routes)
         .fallback(unmatched_route)

@@ -296,7 +296,7 @@ async fn static_assets_are_bounded_and_have_an_explicit_cache_policy() {
     let response = test_app()
         .oneshot(
             Request::builder()
-                .uri("/assets/site.css")
+                .uri("/app/assets/site.css")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -315,7 +315,12 @@ async fn static_assets_are_bounded_and_have_an_explicit_cache_policy() {
         .unwrap()
         .starts_with("text/css"));
 
-    for uri in ["/assets/missing.css", "/assets/%2e%2e/Cargo.toml"] {
+    for uri in [
+        "/assets/site.css",
+        "/app/assets",
+        "/app/assets/missing.css",
+        "/app/assets/%2e%2e/Cargo.toml",
+    ] {
         let response = test_app()
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
             .await
@@ -724,7 +729,14 @@ fn production_caddy_forwards_api_and_phase_two_web_routes_to_axum() {
         "/infra/caddy/Caddyfile"
     ));
 
-    assert!(caddyfile.contains("path / /app /app/* /docs /docs/* /assets/* /health /v1/*"));
+    let allowlist = caddyfile
+        .lines()
+        .find(|line| line.trim_start().starts_with("path "))
+        .expect("Caddy must define a Mother route allowlist");
+    assert!(allowlist
+        .split_whitespace()
+        .any(|path| path == "/app/assets/*"));
+    assert!(!allowlist.split_whitespace().any(|path| path == "/assets/*"));
     assert!(!caddyfile.contains("method GET"));
     assert!(caddyfile.contains("object-src 'none'"));
     assert!(!caddyfile.contains("'unsafe-inline'"));

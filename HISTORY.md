@@ -387,3 +387,6 @@ implementation, and documentation changes.
   behavior.
 - Accepted SPEC-014 and updated `CONTRACTS.md` and README to document the
   public web delivery surface while preserving the private-Beta machine API.
+- Moved the bounded Phase 2 stylesheet delivery path from `/assets/*` to
+  `/app/assets/*`, leaving the future Data Lab asset-domain surface
+  unimplemented and preserving the existing cache and HTML security policies.
