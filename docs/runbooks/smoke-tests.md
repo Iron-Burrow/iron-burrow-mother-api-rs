@@ -274,6 +274,9 @@ throwaway key reaches protected-route validation, the tiny daily limit returns
 `429`, revocation returns the key to `401`, and usage output never includes raw
 keys or key hashes.
 
+Expected: a valid key with the required operation grant revoked returns
+`403 capability_not_granted` before protected-route handler execution.
+
 ```bash
 status="$(curl -sS -o /tmp/mother-balance-no-key.out.json -w '%{http_code}' \
   -X POST "$IB_API/v1/balances" \

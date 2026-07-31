@@ -868,6 +868,30 @@ criteria, and implementation phase before acceptance.
 | 5 | Workspace source/evidence activity log and agent-facing structured equivalent (SPEC-021). |
 | 6 | Treasury and historical analysis capabilities evolve incrementally after the vertical slice is operational. |
 
+### Phase 0 execution checklist
+
+Phase 0 is complete when maintainers can point to one authoritative artifact
+for each first-slice control and one executable proof path for each control
+that affects runtime behavior.
+
+| Area | Control | Primary source | Proof path |
+| --- | --- | --- | --- |
+| Route surface | Beta keeps only `/health`, `/v1/balances`, `/v1/balances/bulk`, and feature-gated `/v1/erc20-transfers/search`; known Alpha routes return `403 endpoint_disabled`. | `CONTRACTS.md`, SPEC-011, router composition | `src/adapters/http/router/tests.rs`, `docs/runbooks/smoke-tests.md` |
+| Auth failures | Missing/invalid/inactive credentials remain non-enumerating `401 unauthorized`; auth storage outage returns `503 database_unavailable`. | `CONTRACTS.md`, SPEC-010 | `src/adapters/http/router/tests.rs`, `scripts/smoke/beta-auth.sh` |
+| Capability authorization | Valid key without required operation grant returns `403 capability_not_granted` before quota consumption and handler execution. | SPEC-013, `src/adapters/http/auth.rs` | `src/adapters/http/auth.rs` tests, `scripts/smoke/beta-auth.sh` |
+| Quota behavior | Valid key over configured limit returns `429 rate_limited` without executing protected handler. | `CONTRACTS.md`, SPEC-010 | `src/adapters/http/auth.rs` tests, `scripts/smoke/beta-auth.sh` |
+| Grant lifecycle | `db apply` creates capability tables and reconciles legacy owner/key grants for existing keys. | migration `0009`, `reference-data/catalog.json`, `src/reference_data.rs` | `src/adapters/postgres/tests.rs` |
+| OpenAPI contract | Protected routes include bearer security plus `401`, `403`, `429`, and `503` examples. | `src/openapi.rs`, `CONTRACTS.md` | `src/openapi.rs` tests |
+
+Known documentation drift to track in Phase 0 reconciliation output:
+
+- SPEC-011 remains accepted as the private-Beta release consolidation record
+  but still contains v0.2-oriented wording in sections now covered by the
+  v0.3 balance contract baseline in SPEC-012 and `CONTRACTS.md`.
+- This first slice does not edit SPEC-011; maintainers track and resolve this
+  drift in a dedicated documentation follow-up without changing the current
+  contract source-of-truth order.
+
 ### SPEC dependency graph
 
 ```mermaid

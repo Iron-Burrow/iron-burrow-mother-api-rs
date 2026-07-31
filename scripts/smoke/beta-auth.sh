@@ -181,6 +181,53 @@ status="$(curl -sS -o "${payload}.no-key.out" -w '%{http_code}' \
 assert_status "$status" "401" "Protected route without API key"
 jq -e '.ok == false and .error.code == "unauthorized"' "${payload}.no-key.out" >/dev/null
 
+echo "Issuing capability-check API key for grant narrowing validation..."
+
+capability_issue_output="$(DATABASE_URL="$SMOKE_DATABASE_URL" cargo run --quiet --bin mother-api -- admin api-key issue \
+	--consumer-slug beta-auth-capability-smoke \
+	--display-name "Beta Auth Capability Smoke" \
+	--category internal \
+	--label "capability narrowing smoke key" \
+	--requests-per-minute 60 \
+	--requests-per-day 10 \
+	--format json)"
+
+capability_api_key="$(printf '%s\n' "$capability_issue_output" | jq -r '.api_key')"
+capability_key_prefix="$(printf '%s\n' "$capability_issue_output" | jq -r '.key_prefix')"
+capability_auth_header="Authorization: Bearer ${capability_api_key}"
+
+if [ -z "$capability_api_key" ] || [ "$capability_api_key" = "null" ]; then
+	fail "Capability-check issue command did not return api_key."
+fi
+
+echo "Revoking balances.read grant for capability-check key..."
+
+docker exec -i "$SMOKE_DB_CONTAINER" \
+	psql -v ON_ERROR_STOP=1 -U postgres -d "$SMOKE_DB_NAME" >/dev/null <<SQL
+update mother_api.api_key_capability_grant grant_row
+set
+  status = 'revoked',
+  revoked_at = now(),
+  updated_at = now()
+from mother_api.api_key api_key_row
+where grant_row.api_key_id = api_key_row.id
+  and api_key_row.key_prefix = '${capability_key_prefix}'
+  and grant_row.capability_id = 'balances.read'
+  and grant_row.network_scope = '*'
+  and grant_row.status = 'active';
+SQL
+
+echo "Checking valid key without required grant returns capability_not_granted..."
+
+status="$(curl -sS -o "${payload}.capability-denied.out" -w '%{http_code}' \
+	-X POST "${SMOKE_API}/v1/balances" \
+	-H 'Content-Type: application/json' \
+	-H "$capability_auth_header" \
+	-d @"$payload")"
+assert_status "$status" "403" "Protected route with missing capability grant"
+jq -e '.ok == false and .error.code == "capability_not_granted"' \
+	"${payload}.capability-denied.out" >/dev/null
+
 echo "Issuing throwaway API key with a one-request daily limit..."
 
 issue_output="$(DATABASE_URL="$SMOKE_DATABASE_URL" cargo run --quiet --bin mother-api -- admin api-key issue \
