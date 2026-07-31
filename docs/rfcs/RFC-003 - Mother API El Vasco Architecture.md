@@ -843,6 +843,7 @@ The implementation map is intentionally split into:
 | SPEC-019 | Planned draft | Client registry and delegated key/access model. |
 | SPEC-020 | Planned draft | Workspace-scoped balance and transfer application views under `/app`. |
 | SPEC-021 | Planned draft | Workspace activity/evidence log and source-aware presentation policy. |
+| SPEC-022 | New draft | API-key usage console (`/app/access`, `/app/usage`) with key-holder sessions and capability-labelled usage events. |
 
 ### Deferred roadmap specs (not required for first slice)
 
@@ -908,6 +909,7 @@ flowchart TD
   S019[SPEC-019 Client registry]
   S020[SPEC-020 Workspace balances and transfers]
   S021[SPEC-021 Workspace activity and evidence]
+  S022[SPEC-022 API-key usage console]
 
   S010 --> S013
   S011 --> S013
@@ -915,8 +917,10 @@ flowchart TD
   S013 --> S016
   S013 --> S017
   S013 --> S018
+  S013 --> S022
   S014 --> S015
   S014 --> S016
+  S014 --> S022
   S015 --> S020
   S016 --> S017
   S017 --> S018
