@@ -263,7 +263,11 @@ async fn docs_link_to_the_configured_machine_api_origin() {
 
 #[tokio::test]
 async fn account_entry_and_link_confirmation_routes_are_human_html_only() {
-    for uri in ["/signup", "/login", "/verify-email?token=test-token"] {
+    for uri in [
+        "/signup",
+        "/login",
+        "/verify-email?token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    ] {
         let response = test_app()
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
             .await

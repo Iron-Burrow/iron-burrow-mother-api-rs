@@ -70,12 +70,13 @@ pub(crate) async fn require_network_scopes(
             warn!(%error, api_key_id = %principal.api_key_id, "API-key network-scope lookup failed");
             ApiError::database_unavailable_for_auth()
         })?;
+    let context = AuthorizationContext {
+        owner_grants: grants.owner_grants,
+        key_grants: grants.key_grants,
+    };
     for network_slug in network_slugs {
         if evaluate_authorization(
-            &AuthorizationContext {
-                owner_grants: grants.owner_grants.clone(),
-                key_grants: grants.key_grants.clone(),
-            },
+            &context,
             &AuthorizationRequest::network(capability, network_slug),
         ) != AuthorizationDecision::Allow
         {

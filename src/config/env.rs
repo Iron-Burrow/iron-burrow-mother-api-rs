@@ -125,6 +125,7 @@ impl Config {
 
         if self.app_env == "production"
             && (self.public_web_base_url.trim().is_empty()
+                || self.public_web_base_url == DEFAULT_PUBLIC_WEB_BASE_URL
                 || self.resend_api_key.is_none()
                 || self.email_from.is_none()
                 || self.account_email_lookup_pepper.is_none())

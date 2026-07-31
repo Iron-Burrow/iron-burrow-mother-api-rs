@@ -105,9 +105,7 @@ async fn access(State(state): State<AppState>) -> Response {
         },
         None => None,
     };
-    html_response(AccessTemplate {
-        demo_intent: intent,
-    })
+    access_response(intent)
 }
 
 async fn docs(State(state): State<AppState>) -> Response {
@@ -204,6 +202,9 @@ struct TokenQuery {
     token: String,
 }
 async fn verify_email(Query(query): Query<TokenQuery>) -> Response {
+    if !is_valid_token(&query.token) {
+        return generic_link_response();
+    }
     secret_html_response(VerifyEmailTemplate { token: query.token })
 }
 #[derive(Deserialize)]
@@ -338,6 +339,15 @@ fn html_response(template: impl Template) -> Response {
 fn secret_html_response(template: impl Template) -> Response {
     response_with_template(template, true)
 }
+fn access_response(demo_intent: Option<String>) -> Response {
+    let response_is_secret = demo_intent.is_some();
+    let template = AccessTemplate { demo_intent };
+    if response_is_secret {
+        secret_html_response(template)
+    } else {
+        html_response(template)
+    }
+}
 fn response_with_template(template: impl Template, secret: bool) -> Response {
     let Ok(body) = template.render() else {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -378,6 +388,9 @@ fn create_token() -> Option<String> {
     let mut bytes = [0_u8; 32];
     getrandom::fill(&mut bytes).ok()?;
     Some(hex::encode(bytes))
+}
+fn is_valid_token(value: &str) -> bool {
+    value.len() == 64 && value.chars().all(|character| character.is_ascii_hexdigit())
 }
 fn hash(value: &str) -> Vec<u8> {
     Sha256::digest(value.as_bytes()).to_vec()
@@ -462,4 +475,96 @@ struct DemoKeyTemplate {
 struct MessageTemplate<'a> {
     heading: &'a str,
     message: &'a str,
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{
+        body::to_bytes,
+        http::{header::CACHE_CONTROL, header::REFERRER_POLICY, HeaderName},
+        response::IntoResponse,
+    };
+
+    use super::*;
+
+    #[tokio::test]
+    async fn verify_email_rejects_malformed_or_oversized_tokens_without_reflecting_them() {
+        for token in ["not-a-token".to_string(), "a".repeat(65)] {
+            let response = verify_email(Query(TokenQuery {
+                token: token.clone(),
+            }))
+            .await;
+
+            assert_eq!(response.headers().get(CACHE_CONTROL).unwrap(), "no-store");
+            assert_eq!(
+                response.headers().get(REFERRER_POLICY).unwrap(),
+                "no-referrer"
+            );
+            assert_eq!(
+                response
+                    .headers()
+                    .get(HeaderName::from_static("x-robots-tag"))
+                    .unwrap(),
+                "noindex, nofollow"
+            );
+            let body = String::from_utf8(
+                to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap()
+                    .to_vec(),
+            )
+            .unwrap();
+            assert!(body.contains("Link unavailable"));
+            assert!(!body.contains(&token));
+        }
+    }
+
+    #[tokio::test]
+    async fn verify_email_accepts_a_64_character_hex_token() {
+        let token = "a".repeat(64);
+        let response = verify_email(Query(TokenQuery {
+            token: token.clone(),
+        }))
+        .await;
+        let body = String::from_utf8(
+            to_bytes(response.into_response().into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap();
+
+        assert!(body.contains(&token));
+    }
+
+    #[tokio::test]
+    async fn access_responses_with_demo_intents_are_not_cacheable() {
+        let secret_response = access_response(Some("demo-intent".to_string()));
+        assert_eq!(
+            secret_response.headers().get(CACHE_CONTROL).unwrap(),
+            "no-store"
+        );
+        assert_eq!(
+            secret_response.headers().get(REFERRER_POLICY).unwrap(),
+            "no-referrer"
+        );
+        assert_eq!(
+            secret_response
+                .headers()
+                .get(HeaderName::from_static("x-robots-tag"))
+                .unwrap(),
+            "noindex, nofollow"
+        );
+
+        let public_response = access_response(None);
+        assert!(public_response.headers().get(CACHE_CONTROL).is_none());
+        assert_eq!(
+            public_response.headers().get(REFERRER_POLICY).unwrap(),
+            "strict-origin-when-cross-origin"
+        );
+        assert!(public_response
+            .headers()
+            .get(HeaderName::from_static("x-robots-tag"))
+            .is_none());
+    }
 }
