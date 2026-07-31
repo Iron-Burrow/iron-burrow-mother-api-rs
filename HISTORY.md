@@ -379,17 +379,16 @@ implementation, and documentation changes.
 ## 2026-07-31
 
 - Completed RFC-003 Phase 2 in the existing Mother API runtime: added the
-  public homepage, non-functional `/app` Data Lab entry, rendered `/docs`, and
-  feature-aware `/docs/openapi.json` download.
+  public homepage, Scan and API-access holding pages, rendered `/docs`, and a
+  feature-aware `/openapi.json` download link on the API hostname.
 - Added Askama templates, a bounded same-origin stylesheet, anonymous browser
   context seam, reviewed HTML headers/CSP, and Caddy routing for the web
   surface without adding account, session, API-key, database, or `/v1`
   behavior.
 - Accepted SPEC-014 and updated `CONTRACTS.md` and README to document the
   public web delivery surface while preserving the private-Beta machine API.
-- Moved the bounded Phase 2 stylesheet delivery path from `/assets/*` to
-  `/app/assets/*`, leaving the future Data Lab asset-domain surface
-  unimplemented and preserving the existing cache and HTML security policies.
+- Served the bounded Phase 2 stylesheet from `/assets/*`, preserving existing
+  cache and HTML security policies while `/app` remains retired.
 - Adopted the consumer-based public-domain strategy in ADR-001: the same
   Mother API runtime now serves human pages on `www.ironburrow.com` and the
   stable machine API on `api.ironburrow.com` through Caddy-enforced route
