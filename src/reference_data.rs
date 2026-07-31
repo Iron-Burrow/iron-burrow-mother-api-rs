@@ -513,7 +513,7 @@ async fn upsert_capability(
 async fn reconcile_legacy_capability_grants(
     transaction: &mut Transaction<'_, Postgres>,
 ) -> Result<(), ReferenceDataError> {
-    for capability in Capability::ALL {
+    for capability in Capability::LEGACY_BASELINE {
         sqlx::query(
             r#"
             insert into mother_api.api_consumer_capability_grant (

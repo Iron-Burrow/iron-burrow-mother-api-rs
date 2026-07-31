@@ -9,6 +9,7 @@ pub(crate) enum Capability {
 
 impl Capability {
     pub(crate) const ALL: [Self; 2] = [Self::BalancesRead, Self::Erc20TransfersRead];
+    pub(crate) const LEGACY_BASELINE: [Self; 2] = [Self::BalancesRead, Self::Erc20TransfersRead];
 
     pub(crate) const fn id(self) -> &'static str {
         match self {
@@ -155,6 +156,11 @@ mod tests {
 
     fn grant(capability: Capability, scope: NetworkScope) -> CapabilityGrant {
         CapabilityGrant::active(capability, scope)
+    }
+
+    #[test]
+    fn legacy_baseline_stays_pinned_to_the_compatibility_capabilities() {
+        assert_eq!(Capability::LEGACY_BASELINE, Capability::ALL);
     }
 
     #[test]

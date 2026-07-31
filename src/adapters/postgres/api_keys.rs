@@ -718,7 +718,7 @@ pub(crate) struct ApiKeyAuthorizationGrants {
 impl ApiKeyAuthorizationGrants {
     #[cfg(test)]
     pub(crate) fn legacy_default() -> Self {
-        let grants = Capability::ALL
+        let grants = Capability::LEGACY_BASELINE
             .into_iter()
             .map(|capability| CapabilityGrant::active(capability, NetworkScope::Any))
             .collect::<Vec<_>>();
@@ -966,7 +966,7 @@ async fn insert_legacy_grants_for_issue(
     consumer_id: Uuid,
     api_key_id: Uuid,
 ) -> Result<(), ApiKeyIssueRepositoryError> {
-    for capability in Capability::ALL {
+    for capability in Capability::LEGACY_BASELINE {
         sqlx::query(
             r#"
             insert into mother_api.api_consumer_capability_grant (
