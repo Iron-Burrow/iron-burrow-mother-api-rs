@@ -1,0 +1,3 @@
+{% extends "web/base.html" %}
+{% block title %}Workspaces — Iron Burrow{% endblock %}
+{% block content %}<h1>Workspaces</h1><form method="post" action="/workspaces"><input type="hidden" name="csrf" value="{{ csrf }}"><label>Name <input name="name" required maxlength="120"></label><label>Description <textarea name="description" maxlength="1000"></textarea></label><button>Create Workspace</button></form><ul>{% for workspace in workspaces %}<li><a href="/workspaces/{{ workspace.public_id }}">{{ workspace.name }}</a></li>{% endfor %}</ul>{% endblock %}

@@ -6,10 +6,12 @@ pub mod balance_catalog;
 pub mod errors;
 pub mod global_assets;
 pub mod networks;
+pub mod workspaces;
 
 pub(crate) use accounts::AccountRepository;
 pub(crate) use api_keys::ApiKeyRepository;
 pub use global_assets::GlobalAssetRepository;
+pub(crate) use workspaces::WorkspaceRepository;
 
 #[cfg(test)]
 mod tests;

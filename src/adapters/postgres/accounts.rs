@@ -145,6 +145,23 @@ impl AccountRepository {
         Ok(())
     }
 
+    pub(crate) async fn has_active_capability(
+        &self,
+        account_id: Uuid,
+        capability: Capability,
+        network_slug: &str,
+    ) -> Result<bool, RepositoryError> {
+        sqlx::query_scalar::<_, bool>(
+            "select exists (select 1 from mother_api.ib_account_capability_grant where ib_account_id = $1 and capability_id = $2 and status = 'active' and revoked_at is null and (expires_at is null or expires_at > now()) and network_scope in ('*', $3))",
+        )
+        .bind(account_id)
+        .bind(capability.id())
+        .bind(network_slug)
+        .fetch_one(&self.0)
+        .await
+        .map_err(RepositoryError::new)
+    }
+
     pub(crate) async fn create_demo_intent(
         &self,
         secret_hash: &[u8],

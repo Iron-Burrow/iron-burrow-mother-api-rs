@@ -404,3 +404,11 @@ implementation, and documentation changes.
   operator issuance. Existing `/v1` contracts and legacy keys remain intact.
 - Added constrained anonymous demo issuance on the human web host and recorded
   its external WAF prerequisite; deferred SPEC-022 usage-console work.
+
+- Completed RFC-003 Phase 4: added account-owned, URL-selected Workspaces,
+  watch-only Ethereum/Base address registration, address labels, archive and
+  restore actions, and scoped balance/transfer HTML views on the human host.
+- Added migration `0011` and account-ownership/capability checks without
+  adding a `/v1` endpoint, OpenAPI operation, activity log, or data aggregation.
+- Accepted SPEC-020, reconciled Phase 4 with ADR-001's retired `/app` route
+  namespace, and updated the web-host Caddy allowlist and contracts.

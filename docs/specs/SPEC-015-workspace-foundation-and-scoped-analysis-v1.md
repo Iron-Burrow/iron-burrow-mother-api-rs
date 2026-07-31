@@ -21,8 +21,7 @@ end-to-end Data Lab slice.
 - Workspace lifecycle states and minimum fields.
 - Watch-only address membership registration.
 - Workspace labels.
-- Append-only Workspace activity/evidence log.
-- Workspace-scoped balance and transfer views.
+- Account-owned Workspace lifecycle, member-address registration, and labels.
 - Authorization boundaries for account-backed and anonymous callers.
 - Shared application-service boundaries for human and agent presenters.
 
@@ -40,7 +39,7 @@ end-to-end Data Lab slice.
 
 - RFC-003 for product model, surface policy, and promotion policy.
 - SPEC-013 for authorization intersection and capability grants.
-- SPEC-014 for `/app` runtime shell and shared presentation boundaries.
+- SPEC-014 and ADR-001 for the `www.ironburrow.com` runtime shell and shared presentation boundaries.
 - SPEC-012 and SPEC-007 for balance and transfer capability primitives used by
   Workspace-scoped views.
 
@@ -53,8 +52,6 @@ integrity:
 - Anonymous callers cannot create or mutate Workspaces.
 - Access checks must verify account ownership (or explicit delegated access in
   future specs) before any Workspace read/write operation.
-- Activity/evidence logs are append-only; edits and hard deletes are out of
-  scope for v1.
 - Watch-only membership must not imply custody or cryptographic control.
 
 ## Terminology
@@ -64,7 +61,6 @@ integrity:
 | Workspace | Durable account-owned boundary where Data Lab context and analyses accumulate. |
 | Workspace member address | Watch-only on-chain address registered in a Workspace context. |
 | Workspace label | User-defined organization tag associated with Workspace or member addresses. |
-| Workspace activity/evidence log | Append-only record of relevant actions, evidence snapshots, and analysis events in a Workspace. |
 
 ## Ownership and account relationship
 
@@ -114,21 +110,11 @@ Rules:
 - Address registration is watch-only and does not assert ownership.
 - Labels are user-defined metadata, not authorization primitives.
 
-## Activity/evidence log
+## Phase boundary
 
-Workspace activity/evidence entries are append-only in v1.
-
-Each entry should include:
-
-- `workspace_id`.
-- `entry_id`.
-- `entry_type` (for example `workspace_created`, `address_added`,
-  `balance_view_requested`, `transfer_view_requested`, `analysis_saved`).
-- `actor_type` (`account_user|client|agent|system`).
-- `actor_id` (opaque identifier).
-- `event_time`.
-- Evidence metadata relevant to the action (for example network, block,
-  resolution timestamp, request correlation id, partial-failure flags).
+The append-only Workspace activity/evidence log, evidence-event persistence,
+and an agent-facing structured equivalent are Phase 5 work owned by SPEC-021.
+Phase 4 does not create activity-log tables or persist view events.
 
 ## Authorization boundaries
 
@@ -143,7 +129,7 @@ Each entry should include:
 Workspace capabilities are shared application operations exposed through
 multiple presenters:
 
-- Askama-rendered `/app` pages for human users.
+- Askama-rendered `www.ironburrow.com/workspaces` pages for human users.
 - Structured application responses for clients/agents.
 - CLI/future agent transports over the same service boundaries.
 
@@ -175,22 +161,16 @@ Conceptual tables and invariants:
 - `workspace` (`workspace_id`, owner, status, metadata, timestamps).
 - `workspace_member_address` (normalized workspace-network-address uniqueness).
 - `workspace_label` and association tables.
-- `workspace_activity_log` (append-only, immutable rows).
-
-Detailed schema decisions (indexes, partitioning, retention tuning) are part of
+Detailed schema decisions (indexes and retention tuning) are part of
 implementation PRs and follow-on operational specs.
 
 ## MVP acceptance criteria
 
 1. Account owner can create, list, rename, archive, and select Workspaces.
 2. Account owner can register at least one watch-only address per Workspace.
-3. Workspace-scoped balance and transfer views use existing capabilities while
-   preserving source/evidence metadata.
-4. Every Workspace mutation and scoped data-view action appends an activity/
-   evidence log entry.
-5. Anonymous principals are denied Workspace operations.
-6. Cross-account Workspace access is denied by ownership checks.
-7. No new stable `/v1` endpoint is introduced by this spec.
+3. Anonymous principals are denied Workspace operations.
+4. Cross-account Workspace access is denied by ownership checks.
+5. No new stable `/v1` endpoint is introduced by this spec.
 
 ## Deferred capabilities
 

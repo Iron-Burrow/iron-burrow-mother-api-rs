@@ -870,7 +870,7 @@ criteria, and implementation phase before acceptance.
 | 1 | Preserve current `/v1` contract operation with SPEC-010/011/012/013 controls. |
 | 2 | Product entry shell at `app.ironburrow.com` and Data Lab runtime seam via amended SPEC-014. |
 | 3 | Account entry and caller classification (`IBAccount` and anonymous) via SPEC-016/017. |
-| 4 | Workspace MVP (SPEC-015) plus Workspace-scoped balances and transfers (SPEC-020). |
+| 4 | Workspace MVP (SPEC-015) plus Workspace-scoped balances and transfers (SPEC-020) on the ADR-001 `www.ironburrow.com` surface. |
 | 5 | Workspace source/evidence activity log and agent-facing structured equivalent (SPEC-021). |
 | 6 | Treasury and historical analysis capabilities evolve incrementally after the vertical slice is operational. |
 
@@ -896,10 +896,10 @@ or draft artifact in this repository. Unchecked items remain planned.
 - [x] Implement `IBAccount` identity, verified email flow, browser sessions, and session/CSRF policy through SPEC-016.
 - [x] Expand API-key ownership beyond the legacy compatibility owner so keys can belong to `IBAccount`, anonymous demo, and later client/org principals through SPEC-017.
 - [x] Implement anonymous demo-key issuance with strict expiry, external edge abuse controls, and no privilege escalation.
-- [ ] Phase 4: deliver the Workspace MVP as the first durable Data Lab primitive.
-- [ ] Implement Workspace create/list/select/archive behavior with account ownership boundaries.
-- [ ] Implement watch-only address registration and labels inside Workspaces.
-- [ ] Deliver Workspace-scoped balance and transfer views under `/app` through SPEC-020.
+- [x] Phase 4: deliver the Workspace MVP as the first durable Data Lab primitive.
+- [x] Implement Workspace create/list/select/archive behavior with account ownership boundaries.
+- [x] Implement watch-only address registration and labels inside Workspaces.
+- [x] Deliver Workspace-scoped balance and transfer views on `www.ironburrow.com` through SPEC-020.
 - [ ] Phase 5: implement the append-only Workspace activity/evidence log and an agent-facing structured equivalent through SPEC-021.
 - [ ] Preserve source-awareness in Data Lab outputs, including network, block/time evidence, price timestamps, and partial-failure indicators where relevant.
 - [ ] Phase 6: expand treasury and historical analysis capabilities incrementally after the vertical slice is operational.
