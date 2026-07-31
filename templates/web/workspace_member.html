@@ -1,0 +1,33 @@
+{% extends "web/base.html" %}
+{% block title %}Address — Iron Burrow{% endblock %}
+{% block content %}
+<p><a href="/workspaces/{{ workspace.public_id }}">{{ workspace.name }}</a></p>
+<h1>{{ member.address }}</h1>
+<p>{{ member.network_slug }}</p>
+
+<h2>Balance view</h2>
+<form method="get" action="/workspaces/{{ workspace.public_id }}/addresses/{{ member.public_id }}/balances">
+  <label>As of <select name="as_of_kind"><option value="latest">Latest</option><option value="timestamp">Timestamp</option><option value="block_number">Block number</option></select></label>
+  <label>Timestamp <input name="as_of_timestamp" placeholder="2026-01-01T00:00:00Z"></label>
+  <label>Block number <input name="as_of_block_number"></label>
+  <label>Asset slugs <input name="asset_slugs" placeholder="ethereum,usdc" required></label>
+  <label>Contract addresses <input name="contract_addresses" placeholder="optional, comma separated"></label>
+  <label>Quote currency <select name="quote_currency"><option>USD</option><option>MXN</option><option>USDC</option><option>BTC</option></select></label>
+  <button>Resolve balances</button>
+</form>
+
+<h2>Transfer view</h2>
+{% if member.network_slug == "eth-mainnet" %}
+<form method="get" action="/workspaces/{{ workspace.public_id }}/addresses/{{ member.public_id }}/transfers">
+  <label>Lookback seconds <input name="lookback_seconds" type="number" value="86400" min="1"></label>
+  <label>Direction <select name="direction"><option value="any">Any</option><option value="from">From</option><option value="to">To</option></select></label>
+  <label>Asset slugs <input name="asset_slugs"></label>
+  <label>Contract addresses <input name="contract_addresses"></label>
+  <button>Search transfers</button>
+</form>
+{% else %}<p>Transfer search is currently available only for eth-mainnet.</p>{% endif %}
+
+<h2>Labels</h2>
+<ul>{% for label in member.labels %}<li>{{ label }}{% if workspace.status == "active" %}<form method="post" action="/workspaces/{{ workspace.public_id }}/addresses/{{ member.public_id }}/labels/remove"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="label" value="{{ label }}"><button>Remove</button></form>{% endif %}</li>{% endfor %}</ul>
+{% if workspace.status == "active" %}<form method="post" action="/workspaces/{{ workspace.public_id }}/addresses/{{ member.public_id }}/labels"><input type="hidden" name="csrf" value="{{ csrf }}"><input name="label" maxlength="64" required><button>Add label</button></form>{% endif %}
+{% endblock %}

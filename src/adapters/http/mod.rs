@@ -9,3 +9,4 @@ pub(crate) mod routes;
 pub(crate) mod types;
 pub(crate) mod validation;
 pub(crate) mod web;
+pub(crate) mod workspaces;

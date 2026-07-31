@@ -16,6 +16,7 @@ use axum::{
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tracing::warn;
+use uuid::Uuid;
 
 use crate::{adapters::email, domain::api_keys::RawApiKey, state::AppState};
 
@@ -28,13 +29,14 @@ const CSRF_COOKIE: &str = "__Host-ib_csrf";
 pub(crate) enum BrowserPrincipal {
     Anonymous,
     Authenticated {
+        account_id: Uuid,
         account_public_id: String,
         csrf_hash: Vec<u8>,
     },
 }
 
 pub(crate) fn routes(state: AppState) -> Router<AppState> {
-    html_routes(state)
+    html_routes(state.clone()).merge(super::workspaces::routes(state))
 }
 
 fn html_routes(state: AppState) -> Router<AppState> {
@@ -65,6 +67,7 @@ pub(crate) async fn attach_browser_context(
     ) {
         (Some(repository), Some(value)) => match repository.find_session(&hash(value)).await {
             Ok(Some(session)) => BrowserPrincipal::Authenticated {
+                account_id: session.ib_account_id,
                 account_public_id: session.public_id,
                 csrf_hash: session.csrf_hash,
             },
@@ -231,7 +234,7 @@ async fn confirm_email(
         .await
     {
         Ok(Some(_)) => {
-            let mut response = Redirect::to("/").into_response();
+            let mut response = Redirect::to("/workspaces").into_response();
             response
                 .headers_mut()
                 .append(SET_COOKIE, cookie_header(SESSION_COOKIE, &session, true));
@@ -333,11 +336,18 @@ pub(crate) async fn openapi_document(
     Json(crate::openapi::document(&state.config))
 }
 
-fn html_response(template: impl Template) -> Response {
+pub(crate) fn html_response(template: impl Template) -> Response {
     response_with_template(template, false)
 }
-fn secret_html_response(template: impl Template) -> Response {
+pub(crate) fn secret_html_response(template: impl Template) -> Response {
     response_with_template(template, true)
+}
+pub(crate) fn private_html_response(template: impl Template) -> Response {
+    let mut response = html_response(template);
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
+    response
 }
 fn access_response(demo_intent: Option<String>) -> Response {
     let response_is_secret = demo_intent.is_some();
@@ -392,7 +402,7 @@ fn create_token() -> Option<String> {
 fn is_valid_token(value: &str) -> bool {
     value.len() == 64 && value.chars().all(|character| character.is_ascii_hexdigit())
 }
-fn hash(value: &str) -> Vec<u8> {
+pub(crate) fn hash(value: &str) -> Vec<u8> {
     Sha256::digest(value.as_bytes()).to_vec()
 }
 fn hash_with_pepper(value: &str, pepper: &str) -> Vec<u8> {
@@ -407,7 +417,7 @@ fn normalize_email(value: &str) -> Option<String> {
     (value.len() <= 254 && value.contains('@') && !value.contains(char::is_whitespace))
         .then_some(value)
 }
-fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+pub(crate) fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers
         .get(COOKIE)?
         .to_str()
@@ -430,7 +440,7 @@ fn expired_cookie(name: &str, http_only: bool) -> HeaderValue {
     ))
     .expect("generated cookie is valid")
 }
-fn same_origin(headers: &HeaderMap, expected: &str) -> bool {
+pub(crate) fn same_origin(headers: &HeaderMap, expected: &str) -> bool {
     headers.get(ORIGIN).and_then(|value| value.to_str().ok())
         == Some(expected.trim_end_matches('/'))
 }

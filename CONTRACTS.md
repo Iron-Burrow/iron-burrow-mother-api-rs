@@ -42,9 +42,19 @@ flows below are deliberate human-web contracts.
 | `GET`/`POST` | `/signup`, `/login` | `text/html; charset=utf-8` | Generic passwordless account-entry forms. |
 | `GET`/`POST` | `/verify-email` | `text/html; charset=utf-8` | Displays then consumes a one-time entry link. |
 | `POST` | `/logout` | `text/html; charset=utf-8` | Invalidates the current browser session. |
+| `GET`/`POST` | `/workspaces` | `text/html; charset=utf-8` | Signed-in account Workspace list and creation. |
+| `GET` | `/workspaces/{workspace_id}` | `text/html; charset=utf-8` | Signed-in account-owned Workspace view. |
+| `POST` | `/workspaces/{workspace_id}/rename`, `/workspaces/{workspace_id}/archive`, `/workspaces/{workspace_id}/restore` | `text/html; charset=utf-8` | CSRF-protected Workspace lifecycle actions. |
+| `POST` | `/workspaces/{workspace_id}/addresses` | `text/html; charset=utf-8` | Registers a watch-only EVM address. |
+| `GET`/`POST` | `/workspaces/{workspace_id}/addresses/{member_id}/*` | `text/html; charset=utf-8` | Account-owned address labels plus scoped balance and transfer views. |
 
 Static files are served only below `/assets/` and are not a machine API
 surface. `/app` and `/app/assets/*` are not public delivery surfaces.
+
+Workspace pages require an active browser session and use account ownership,
+CSRF, and same-origin checks. They are private, no-store HTML surfaces, not
+additional JSON or `/v1` APIs. Registered addresses are watch-only; they do
+not assert blockchain ownership or custody.
 
 The machine-readable OpenAPI document is served at
 `https://api.ironburrow.com/openapi.json`. It reflects whether feature-gated

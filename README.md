@@ -86,9 +86,10 @@ frontend service or another version of the public machine API.
 
 `https://api.ironburrow.com/openapi.json` remains the machine-readable API
 contract. `app.ironburrow.com` is not configured. The web entry includes
-passwordless account entry and a constrained anonymous demo-key flow; it does
-not implement Workspaces, browser self-service key management, or Scan data
-access. A human product capability will not
+passwordless account entry, a constrained anonymous demo-key flow, and
+account-owned Workspaces at `/workspaces`. Workspaces hold watch-only Ethereum
+or Base addresses with labels and selected-address balance or transfer views;
+they are not a browser key-management or Scan explorer surface. A human product capability will not
 automatically receive a corresponding `/v1` JSON endpoint; promotion still
 requires deliberate validation, a formal specification, and a `CONTRACTS.md`
 compatibility decision.
