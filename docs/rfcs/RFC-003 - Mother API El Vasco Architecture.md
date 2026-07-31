@@ -1,7 +1,7 @@
 ---
 status: accepted
 owner: iron-burrow
-last_reviewed: 2026-07-30
+last_reviewed: 2026-07-31
 agent_edit_policy: update_when_relevant
 ---
 
@@ -867,6 +867,42 @@ criteria, and implementation phase before acceptance.
 | 4 | Workspace MVP (SPEC-015) plus Workspace-scoped balances and transfers (SPEC-020). |
 | 5 | Workspace source/evidence activity log and agent-facing structured equivalent (SPEC-021). |
 | 6 | Treasury and historical analysis capabilities evolve incrementally after the vertical slice is operational. |
+
+## Release-tracking checklist
+
+This checklist maps RFC-003 promises to the current repository state as of
+2026-07-31. Checked items are implemented or already captured in an accepted
+or draft artifact in this repository. Unchecked items remain planned.
+
+- [x] Phase 0: land the RFC update, reconcile the first-slice gap, and keep a baseline spec map for El Vasco.
+- [x] Phase 1: preserve the current Beta `/v1` route surface and existing key behavior while enforcing capability-based authorization for `balances.read` and `transfers.read`.
+- [x] Keep the public machine API deliberately small: `/health`, `POST /v1/balances`, `POST /v1/balances/bulk`, and feature-gated `POST /v1/erc20-transfers/search` remain the supported Beta routes.
+- [x] Keep route and error-contract hardening in place for Beta auth and authorization behavior, including stable `401 unauthorized`, `403 capability_not_granted`, `429 rate_limited`, `503 database_unavailable`, and `403 endpoint_disabled` behavior.
+- [x] Keep the embedded capability registry and legacy owner/key grant reconciliation in the database lifecycle.
+- [x] Keep OpenAPI and `CONTRACTS.md` aligned with the protected Beta route surface and capability-aware errors.
+- [x] Capture the `/app` runtime shell and homepage work in a dedicated follow-on spec (SPEC-014).
+- [x] Capture the Workspace foundation in a dedicated follow-on spec (SPEC-015).
+- [ ] Phase 2: add the repository-owned homepage at `/` for `app.ironburrow.com` in the existing Mother runtime.
+- [ ] Add the first `/app` runtime seam and server-rendered HTML delivery without creating a second service.
+- [ ] Add bounded static asset delivery, reviewed HTML headers/CSP, and the public docs entry route described by SPEC-014.
+- [ ] Ensure public HTML and docs surfaces contain no internal codename leaks.
+- [ ] Phase 3: implement caller resolution for verified accounts and anonymous callers.
+- [ ] Implement `IBAccount` identity, verified email flow, browser sessions, and session/CSRF policy through SPEC-016.
+- [ ] Expand API-key ownership beyond the legacy compatibility owner so keys can belong to `IBAccount`, anonymous demo, and later client/org principals through SPEC-017.
+- [ ] Implement anonymous demo-key issuance with strict expiry, abuse controls, and no privilege escalation.
+- [ ] Phase 4: deliver the Workspace MVP as the first durable Data Lab primitive.
+- [ ] Implement Workspace create/list/select/archive behavior with account ownership boundaries.
+- [ ] Implement watch-only address registration and labels inside Workspaces.
+- [ ] Deliver Workspace-scoped balance and transfer views under `/app` through SPEC-020.
+- [ ] Phase 5: implement the append-only Workspace activity/evidence log and an agent-facing structured equivalent through SPEC-021.
+- [ ] Preserve source-awareness in Data Lab outputs, including network, block/time evidence, price timestamps, and partial-failure indicators where relevant.
+- [ ] Phase 6: expand treasury and historical analysis capabilities incrementally after the vertical slice is operational.
+- [ ] Add curated Data Lab asset, network, price, scan, and lab experiences only through focused accepted specs and shared application services.
+- [ ] Keep any future `/v1` expansion behind deliberate promotion decisions, accepted specs, compatibility tests, and coordinated `CONTRACTS.md` updates.
+- [ ] Write the planned near-term specs that do not yet exist: SPEC-016, SPEC-017, SPEC-018, SPEC-019, SPEC-020, and SPEC-021.
+- [ ] Implement the later quota and usage-accounting model beyond current Beta defaults through SPEC-018.
+- [ ] Implement the future client registry and delegated access model through SPEC-019.
+- [ ] Keep payment/402 entitlements, advanced RPC/Otterscan, and Bitcoin/Lightning work deferred until dedicated accepted specs exist.
 
 ### Phase 0 execution checklist
 
