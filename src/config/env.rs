@@ -16,6 +16,10 @@ pub(crate) struct Config {
     pub(crate) http_host: String,
     pub(crate) http_port: u16,
     pub(crate) public_api_base_url: String,
+    pub(crate) public_web_base_url: String,
+    pub(crate) resend_api_key: Option<String>,
+    pub(crate) email_from: Option<String>,
+    pub(crate) account_email_lookup_pepper: Option<String>,
     pub(crate) database_url: Option<String>,
     pub(crate) price_indexer_url: Option<String>,
     pub(crate) price_ql_internal_token: Option<String>,
@@ -49,6 +53,11 @@ impl Config {
             },
             public_api_base_url: optional_env("PUBLIC_API_BASE_URL")
                 .unwrap_or_else(|| DEFAULT_PUBLIC_API_BASE_URL.to_string()),
+            public_web_base_url: optional_env("PUBLIC_WEB_BASE_URL")
+                .unwrap_or_else(|| DEFAULT_PUBLIC_WEB_BASE_URL.to_string()),
+            resend_api_key: optional_env("RESEND_API_KEY"),
+            email_from: optional_env("EMAIL_FROM"),
+            account_email_lookup_pepper: optional_env("ACCOUNT_EMAIL_LOOKUP_PEPPER"),
             database_url: optional_env("DATABASE_URL"),
             price_indexer_url: optional_env("PRICE_INDEXER_URL"),
             price_ql_internal_token: optional_env("PRICE_QL_INTERNAL_TOKEN"),
@@ -114,6 +123,16 @@ impl Config {
             });
         }
 
+        if self.app_env == "production"
+            && (self.public_web_base_url.trim().is_empty()
+                || self.public_web_base_url == DEFAULT_PUBLIC_WEB_BASE_URL
+                || self.resend_api_key.is_none()
+                || self.email_from.is_none()
+                || self.account_email_lookup_pepper.is_none())
+        {
+            return Err(ConfigError::MissingProductionAccountEntryConfig);
+        }
+
         Ok(())
     }
 }
@@ -126,6 +145,10 @@ impl Default for Config {
             http_host: DEFAULT_HTTP_HOST.to_string(),
             http_port: DEFAULT_HTTP_PORT,
             public_api_base_url: DEFAULT_PUBLIC_API_BASE_URL.to_string(),
+            public_web_base_url: DEFAULT_PUBLIC_WEB_BASE_URL.to_string(),
+            resend_api_key: None,
+            email_from: None,
+            account_email_lookup_pepper: None,
             database_url: None,
             price_indexer_url: None,
             price_ql_internal_token: None,
@@ -152,6 +175,19 @@ impl std::fmt::Debug for Config {
             .field("http_host", &self.http_host)
             .field("http_port", &self.http_port)
             .field("public_api_base_url", &self.public_api_base_url)
+            .field("public_web_base_url", &self.public_web_base_url)
+            .field(
+                "resend_api_key",
+                &self.resend_api_key.as_ref().map(|_| "<redacted>"),
+            )
+            .field("email_from", &self.email_from)
+            .field(
+                "account_email_lookup_pepper",
+                &self
+                    .account_email_lookup_pepper
+                    .as_ref()
+                    .map(|_| "<redacted>"),
+            )
             .field("database_url", &self.database_url)
             .field("price_indexer_url", &self.price_indexer_url)
             .field(

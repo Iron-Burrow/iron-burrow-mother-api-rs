@@ -18,14 +18,37 @@ pub(crate) enum DbCommand {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum AdminCommand {
     ApiKey(AdminApiKeyCommand),
+    Account(AdminAccountCommand),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum AdminAccountCommand {
+    Suspend(AccountStatusArgs),
+    Close(AccountStatusArgs),
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AccountStatusArgs {
+    pub(crate) ib_account_id: String,
+    pub(crate) format: OutputFormat,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum AdminApiKeyCommand {
     Issue(ApiKeyIssueArgs),
+    IssueAccount(AccountApiKeyIssueArgs),
     Revoke(ApiKeyRevokeArgs),
     List(ApiKeyListArgs),
     Usage(ApiKeyUsageArgs),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AccountApiKeyIssueArgs {
+    pub(crate) ib_account_id: String,
+    pub(crate) label: String,
+    pub(crate) requests_per_minute: i32,
+    pub(crate) requests_per_day: i32,
+    pub(crate) expires_at: Option<String>,
+    pub(crate) format: OutputFormat,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -86,9 +109,11 @@ Usage:
   mother-api db apply-reference
   mother-api db apply
   mother-api admin api-key issue --consumer-slug <slug> --display-name <name> --category <friend|partner|public|internal> --label <label> [--requests-per-minute <n>] [--requests-per-day <n>] [--expires-at <rfc3339>] [--format <human|json>]
+  mother-api admin api-key issue-account --ib-account-id <iba_id> --label <label> [--requests-per-minute <n>] [--requests-per-day <n>] [--expires-at <rfc3339>] [--format <human|json>]
   mother-api admin api-key revoke --key-prefix <prefix> [--format <human|json>]
   mother-api admin api-key list --consumer-slug <slug> [--format <human|json>]
   mother-api admin api-key usage --consumer-slug <slug> [--days <n>] [--format <human|json>]
+  mother-api admin account <suspend|close> --ib-account-id <iba_id> [--format <human|json>]
   mother-api help
   mother-api --help";
 
@@ -124,17 +149,115 @@ where
         ["admin", "api-key"] => Err(ParseError::new("admin api-key requires a subcommand")),
         ["admin", "api-key", arg] if is_help_arg(arg) => Ok(Command::Help),
         ["admin", "api-key", "issue", rest @ ..] => parse_issue(rest).map(admin_api_key),
+        ["admin", "api-key", "issue-account", rest @ ..] => {
+            parse_account_issue(rest).map(admin_api_key)
+        }
         ["admin", "api-key", "revoke", rest @ ..] => parse_revoke(rest).map(admin_api_key),
         ["admin", "api-key", "list", rest @ ..] => parse_list(rest).map(admin_api_key),
         ["admin", "api-key", "usage", rest @ ..] => parse_usage(rest).map(admin_api_key),
         ["admin", "api-key", subcommand, ..] => Err(ParseError::new(format!(
             "unknown admin api-key subcommand {subcommand:?}"
         ))),
+        ["admin", "account", "suspend", rest @ ..] => parse_account_status(rest, true),
+        ["admin", "account", "close", rest @ ..] => parse_account_status(rest, false),
         ["admin", subcommand, ..] => Err(ParseError::new(format!(
             "unknown admin subcommand {subcommand:?}"
         ))),
         [command, ..] => Err(ParseError::new(format!("unknown command {command:?}"))),
     }
+}
+
+fn parse_account_status(args: &[&str], suspend: bool) -> Result<Command, ParseError> {
+    let mut ib_account_id = None;
+    let mut format = OutputFormat::Human;
+    let mut seen_format = false;
+    let mut index = 0;
+    while index < args.len() {
+        let flag = args[index];
+        let value = flag_value(args, index)?;
+        match flag {
+            "--ib-account-id" => {
+                set_once(&mut ib_account_id, flag, validate_ib_account_id(value)?)?
+            }
+            "--format" => {
+                set_seen(&mut seen_format, flag)?;
+                format = parse_format(value)?;
+            }
+            unknown if unknown.starts_with("--") => {
+                return Err(ParseError::new(format!("unknown account flag {unknown:?}")))
+            }
+            unexpected => {
+                return Err(ParseError::new(format!(
+                    "unexpected account argument {unexpected:?}"
+                )))
+            }
+        };
+        index += 2;
+    }
+    let args = AccountStatusArgs {
+        ib_account_id: required(ib_account_id, "--ib-account-id")?,
+        format,
+    };
+    Ok(Command::Admin(AdminCommand::Account(if suspend {
+        AdminAccountCommand::Suspend(args)
+    } else {
+        AdminAccountCommand::Close(args)
+    })))
+}
+
+fn parse_account_issue(args: &[&str]) -> Result<AdminApiKeyCommand, ParseError> {
+    let mut ib_account_id = None;
+    let mut label = None;
+    let mut requests_per_minute = 60;
+    let mut requests_per_day = 5000;
+    let mut expires_at = None;
+    let mut format = OutputFormat::Human;
+    let mut seen_minute = false;
+    let mut seen_day = false;
+    let mut seen_format = false;
+    let mut index = 0;
+    while index < args.len() {
+        let flag = args[index];
+        let value = flag_value(args, index)?;
+        match flag {
+            "--ib-account-id" => {
+                set_once(&mut ib_account_id, flag, validate_ib_account_id(value)?)?
+            }
+            "--label" => set_once(&mut label, flag, validate_non_empty(flag, value)?)?,
+            "--requests-per-minute" => {
+                set_seen(&mut seen_minute, flag)?;
+                requests_per_minute = parse_non_negative_i32(flag, value)?;
+            }
+            "--requests-per-day" => {
+                set_seen(&mut seen_day, flag)?;
+                requests_per_day = parse_non_negative_i32(flag, value)?;
+            }
+            "--expires-at" => set_once(&mut expires_at, flag, validate_rfc3339(flag, value)?)?,
+            "--format" => {
+                set_seen(&mut seen_format, flag)?;
+                format = parse_format(value)?;
+            }
+            unknown if unknown.starts_with("--") => {
+                return Err(ParseError::new(format!(
+                    "unknown issue-account flag {unknown:?}"
+                )))
+            }
+            unexpected => {
+                return Err(ParseError::new(format!(
+                    "unexpected issue-account argument {unexpected:?}"
+                )))
+            }
+        }
+        index += 2;
+    }
+    Ok(AdminApiKeyCommand::IssueAccount(AccountApiKeyIssueArgs {
+        ib_account_id: required(ib_account_id, "--ib-account-id")?,
+        label: required(label, "--label")?,
+        requests_per_minute,
+        requests_per_day,
+        expires_at,
+        format,
+    }))
 }
 
 fn admin_api_key(command: AdminApiKeyCommand) -> Command {
@@ -364,6 +487,21 @@ fn validate_key_prefix(value: &str) -> Result<String, ParseError> {
     if trimmed != value || random_prefix.len() != 16 || !is_lower_hex(random_prefix) {
         return Err(ParseError::new(
             "--key-prefix must be a normalized ib_live_ key prefix",
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
+fn validate_ib_account_id(value: &str) -> Result<String, ParseError> {
+    let trimmed = value.trim();
+    let Some(raw) = trimmed.strip_prefix("iba_") else {
+        return Err(ParseError::new(
+            "--ib-account-id must be a normalized iba_ identifier",
+        ));
+    };
+    if trimmed != value || raw.len() != 32 || !is_lower_hex(raw) {
+        return Err(ParseError::new(
+            "--ib-account-id must be a normalized iba_ identifier",
         ));
     }
     Ok(trimmed.to_string())

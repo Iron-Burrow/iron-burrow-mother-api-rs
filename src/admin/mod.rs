@@ -5,12 +5,13 @@ use uuid::Uuid;
 use crate::{
     adapters::postgres::api_keys::{
         ApiKeyIssueRepositoryError, ApiKeyListItem, ApiKeyRevocation, ApiKeyUsageItem,
-        IssueApiKeyInput, IssuedApiKey,
+        IssueApiKeyInput, IssuedAccountApiKey, IssuedApiKey,
     },
     adapters::postgres::ApiKeyRepository,
     cli::{
-        AdminApiKeyCommand, AdminCommand, ApiKeyIssueArgs, ApiKeyListArgs, ApiKeyRevokeArgs,
-        ApiKeyUsageArgs, OutputFormat,
+        AccountApiKeyIssueArgs, AccountStatusArgs, AdminAccountCommand, AdminApiKeyCommand,
+        AdminCommand, ApiKeyIssueArgs, ApiKeyListArgs, ApiKeyRevokeArgs, ApiKeyUsageArgs,
+        OutputFormat,
     },
     domain::api_keys::{ApiKeyGenerationError, RawApiKey},
 };
@@ -50,10 +51,85 @@ async fn execute(
 ) -> Result<AdminOutput, AdminError> {
     match command {
         AdminCommand::ApiKey(AdminApiKeyCommand::Issue(args)) => issue(args, repository).await,
+        AdminCommand::ApiKey(AdminApiKeyCommand::IssueAccount(args)) => {
+            issue_account(args, repository).await
+        }
         AdminCommand::ApiKey(AdminApiKeyCommand::Revoke(args)) => revoke(args, repository).await,
         AdminCommand::ApiKey(AdminApiKeyCommand::List(args)) => list(args, repository).await,
         AdminCommand::ApiKey(AdminApiKeyCommand::Usage(args)) => usage(args, repository).await,
+        AdminCommand::Account(AdminAccountCommand::Suspend(args)) => {
+            set_account_status(args, "suspended", repository).await
+        }
+        AdminCommand::Account(AdminAccountCommand::Close(args)) => {
+            set_account_status(args, "closed", repository).await
+        }
     }
+}
+
+async fn set_account_status(
+    args: AccountStatusArgs,
+    status: &str,
+    repository: &ApiKeyRepository,
+) -> Result<AdminOutput, AdminError> {
+    let changed = repository
+        .set_account_status(&args.ib_account_id, status)
+        .await
+        .map_err(|error| AdminError::Operation(error.to_string()))?;
+    if !changed {
+        return Err(AdminError::Operation(
+            "IBAccount was not found or is already closed".to_string(),
+        ));
+    }
+    Ok(AdminOutput {
+        format: args.format,
+        payload: AdminPayload::AccountStatus {
+            public_id: args.ib_account_id,
+            status: status.to_string(),
+        },
+    })
+}
+
+async fn issue_account(
+    args: AccountApiKeyIssueArgs,
+    repository: &ApiKeyRepository,
+) -> Result<AdminOutput, AdminError> {
+    for _ in 0..ISSUE_GENERATED_KEY_ATTEMPTS {
+        let raw_key = RawApiKey::generate()?;
+        let issued = repository
+            .issue_account_api_key(
+                &args.ib_account_id,
+                &args.label,
+                &raw_key
+                    .key_prefix()
+                    .map_err(|error| AdminError::Operation(error.to_string()))?,
+                &raw_key.sha256_hash(),
+                args.requests_per_minute,
+                args.requests_per_day,
+                args.expires_at.as_deref(),
+            )
+            .await;
+        match issued {
+            Ok(issued) => {
+                return Ok(AdminOutput {
+                    format: args.format,
+                    payload: AdminPayload::AccountIssued(IssuedAccountApiKeyOutput {
+                        raw_key,
+                        issued,
+                    }),
+                })
+            }
+            Err(ApiKeyIssueRepositoryError::GeneratedKeyCollision) => continue,
+            Err(ApiKeyIssueRepositoryError::ConsumerConflict(message)) => {
+                return Err(AdminError::Operation(message))
+            }
+            Err(ApiKeyIssueRepositoryError::Repository(error)) => {
+                return Err(AdminError::Operation(error.to_string()))
+            }
+        }
+    }
+    Err(AdminError::Operation(
+        "failed to generate a unique API key after 3 attempts".to_string(),
+    ))
 }
 
 async fn issue(
@@ -175,6 +251,11 @@ struct AdminOutput {
 #[derive(Debug)]
 enum AdminPayload {
     Issued(IssuedApiKeyOutput),
+    AccountIssued(IssuedAccountApiKeyOutput),
+    AccountStatus {
+        public_id: String,
+        status: String,
+    },
     Revoked(ApiKeyRevocation),
     List {
         consumer_slug: String,
@@ -191,6 +272,12 @@ enum AdminPayload {
 struct IssuedApiKeyOutput {
     raw_key: RawApiKey,
     issued: IssuedApiKey,
+}
+
+#[derive(Debug)]
+struct IssuedAccountApiKeyOutput {
+    raw_key: RawApiKey,
+    issued: IssuedAccountApiKey,
 }
 
 impl AdminOutput {
@@ -216,6 +303,15 @@ impl AdminOutput {
                 display_optional(output.issued.expires_at.as_deref()),
                 output.issued.created_at
             ),
+            AdminPayload::AccountIssued(output) => format!(
+                "Issued account API key\napi_key: {}\nkey_prefix: {}\nib_account_id: {}\nlabel: {}\nstatus: {}\nrequests_per_minute: {}\nrequests_per_day: {}\nexpires_at: {}\ncreated_at: {}",
+                output.raw_key.expose_secret(), output.issued.key_prefix, output.issued.public_id,
+                output.issued.label, output.issued.status, output.issued.requests_per_minute,
+                output.issued.requests_per_day, display_optional(output.issued.expires_at.as_deref()), output.issued.created_at
+            ),
+            AdminPayload::AccountStatus { public_id, status } => {
+                format!("Updated IBAccount\nib_account_id: {public_id}\nstatus: {status}")
+            }
             AdminPayload::Revoked(revocation) => format!(
                 "Revoked API key\nkey_prefix: {}\nstatus: {}\nrevoked_at: {}",
                 revocation.key_prefix, revocation.status, revocation.revoked_at
@@ -291,6 +387,28 @@ impl AdminOutput {
                 expires_at: output.issued.expires_at.as_deref(),
                 created_at: &output.issued.created_at,
             }),
+            AdminPayload::AccountIssued(output) => {
+                serde_json::to_string_pretty(&IssuedAccountJson {
+                    ok: true,
+                    api_key: output.raw_key.expose_secret(),
+                    key_prefix: &output.issued.key_prefix,
+                    api_key_id: output.issued.api_key_id,
+                    ib_account_id: &output.issued.public_id,
+                    label: &output.issued.label,
+                    status: &output.issued.status,
+                    requests_per_minute: output.issued.requests_per_minute,
+                    requests_per_day: output.issued.requests_per_day,
+                    expires_at: output.issued.expires_at.as_deref(),
+                    created_at: &output.issued.created_at,
+                })
+            }
+            AdminPayload::AccountStatus { public_id, status } => {
+                serde_json::to_string_pretty(&AccountStatusJson {
+                    ok: true,
+                    ib_account_id: public_id,
+                    status,
+                })
+            }
             AdminPayload::Revoked(revocation) => serde_json::to_string_pretty(&RevokedJson {
                 ok: true,
                 api_key_id: revocation.api_key_id,
@@ -342,6 +460,28 @@ struct IssuedJson<'a> {
     requests_per_day: i32,
     expires_at: Option<&'a str>,
     created_at: &'a str,
+}
+
+#[derive(Serialize)]
+struct IssuedAccountJson<'a> {
+    ok: bool,
+    api_key: &'a str,
+    key_prefix: &'a str,
+    api_key_id: Uuid,
+    ib_account_id: &'a str,
+    label: &'a str,
+    status: &'a str,
+    requests_per_minute: i32,
+    requests_per_day: i32,
+    expires_at: Option<&'a str>,
+    created_at: &'a str,
+}
+
+#[derive(Serialize)]
+struct AccountStatusJson<'a> {
+    ok: bool,
+    ib_account_id: &'a str,
+    status: &'a str,
 }
 
 #[derive(Serialize)]

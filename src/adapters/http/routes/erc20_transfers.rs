@@ -1,6 +1,11 @@
 use std::collections::HashMap;
 
-use axum::{body::Bytes, extract::State, http::HeaderMap, Json};
+use axum::{
+    body::Bytes,
+    extract::{Extension, State},
+    http::HeaderMap,
+    Json,
+};
 use tracing::warn;
 
 use crate::adapters::http::dto::{
@@ -31,12 +36,19 @@ use crate::application::erc20_transfers::service::{
 use crate::domain::assets::balance_catalog::{CatalogIntegrityIssue, CatalogResolverError};
 use crate::domain::onchain_time::onchain_window::OnchainWindow;
 use crate::domain::transfers::transfer_direction::TransferDirection;
-use crate::{adapters::http::error::ApiError, state::AppState};
+use crate::{
+    adapters::http::{
+        auth::{require_network_scopes, ApiKeyPrincipal},
+        error::ApiError,
+    },
+    state::AppState,
+};
 
 const ERC20_TRANSFER_SEARCH_MAX_ROWS: u64 = 5_000;
 
 pub async fn search_erc20_transfers(
     State(state): State<AppState>,
+    principal: Option<Extension<ApiKeyPrincipal>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<Erc20TransferSearchResponse>, ApiError> {
@@ -45,6 +57,13 @@ pub async fn search_erc20_transfers(
     let request = Erc20TransferSearchRequest::try_from(&request)?;
     let client_ref = request.account.client_ref.clone();
     let input = erc20_transfer_search_input_from_request(request)?;
+    require_network_scopes(
+        &state,
+        principal.as_ref().map(|principal| &principal.0),
+        crate::domain::capabilities::Capability::Erc20TransfersRead,
+        std::slice::from_ref(&input.network_slug),
+    )
+    .await?;
     let plan = build_search_plan(
         input,
         state.asset_repository.clone(),

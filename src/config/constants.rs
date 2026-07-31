@@ -2,6 +2,7 @@ pub(super) const DEFAULT_APP_ENV: &str = "development";
 pub(super) const DEFAULT_HTTP_HOST: &str = "0.0.0.0";
 pub(super) const DEFAULT_HTTP_PORT: u16 = 3000;
 pub(super) const DEFAULT_PUBLIC_API_BASE_URL: &str = "http://localhost:3000";
+pub(super) const DEFAULT_PUBLIC_WEB_BASE_URL: &str = "http://localhost:3000";
 pub(super) const DEFAULT_PRICE_INDEXER_TIMEOUT_MS: u64 = 2000;
 pub(super) const DEFAULT_DIS_REQUEST_TIMEOUT_MS: u64 = 5000;
 pub(super) const DEFAULT_DIS_RETRY_MAX_ATTEMPTS: u64 = 2;

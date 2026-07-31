@@ -50,6 +50,42 @@ pub(crate) async fn require_transfer_api_key(
     require_api_key_for(Capability::Erc20TransfersRead, state, request, next).await
 }
 
+pub(crate) async fn require_network_scopes(
+    state: &AppState,
+    principal: Option<&ApiKeyPrincipal>,
+    capability: Capability,
+    network_slugs: &[String],
+) -> Result<(), ApiError> {
+    let Some(principal) = principal else {
+        return Ok(());
+    };
+    let repository = state
+        .api_key_repository
+        .as_ref()
+        .ok_or_else(ApiError::database_unavailable_for_auth)?;
+    let grants = repository
+        .find_authorization_grants(principal.api_key_id)
+        .await
+        .map_err(|error| {
+            warn!(%error, api_key_id = %principal.api_key_id, "API-key network-scope lookup failed");
+            ApiError::database_unavailable_for_auth()
+        })?;
+    let context = AuthorizationContext {
+        owner_grants: grants.owner_grants,
+        key_grants: grants.key_grants,
+    };
+    for network_slug in network_slugs {
+        if evaluate_authorization(
+            &context,
+            &AuthorizationRequest::network(capability, network_slug),
+        ) != AuthorizationDecision::Allow
+        {
+            return Err(ApiError::capability_not_granted());
+        }
+    }
+    Ok(())
+}
+
 async fn require_api_key_for(
     required_capability: Capability,
     state: AppState,
@@ -620,6 +656,7 @@ mod tests {
             version: env!("CARGO_PKG_VERSION"),
             database_pool: None,
             api_key_repository: Some(api_key_repository),
+            account_repository: None,
             api_key_minute_limiter: crate::adapters::http::rate_limit::ApiKeyMinuteLimiter::default(
             ),
             asset_repository: None,

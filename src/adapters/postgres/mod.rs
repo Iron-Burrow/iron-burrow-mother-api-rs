@@ -1,3 +1,4 @@
+pub mod accounts;
 pub mod api_keys;
 pub mod asset_chain_map;
 pub mod asset_match;
@@ -6,6 +7,7 @@ pub mod errors;
 pub mod global_assets;
 pub mod networks;
 
+pub(crate) use accounts::AccountRepository;
 pub(crate) use api_keys::ApiKeyRepository;
 pub use global_assets::GlobalAssetRepository;
 

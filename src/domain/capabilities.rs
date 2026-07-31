@@ -47,7 +47,10 @@ impl NetworkScope {
     fn permits(&self, requested_network_slug: Option<&str>) -> bool {
         match (self, requested_network_slug) {
             (Self::Any, _) => true,
-            (Self::Exact(_), None) => false,
+            // Middleware authenticates before a JSON body is consumed. Exact
+            // scope is checked after request validation with the canonical
+            // network slug.
+            (Self::Exact(_), None) => true,
             (Self::Exact(granted), Some(requested)) => granted == requested,
         }
     }
@@ -97,7 +100,6 @@ impl AuthorizationRequest {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn network(capability: Capability, network_slug: &str) -> Self {
         Self {
             capability,
