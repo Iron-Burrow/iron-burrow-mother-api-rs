@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-02
+last_reviewed: 2026-07-31
 agent_edit_policy: update_when_relevant
 ---
 
@@ -90,7 +90,7 @@ include it in screenshots, or write it to logs.
 Set the API URL and auth header for local checks:
 
 ```bash
-export IB_API="${IB_API:-https://${CADDY_DOMAIN:-api.ironburrow.com}}"
+export IB_API="${IB_API:-https://${CADDY_API_DOMAIN:-api.ironburrow.com}}"
 export AUTH_HEADER="Authorization: Bearer $IB_API_KEY"
 ```
 

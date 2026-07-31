@@ -26,7 +26,7 @@ same change.
 ## Public web delivery
 
 The repository-owned public web entry is served at
-`https://app.ironburrow.com`. These routes are presentation surfaces, not
+`https://www.ironburrow.com`. These routes are presentation surfaces, not
 additional `/v1` machine API capabilities. Their copy and visual design may
 evolve, but they do not authenticate a browser, issue a credential, expose
 account data, or grant access to protected operations.
@@ -34,14 +34,19 @@ account data, or grant access to protected operations.
 | Method | Path | Content type | Current purpose |
 | ------ | ---- | ------------ | --------------- |
 | `GET` | `/` | `text/html; charset=utf-8` | Public product homepage. |
-| `GET` | `/app` | `text/html; charset=utf-8` | Public non-functional Data Lab holding page. |
+| `GET` | `/scan` | `text/html; charset=utf-8` | Public Scan holding page. |
+| `GET` | `/scan/{network_slug}` | `text/html; charset=utf-8` | Public network-specific Scan holding page. |
+| `GET` | `/access` | `text/html; charset=utf-8` | Private-Beta API access information. |
 | `GET` | `/docs` | `text/html; charset=utf-8` | Human-readable current private-Beta API documentation. |
-| `GET` | `/docs/openapi.json` | `application/json` | Generated OpenAPI document for the active runtime configuration. |
 
-`/docs/openapi.json` reflects whether feature-gated transfer search is enabled.
-It documents the existing `/v1` route surface; it does not create another
-version of that API. Static files are served only below `/app/assets/` and are
-not a machine API surface; `/assets/*` is not a static delivery surface.
+Static files are served only below `/assets/` and are not a machine API
+surface. `/app` and `/app/assets/*` are not public delivery surfaces.
+
+The machine-readable OpenAPI document is served at
+`https://api.ironburrow.com/openapi.json`. It reflects whether feature-gated
+transfer search is enabled, documents the existing `/v1` route surface, and
+does not create another version of that API. Caddy exposes it only on the API
+hostname.
 
 All HTML responses set `Content-Security-Policy`, `X-Content-Type-Options:
 nosniff`, `X-Frame-Options: DENY`, and `Referrer-Policy:
@@ -51,8 +56,8 @@ assets. Future account/session behavior requires SPEC-016.
 
 ## Conventions
 
-- Base URL in production is `https://api.ironburrow.com`.
-- Production web entry URL is `https://app.ironburrow.com`.
+- Machine API base URL in production is `https://api.ironburrow.com`.
+- Production web entry URL is `https://www.ironburrow.com`.
 - Machine API responses are JSON. `Content-Type: application/json`.
 - All timestamps are ISO-8601 with explicit UTC offset (`Z` or
   `+00:00`).

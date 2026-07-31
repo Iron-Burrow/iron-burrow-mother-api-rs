@@ -147,7 +147,15 @@ async fn unknown_route_returns_stable_not_found() {
 async fn public_html_routes_render_with_the_reviewed_security_headers() {
     for (uri, expected_text) in [
         ("/", "Understand what happened on-chain."),
-        ("/app", "The Data Lab is preparing for account access."),
+        (
+            "/scan",
+            "The public Scan interface is preparing for its first release.",
+        ),
+        (
+            "/scan/eth-mainnet",
+            "Scan for <code>eth-mainnet</code> is preparing",
+        ),
+        ("/access", "API access is currently private Beta."),
         ("/docs", "Build with the Mother API"),
     ] {
         let response = test_app()
@@ -196,7 +204,7 @@ async fn public_html_routes_render_with_the_reviewed_security_headers() {
 }
 
 #[tokio::test]
-async fn homepage_and_docs_link_only_to_available_phase_two_surfaces() {
+async fn homepage_and_docs_link_only_to_available_web_and_api_surfaces() {
     let home_response = test_app()
         .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
         .await
@@ -208,8 +216,10 @@ async fn homepage_and_docs_link_only_to_available_phase_two_surfaces() {
             .to_vec(),
     )
     .unwrap();
-    assert!(home.contains("href=\"/app\""));
+    assert!(home.contains("href=\"/scan\""));
+    assert!(home.contains("href=\"/access\""));
     assert!(home.contains("href=\"/docs\""));
+    assert!(!home.contains("/app"));
     assert!(!home.contains("/login"));
     assert!(!home.contains("/get-api-key"));
 
@@ -224,31 +234,55 @@ async fn homepage_and_docs_link_only_to_available_phase_two_surfaces() {
             .to_vec(),
     )
     .unwrap();
-    assert!(docs.contains("href=\"/docs/openapi.json\""));
+    assert!(docs.contains("href=\"http://localhost:3000/openapi.json\""));
     assert!(docs.contains("network_slug"));
 }
 
 #[tokio::test]
-async fn data_lab_routes_beyond_the_phase_two_holding_page_are_unmatched() {
-    let response = test_app()
-        .oneshot(
-            Request::builder()
-                .uri("/app/workspaces")
-                .body(Body::empty())
-                .unwrap(),
-        )
+async fn docs_link_to_the_configured_machine_api_origin() {
+    let app = build_router(AppState::new(Config {
+        public_api_base_url: "https://api.example.test/".to_string(),
+        ..Config::default()
+    }));
+    let response = app
+        .oneshot(Request::builder().uri("/docs").body(Body::empty()).unwrap())
         .await
         .unwrap();
+    let body = String::from_utf8(
+        axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
 
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert!(body.contains("href=\"https://api.example.test/openapi.json\""));
 }
 
 #[tokio::test]
-async fn docs_openapi_download_reflects_the_enabled_transfer_route() {
+async fn retired_and_future_human_routes_are_unmatched() {
+    for uri in [
+        "/app",
+        "/app/workspaces",
+        "/account",
+        "/workspaces",
+        "/api-keys",
+    ] {
+        let response = test_app()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{uri}");
+    }
+}
+
+#[tokio::test]
+async fn api_openapi_document_reflects_the_enabled_transfer_route() {
     let disabled = test_app()
         .oneshot(
             Request::builder()
-                .uri("/docs/openapi.json")
+                .uri("/openapi.json")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -276,7 +310,7 @@ async fn docs_openapi_download_reflects_the_enabled_transfer_route() {
     }))
     .oneshot(
         Request::builder()
-            .uri("/docs/openapi.json")
+            .uri("/openapi.json")
             .body(Body::empty())
             .unwrap(),
     )
@@ -296,7 +330,7 @@ async fn static_assets_are_bounded_and_have_an_explicit_cache_policy() {
     let response = test_app()
         .oneshot(
             Request::builder()
-                .uri("/app/assets/site.css")
+                .uri("/assets/site.css")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -316,10 +350,11 @@ async fn static_assets_are_bounded_and_have_an_explicit_cache_policy() {
         .starts_with("text/css"));
 
     for uri in [
-        "/assets/site.css",
-        "/app/assets",
-        "/app/assets/missing.css",
-        "/app/assets/%2e%2e/Cargo.toml",
+        "/app/assets/site.css",
+        "/docs/openapi.json",
+        "/assets",
+        "/assets/missing.css",
+        "/assets/%2e%2e/Cargo.toml",
     ] {
         let response = test_app()
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
@@ -723,21 +758,27 @@ async fn beta_surface_preserves_not_found_for_unknown_routes() {
 }
 
 #[test]
-fn production_caddy_forwards_api_and_phase_two_web_routes_to_axum() {
+fn production_caddy_separates_machine_and_human_route_surfaces() {
     let caddyfile = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/infra/caddy/Caddyfile"
     ));
 
-    let allowlist = caddyfile
-        .lines()
-        .find(|line| line.trim_start().starts_with("path "))
-        .expect("Caddy must define a Mother route allowlist");
-    assert!(allowlist
-        .split_whitespace()
-        .any(|path| path == "/app/assets/*"));
-    assert!(!allowlist.split_whitespace().any(|path| path == "/assets/*"));
+    assert!(caddyfile.contains("{$CADDY_API_DOMAIN}"));
+    assert!(caddyfile.contains("{$CADDY_WEB_DOMAIN}"));
+    let (api_site, web_site) = caddyfile
+        .split_once("{$CADDY_WEB_DOMAIN}")
+        .expect("Caddy must declare a dedicated web site");
+    assert!(api_site.contains("path /v1/* /health /openapi.json"));
+    assert!(!api_site.contains("/scan"));
+    assert!(web_site.contains("path / /scan /scan/* /access /docs /docs/* /assets/*"));
+    assert!(!web_site.contains("/v1/*"));
+    assert!(caddyfile.contains("reverse_proxy mother-api:3000"));
+    assert!(!caddyfile.contains("CADDY_DOMAIN"));
+    assert!(!caddyfile.contains("/app"));
     assert!(!caddyfile.contains("method GET"));
+    assert!(!caddyfile.contains("rewrite"));
+    assert!(!caddyfile.contains("uri strip_prefix"));
     assert!(caddyfile.contains("object-src 'none'"));
     assert!(!caddyfile.contains("'unsafe-inline'"));
 }

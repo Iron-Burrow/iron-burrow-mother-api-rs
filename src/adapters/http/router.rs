@@ -73,8 +73,9 @@ pub fn build_router(state: AppState) -> Router {
 
     Router::new()
         .merge(web::routes())
-        .nest_service("/app/assets", static_assets)
+        .nest_service("/assets", static_assets)
         .route("/health", get(health))
+        .route("/openapi.json", get(web::openapi_document))
         .nest("/v1", v1_routes)
         .fallback(unmatched_route)
         .layer(TraceLayer::new_for_http())

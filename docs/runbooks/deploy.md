@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-08
+last_reviewed: 2026-07-31
 agent_edit_policy: update_when_relevant
 ---
 
@@ -30,7 +30,7 @@ vim .env.production
 ```
 
 Confirm the production image tag, Beta surface, transfer route, and Bigwig
-client settings:
+client settings and public-domain configuration:
 
 ```bash
 IRON_BURROW_MOTHER_API_TAG=v0.3.x
@@ -39,6 +39,9 @@ INFRA_GATEWAY_URL=http://infra-gateway-hub:8080
 INFRA_GATEWAY_TOKEN=<set-production-token>
 BIGWIG_REQUEST_TIMEOUT_MS=30000
 ERC20_TRANSFERS_ENABLED=true
+PUBLIC_API_BASE_URL=https://api.ironburrow.com
+CADDY_WEB_DOMAIN=www.ironburrow.com
+CADDY_API_DOMAIN=api.ironburrow.com
 ```
 
 A disabled ERC-20 transfer gate is a private Beta launch misconfiguration. The
@@ -63,6 +66,7 @@ PUBLIC_API_SURFACE: beta
 ERC20_TRANSFERS_ENABLED: "true"
 INFRA_GATEWAY_URL: http://infra-gateway-hub:8080
 BIGWIG_REQUEST_TIMEOUT_MS: "30000"
+PUBLIC_API_BASE_URL: https://api.ironburrow.com
 ```
 
 Confirm `INFRA_GATEWAY_TOKEN` is present in the rendered service environment,
@@ -144,7 +148,9 @@ docker compose \
 ```
 
 Otherwise, leave Caddy running; it proxies to the `mother-api:3000` service
-alias on `iron-burrow-public-net`.
+alias on `iron-burrow-public-net`. When either Caddy domain changes, recreate
+Caddy and confirm both DNS names point to this host before it obtains TLS
+certificates.
 
 ## 8. Run production smoke tests
 

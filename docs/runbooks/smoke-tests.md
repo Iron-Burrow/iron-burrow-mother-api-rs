@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-08
+last_reviewed: 2026-07-31
 agent_edit_policy: update_when_relevant
 ---
 
@@ -53,7 +53,8 @@ set -a
 . ./.env.production
 set +a
 
-export IB_API="${IB_API:-https://${CADDY_DOMAIN:-api.ironburrow.com}}"
+export IB_API="${IB_API:-https://${CADDY_API_DOMAIN:-api.ironburrow.com}}"
+export IB_WEB="${IB_WEB:-https://${CADDY_WEB_DOMAIN:-www.ironburrow.com}}"
 export JSON_HEADER='Content-Type: application/json'
 export IB_API_KEY="${IB_API_KEY:-}"
 
@@ -65,7 +66,36 @@ export TEST_FROM_BLOCK="${TEST_FROM_BLOCK:-18600000}"
 export TEST_TO_BLOCK="${TEST_TO_BLOCK:-18600500}"
 
 echo "Testing Mother API at: $IB_API"
+echo "Testing Iron Burrow web at: $IB_WEB"
 ```
+
+## Domain Boundary Check
+
+Run these checks before protected-route smoke tests. They prove that Caddy
+keeps human and machine paths on their intended hostnames while preserving the
+paths sent to Mother API:
+
+```bash
+api_health_status="$(curl -sS -o /dev/null -w '%{http_code}' "$IB_API/health")"
+api_openapi_status="$(curl -sS -o /dev/null -w '%{http_code}' "$IB_API/openapi.json")"
+api_web_status="$(curl -sS -o /dev/null -w '%{http_code}' "$IB_API/scan")"
+web_home_status="$(curl -sS -o /dev/null -w '%{http_code}' "$IB_WEB/")"
+web_scan_status="$(curl -sS -o /dev/null -w '%{http_code}' "$IB_WEB/scan")"
+web_access_status="$(curl -sS -o /dev/null -w '%{http_code}' "$IB_WEB/access")"
+web_api_status="$(curl -sS -o /dev/null -w '%{http_code}' "$IB_WEB/v1/balances")"
+
+test "$api_health_status" = "200"
+test "$api_openapi_status" = "200"
+test "$api_web_status" = "404"
+test "$web_home_status" = "200"
+test "$web_scan_status" = "200"
+test "$web_access_status" = "200"
+test "$web_api_status" = "404"
+```
+
+TLS is covered by the `https://` requests above. A protected API route can
+return `401` without an API key; the later authenticated checks prove its
+normal route behavior.
 
 The watched address is intentionally synthetic. These smoke cases validate the
 contract, filters, and failure behavior without depending on a funded wallet.

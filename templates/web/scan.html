@@ -1,0 +1,20 @@
+{% extends "web/base.html" %}
+
+{% block title %}Scan — Iron Burrow{% endblock %}
+
+{% block content %}
+<section class="hero" aria-labelledby="scan-title">
+  <p class="eyebrow">Iron Burrow Scan</p>
+  <h1 id="scan-title">Inspect on-chain activity with clear sources.</h1>
+  {% match network_slug %}
+  {% when Some with (slug) %}
+  <p>Scan for <code>{{ slug }}</code> is preparing for its first public release.</p>
+  {% when None %}
+  <p>The public Scan interface is preparing for its first release.</p>
+  {% endmatch %}
+  <div class="actions">
+    <a class="button" href="/access">Get API access</a>
+    <a class="button secondary" href="/docs">Read the API docs</a>
+  </div>
+</section>
+{% endblock %}

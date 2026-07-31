@@ -13,6 +13,11 @@ Accepted. This RFC is an internal architecture and release-coordination
 decision. It changes no public route by itself; public behavior still requires
 an accepted SPEC and the corresponding `CONTRACTS.md` update.
 
+The hostname and human-route portions of this RFC are superseded by
+[ADR-001](../adr/ADR-001-human-and-machine-domain-strategy.md). In particular,
+the current product uses `www.ironburrow.com` for human pages and does not use
+an `/app` route prefix or configure `app.ironburrow.com`.
+
 ## Internal codename note
 
 The internal development codename **El Vasco** honors the musician Mezo

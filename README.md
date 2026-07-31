@@ -79,17 +79,18 @@ shapes.
 
 ## Iron Burrow Web Entry
 
-`https://app.ironburrow.com` serves the public Iron Burrow homepage, a
-non-functional `/app` Data Lab entry, and `/docs` for the current API guide
-and generated OpenAPI document. The web entry runs in the same Mother API
-binary; it is not a second frontend service or another version of the public
-machine API.
+`https://www.ironburrow.com` serves the public Iron Burrow homepage, Scan
+holding pages, API-access information, and `/docs` for the human-readable API
+guide. The web entry runs in the same Mother API binary; it is not a second
+frontend service or another version of the public machine API.
 
-The initial `/app` page is a public holding page. It does not implement
-account sessions, Workspaces, Scan, or research capabilities. When those
-arrive, a Data Lab capability will not automatically receive a corresponding
-`/v1` JSON endpoint; promotion still requires deliberate validation, a formal
-specification, and a `CONTRACTS.md` compatibility decision.
+`https://api.ironburrow.com/openapi.json` remains the machine-readable API
+contract. `app.ironburrow.com` is not configured in this phase. The current
+web pages do not implement account sessions, Workspaces, API-key management,
+or Scan data access. When those arrive, a human product capability will not
+automatically receive a corresponding `/v1` JSON endpoint; promotion still
+requires deliberate validation, a formal specification, and a `CONTRACTS.md`
+compatibility decision.
 
 ## Balance Lookup
 

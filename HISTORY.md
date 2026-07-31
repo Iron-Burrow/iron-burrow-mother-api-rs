@@ -390,3 +390,11 @@ implementation, and documentation changes.
 - Moved the bounded Phase 2 stylesheet delivery path from `/assets/*` to
   `/app/assets/*`, leaving the future Data Lab asset-domain surface
   unimplemented and preserving the existing cache and HTML security policies.
+- Adopted the consumer-based public-domain strategy in ADR-001: the same
+  Mother API runtime now serves human pages on `www.ironburrow.com` and the
+  stable machine API on `api.ironburrow.com` through Caddy-enforced route
+  allowlists.
+- Retired `/app` and `/app/assets/*`; added public Scan and API-access holding
+  pages at `/scan`, `/scan/{network_slug}`, and `/access`; moved static files
+  to `/assets/*`; and moved generated OpenAPI to `/openapi.json` on the API
+  hostname.

@@ -7,7 +7,8 @@ services:
     profiles: ["app-dev"]
     restart: unless-stopped
     environment:
-      CADDY_DOMAIN: ${CADDY_DOMAIN:-localhost}
+      CADDY_WEB_DOMAIN: ${CADDY_WEB_DOMAIN:-www.localhost}
+      CADDY_API_DOMAIN: ${CADDY_API_DOMAIN:-api.localhost}
     ports:
       - "80:80"
       - "443:443"
@@ -51,6 +52,7 @@ services:
       PUBLIC_API_SURFACE: ${PUBLIC_API_SURFACE:-alpha}
       HTTP_HOST: 0.0.0.0
       HTTP_PORT: 3000
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:3000}
       DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/ibdb}
       PRICE_INDEXER_URL: ${PRICE_INDEXER_URL-}
       PRICE_QL_INTERNAL_TOKEN: ${PRICE_QL_INTERNAL_TOKEN:-}

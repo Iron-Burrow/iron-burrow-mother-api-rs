@@ -10,25 +10,26 @@ agent_edit_policy: update_when_relevant
 ## Purpose
 
 Add the first repository-owned public web surface for
-`app.ironburrow.com` without creating a second service or duplicating Mother
+`www.ironburrow.com` without creating a second service or duplicating Mother
 API application logic.
 
 ## Scope
 
 - Add Askama to the existing `mother-api` runtime and create public `/`,
-  `/app`, and `/docs` HTML routes outside `/v1`.
-- Add bounded static asset delivery only below `/app/assets/*` and
+  `/scan`, `/scan/{network_slug}`, `/access`, and `/docs` HTML routes outside
+  `/v1`.
+- Add bounded static asset delivery only below `/assets/*` and
   deployment/Caddy configuration for the public host.
 - Render links to public API documentation, Account entry points, demo-key
   onboarding, Workspace entry, Scan, and Lab as those routes become available.
-- Add a public human-documentation route and a same-runtime
-  `/docs/openapi.json` download that reflects the active feature-gated OpenAPI
-  document.
+- Add a public human-documentation route and a same-runtime `/openapi.json`
+  document that reflects the active feature-gated OpenAPI document; Caddy
+  exposes that document only on the API hostname.
 - Establish HTML response headers, template conventions, and a session
   middleware seam; do not implement authenticated account behavior yet.
-- Keep `/app` as an evolving application surface: Askama pages are first
-  presenters, while structured agent-facing presenters use the same application
-  services and authorization boundaries.
+- Keep the web product as an evolving application surface: Askama pages are
+  first presenters, while structured agent-facing presenters use the same
+  application services and authorization boundaries.
 
 ## Non-goals
 
@@ -49,7 +50,7 @@ API application logic.
 
 Askama templates must use normal escaping and no unreviewed raw HTML. Public
 pages set a reviewed CSP and safe content type; static asset paths are bounded
-below `/app/assets/*`; no API key or session secret is embedded in HTML,
+below `/assets/*`; no API key or session secret is embedded in HTML,
 browser storage, logs, or analytics. Future state-changing forms require
 SPEC-016 session/CSRF policy.
 
@@ -63,12 +64,14 @@ until SPEC-016 is accepted.
 ## Expected public interfaces
 
 - `GET /` returns an accessible, server-rendered product homepage.
-- `GET /app` returns a public, non-functional Data Lab holding page. It does
-  not authenticate callers, expose account data, or authorize capabilities.
+- `GET /scan` and `GET /scan/{network_slug}` return public, non-functional
+  Scan holding pages. They do not authenticate callers, expose account data,
+  or authorize capabilities.
+- `GET /access` returns public private-Beta API access information.
 - `GET /docs` returns human-readable current Beta API documentation.
-- `GET /docs/openapi.json` returns the generated OpenAPI document for the
-  active runtime configuration.
-- `GET /app/assets/*` serves bounded static delivery; `/assets/*` is not a
+- `GET /openapi.json` returns the generated OpenAPI document for the active
+  runtime configuration. Production Caddy exposes it only on the API hostname.
+- `GET /assets/*` serves bounded static delivery; `/app/assets/*` is not a
   static delivery surface.
 - All existing `/v1/*` and `/health` contracts remain unchanged.
 
@@ -80,7 +83,7 @@ SPEC without an accepted dependent SPEC and matching `CONTRACTS.md` update.
 - The existing binary serves the homepage and API without a second deployable.
 - Homepage tests prove route registration, content type, no codename leak, and
   links to the currently documented API surface.
-- Static delivery is limited to `/app/assets/*`, traversal is impossible, and
+- Static delivery is limited to `/assets/*`, traversal is impossible, and
   cache policy is explicit.
 - HTML responses use the reviewed CSP and security headers both directly from
   Mother and through Caddy; no inline scripts or styles are required.
