@@ -40,6 +40,10 @@ INFRA_GATEWAY_TOKEN=<set-production-token>
 BIGWIG_REQUEST_TIMEOUT_MS=30000
 ERC20_TRANSFERS_ENABLED=true
 PUBLIC_API_BASE_URL=https://api.ironburrow.com
+PUBLIC_WEB_BASE_URL=https://www.ironburrow.com
+RESEND_API_KEY=<set-production-key>
+EMAIL_FROM=Iron\ Burrow\ <access@ironburrow.com>
+ACCOUNT_EMAIL_LOOKUP_PEPPER=<set-random-secret>
 CADDY_WEB_DOMAIN=www.ironburrow.com
 CADDY_API_DOMAIN=api.ironburrow.com
 ```
@@ -71,6 +75,10 @@ PUBLIC_API_BASE_URL: https://api.ironburrow.com
 
 Confirm `INFRA_GATEWAY_TOKEN` is present in the rendered service environment,
 but do not paste or store the token in logs, screenshots, or chat.
+
+Before exposing `/signup`, `/login`, or `/access/demo`, configure the external
+WAF ahead of Caddy: 5 account-entry posts per source IP per 15 minutes, 3 demo
+issues per source IP per day, and 20 total account/demo form posts per day.
 
 ```bash
 docker compose --env-file .env.production -f compose.yaml -f compose.prod.yaml config --services

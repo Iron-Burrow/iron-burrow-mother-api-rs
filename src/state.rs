@@ -3,7 +3,7 @@ use sqlx::PgPool;
 use crate::adapters::bigwig::{client::create_bigwig_client, BigwigClient};
 use crate::adapters::dis::{client::create_dis_client, DisClient};
 use crate::adapters::http::rate_limit::ApiKeyMinuteLimiter;
-use crate::adapters::postgres::{ApiKeyRepository, GlobalAssetRepository};
+use crate::adapters::postgres::{AccountRepository, ApiKeyRepository, GlobalAssetRepository};
 use crate::adapters::price_indexer::{client::create_price_indexer_client, PriceIndexerClient};
 use crate::config::Config;
 use crate::infra::db;
@@ -14,6 +14,7 @@ pub(crate) struct AppState {
     pub(crate) version: &'static str,
     pub(crate) database_pool: Option<PgPool>,
     pub(crate) api_key_repository: Option<ApiKeyRepository>,
+    pub(crate) account_repository: Option<AccountRepository>,
     pub(crate) api_key_minute_limiter: ApiKeyMinuteLimiter,
     pub(crate) asset_repository: Option<GlobalAssetRepository>,
     pub(crate) price_indexer_client: Option<PriceIndexerClient>,
@@ -31,6 +32,7 @@ impl AppState {
     pub(crate) fn try_new(config: Config) -> Result<Self, sqlx::Error> {
         let database_pool = db::create_pool(config.database_url.as_deref())?;
         let api_key_repository = database_pool.clone().map(ApiKeyRepository::database);
+        let account_repository = database_pool.clone().map(AccountRepository::database);
         let asset_repository = database_pool.clone().map(GlobalAssetRepository::database);
         let price_indexer_client = create_price_indexer_client(&config);
         let dis_client = create_dis_client(&config);
@@ -41,6 +43,7 @@ impl AppState {
             version: env!("CARGO_PKG_VERSION"),
             database_pool,
             api_key_repository,
+            account_repository,
             api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
             asset_repository,
             price_indexer_client,
@@ -59,6 +62,7 @@ impl AppState {
             version: env!("CARGO_PKG_VERSION"),
             database_pool: None,
             api_key_repository: None,
+            account_repository: None,
             api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
             asset_repository: Some(asset_repository),
             price_indexer_client: None,
@@ -78,6 +82,7 @@ impl AppState {
             version: env!("CARGO_PKG_VERSION"),
             database_pool: None,
             api_key_repository: None,
+            account_repository: None,
             api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
             asset_repository: Some(asset_repository),
             price_indexer_client: None,

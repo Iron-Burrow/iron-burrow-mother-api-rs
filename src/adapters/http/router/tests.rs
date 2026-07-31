@@ -60,6 +60,7 @@ fn beta_app_with_api_key_repository(api_key_repository: Option<ApiKeyRepository>
         version: env!("CARGO_PKG_VERSION"),
         database_pool: None,
         api_key_repository,
+        account_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
         price_indexer_client: None,
@@ -85,6 +86,7 @@ fn test_app_with_price_indexer(price_indexer_url: &str, timeout_ms: u64) -> Rout
         version: env!("CARGO_PKG_VERSION"),
         database_pool: None,
         api_key_repository: None,
+        account_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
         price_indexer_client: Some(price_indexer_client),
@@ -257,6 +259,31 @@ async fn docs_link_to_the_configured_machine_api_origin() {
     .unwrap();
 
     assert!(body.contains("href=\"https://api.example.test/openapi.json\""));
+}
+
+#[tokio::test]
+async fn account_entry_and_link_confirmation_routes_are_human_html_only() {
+    for uri in ["/signup", "/login", "/verify-email?token=test-token"] {
+        let response = test_app()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+        assert!(response
+            .headers()
+            .get(CONTENT_TYPE)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("text/html"));
+        if uri.starts_with("/verify-email") {
+            assert_eq!(response.headers().get(CACHE_CONTROL).unwrap(), "no-store");
+            assert_eq!(
+                response.headers().get(REFERRER_POLICY).unwrap(),
+                "no-referrer"
+            );
+        }
+    }
 }
 
 #[tokio::test]
@@ -626,6 +653,7 @@ async fn beta_route_capabilities_preserve_balance_access_and_restrict_transfer_a
         version: env!("CARGO_PKG_VERSION"),
         database_pool: None,
         api_key_repository: Some(repository),
+        account_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
         price_indexer_client: None,
@@ -771,7 +799,7 @@ fn production_caddy_separates_machine_and_human_route_surfaces() {
         .expect("Caddy must declare a dedicated web site");
     assert!(api_site.contains("path /v1/* /health /openapi.json"));
     assert!(!api_site.contains("/scan"));
-    assert!(web_site.contains("path / /scan /scan/* /access /docs /docs/* /assets/*"));
+    assert!(web_site.contains("path / /scan /scan/* /access /access/demo /docs /docs/* /assets/* /signup /login /verify-email /logout"));
     assert!(!web_site.contains("/v1/*"));
     assert!(caddyfile.contains("reverse_proxy mother-api:3000"));
     assert!(!caddyfile.contains("CADDY_DOMAIN"));
@@ -905,6 +933,7 @@ async fn assets_list_requests_batch_price_enrichment_by_slug() {
         version: env!("CARGO_PKG_VERSION"),
         database_pool: None,
         api_key_repository: None,
+        account_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(repository),
         price_indexer_client: Some(price_indexer_client),
@@ -1073,6 +1102,7 @@ async fn asset_detail_requests_price_enrichment_by_slug() {
         version: env!("CARGO_PKG_VERSION"),
         database_pool: None,
         api_key_repository: None,
+        account_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(repository),
         price_indexer_client: Some(price_indexer_client),

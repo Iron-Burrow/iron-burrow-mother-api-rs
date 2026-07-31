@@ -842,13 +842,13 @@ The implementation map is intentionally split into:
 | SPEC | Type | Purpose |
 | --- | --- | --- |
 | SPEC-015 | New draft | Workspace foundation and scoped analysis boundary. |
-| SPEC-016 | Planned draft | `IBAccount` verified identity and account entry/session lifecycle. |
-| SPEC-017 | Planned draft | API-key ownership expansion (`IBAccount`, anonymous, future client/org compatibility invariants). |
+| SPEC-016 | Accepted | `IBAccount` verified identity and account entry/session lifecycle. |
+| SPEC-017 | Accepted | API-key ownership expansion (`IBAccount`, anonymous, future client/org compatibility invariants). |
 | SPEC-018 | Planned draft | Quotas, allowances, and usage accounting model beyond current Beta defaults. |
 | SPEC-019 | Planned draft | Client registry and delegated key/access model. |
 | SPEC-020 | Planned draft | Workspace-scoped balance and transfer application views under `/app`. |
 | SPEC-021 | Planned draft | Workspace activity/evidence log and source-aware presentation policy. |
-| SPEC-022 | New draft | API-key usage console (`/app/access`, `/app/usage`) with key-holder sessions and capability-labelled usage events. |
+| SPEC-022 | Deferred draft | API-key usage console; its host and browser model require a later ADR-001-aligned decision. |
 
 ### Deferred roadmap specs (not required for first slice)
 
@@ -892,10 +892,10 @@ or draft artifact in this repository. Unchecked items remain planned.
 - [x] Add the first `/app` runtime seam and server-rendered HTML delivery without creating a second service.
 - [x] Add bounded static asset delivery, reviewed HTML headers/CSP, and the public docs entry route described by SPEC-014.
 - [x] Ensure public HTML and docs surfaces contain no internal codename leaks.
-- [ ] Phase 3: implement caller resolution for verified accounts and anonymous callers.
-- [ ] Implement `IBAccount` identity, verified email flow, browser sessions, and session/CSRF policy through SPEC-016.
-- [ ] Expand API-key ownership beyond the legacy compatibility owner so keys can belong to `IBAccount`, anonymous demo, and later client/org principals through SPEC-017.
-- [ ] Implement anonymous demo-key issuance with strict expiry, abuse controls, and no privilege escalation.
+- [x] Phase 3: implement caller resolution for verified accounts and anonymous callers.
+- [x] Implement `IBAccount` identity, verified email flow, browser sessions, and session/CSRF policy through SPEC-016.
+- [x] Expand API-key ownership beyond the legacy compatibility owner so keys can belong to `IBAccount`, anonymous demo, and later client/org principals through SPEC-017.
+- [x] Implement anonymous demo-key issuance with strict expiry, external edge abuse controls, and no privilege escalation.
 - [ ] Phase 4: deliver the Workspace MVP as the first durable Data Lab primitive.
 - [ ] Implement Workspace create/list/select/archive behavior with account ownership boundaries.
 - [ ] Implement watch-only address registration and labels inside Workspaces.
@@ -905,7 +905,7 @@ or draft artifact in this repository. Unchecked items remain planned.
 - [ ] Phase 6: expand treasury and historical analysis capabilities incrementally after the vertical slice is operational.
 - [ ] Add curated Data Lab asset, network, price, scan, and lab experiences only through focused accepted specs and shared application services.
 - [ ] Keep any future `/v1` expansion behind deliberate promotion decisions, accepted specs, compatibility tests, and coordinated `CONTRACTS.md` updates.
-- [ ] Write the planned near-term specs that do not yet exist: SPEC-016, SPEC-017, SPEC-018, SPEC-019, SPEC-020, and SPEC-021.
+- [ ] Write the planned near-term specs that do not yet exist: SPEC-018, SPEC-019, SPEC-020, and SPEC-021.
 - [ ] Implement the later quota and usage-accounting model beyond current Beta defaults through SPEC-018.
 - [ ] Implement the future client registry and delegated access model through SPEC-019.
 - [ ] Keep payment/402 entitlements, advanced RPC/Otterscan, and Bitcoin/Lightning work deferred until dedicated accepted specs exist.

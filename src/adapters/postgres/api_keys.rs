@@ -185,10 +185,14 @@ impl ApiKeyRepository {
             r#"
             select
                 api_key.id as api_key_id,
-                api_key.consumer_id,
-                api_consumer.slug as consumer_slug,
-                api_consumer.category as consumer_category,
-                api_consumer.status as consumer_status,
+                coalesce(api_key.consumer_id, '00000000-0000-0000-0000-000000000000'::uuid) as consumer_id,
+                coalesce(api_consumer.slug, ib_account.public_id, 'anonymous-demo') as consumer_slug,
+                case when api_key.kind = 'legacy' then api_consumer.category else api_key.kind end as consumer_category,
+                case
+                    when api_key.kind = 'legacy' then api_consumer.status
+                    when api_key.kind = 'account' then ib_account.status
+                    when api_key.kind = 'anonymous_demo' then 'active'
+                end as consumer_status,
                 api_key.key_prefix,
                 api_key.label as key_label,
                 api_key.status as key_status,
@@ -197,8 +201,10 @@ impl ApiKeyRepository {
                 api_key.expires_at is not null
                     and api_key.expires_at <= now() as is_expired
             from mother_api.api_key api_key
-            join mother_api.api_consumer api_consumer
+            left join mother_api.api_consumer api_consumer
                 on api_consumer.id = api_key.consumer_id
+            left join mother_api.ib_account ib_account
+                on ib_account.id = api_key.ib_account_id
             where api_key.key_prefix = $1
                 and api_key.key_hash = $2
             "#,
@@ -235,12 +241,22 @@ impl ApiKeyRepository {
         let pool = self.database_pool()?;
         let owner_grants = sqlx::query_as::<_, CapabilityGrantRow>(
             r#"
-            select capability_id, network_scope, status,
-                expires_at is not null and expires_at <= now() as is_expired
-            from mother_api.api_consumer_capability_grant
-            where consumer_id = (
-                select consumer_id from mother_api.api_key where id = $1
-            )
+            select grant.capability_id, grant.network_scope, grant.status,
+                grant.expires_at is not null and grant.expires_at <= now() as is_expired
+            from mother_api.api_consumer_capability_grant grant
+            join mother_api.api_key api_key on api_key.consumer_id = grant.consumer_id
+            where api_key.id = $1 and api_key.kind = 'legacy'
+            union all
+            select grant.capability_id, grant.network_scope, grant.status,
+                grant.expires_at is not null and grant.expires_at <= now() as is_expired
+            from mother_api.ib_account_capability_grant grant
+            join mother_api.api_key api_key on api_key.ib_account_id = grant.ib_account_id
+            where api_key.id = $1 and api_key.kind = 'account'
+            union all
+            select capability_id, 'eth-mainnet'::text as network_scope, 'active'::text as status, false as is_expired
+            from mother_api.capability
+            where id in ('balances.read', 'transfers.read')
+              and exists (select 1 from mother_api.api_key where id = $1 and kind = 'anonymous_demo')
             "#,
         )
         .bind(api_key_id)
@@ -309,6 +325,77 @@ impl ApiKeyRepository {
             .map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?;
 
         Ok(api_key)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn issue_account_api_key(
+        &self,
+        public_id: &str,
+        label: &str,
+        key_prefix: &str,
+        key_hash: &[u8],
+        requests_per_minute: i32,
+        requests_per_day: i32,
+        expires_at: Option<&str>,
+    ) -> Result<IssuedAccountApiKey, ApiKeyIssueRepositoryError> {
+        let pool = self
+            .database_pool()
+            .map_err(ApiKeyIssueRepositoryError::Repository)?;
+        let mut transaction = pool
+            .begin()
+            .await
+            .map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?;
+        let account = sqlx::query_as::<_, AccountIssueRow>("select id, public_id from mother_api.ib_account where public_id = $1 and status = 'active' for update")
+            .bind(public_id).fetch_optional(&mut *transaction).await.map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?
+            .ok_or_else(|| ApiKeyIssueRepositoryError::ConsumerConflict("IBAccount is not active or does not exist".to_string()))?;
+        let row = sqlx::query_as::<_, AccountIssuedKeyRow>(
+            "insert into mother_api.api_key (kind, ib_account_id, label, key_prefix, key_hash, expires_at) values ('account', $1, $2, $3, $4, $5::timestamptz) returning id as api_key_id, key_prefix, label, status, expires_at::text as expires_at, created_at::text as created_at",
+        ).bind(account.id).bind(label).bind(key_prefix).bind(key_hash).bind(expires_at).fetch_one(&mut *transaction).await.map_err(map_issue_insert_error)?;
+        insert_policy_for_issue(
+            &mut transaction,
+            row.api_key_id,
+            requests_per_minute,
+            requests_per_day,
+        )
+        .await?;
+        for capability in Capability::LEGACY_BASELINE {
+            sqlx::query("insert into mother_api.api_key_capability_grant (api_key_id, capability_id, network_scope) values ($1, $2, '*')")
+                .bind(row.api_key_id).bind(capability.id()).execute(&mut *transaction).await.map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?;
+        }
+        transaction
+            .commit()
+            .await
+            .map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?;
+        Ok(IssuedAccountApiKey {
+            api_key_id: row.api_key_id,
+            public_id: account.public_id,
+            key_prefix: row.key_prefix,
+            label: row.label,
+            status: row.status,
+            expires_at: row.expires_at,
+            created_at: row.created_at,
+            requests_per_minute,
+            requests_per_day,
+        })
+    }
+
+    pub(crate) async fn set_account_status(
+        &self,
+        public_id: &str,
+        status: &str,
+    ) -> Result<bool, RepositoryError> {
+        let pool = self.database_pool()?;
+        let mut transaction = pool.begin().await.map_err(RepositoryError::new)?;
+        let account_id = sqlx::query_scalar::<_, Uuid>(
+            "update mother_api.ib_account set status = $2, closed_at = case when $2 = 'closed' then coalesce(closed_at, now()) else closed_at end, updated_at = now() where public_id = $1 and status <> 'closed' returning id",
+        ).bind(public_id).bind(status).fetch_optional(&mut *transaction).await.map_err(RepositoryError::new)?;
+        let Some(account_id) = account_id else {
+            return Ok(false);
+        };
+        sqlx::query("update mother_api.browser_session set revoked_at = now() where ib_account_id = $1 and revoked_at is null")
+            .bind(account_id).execute(&mut *transaction).await.map_err(RepositoryError::new)?;
+        transaction.commit().await.map_err(RepositoryError::new)?;
+        Ok(true)
     }
 
     #[cfg(test)]
@@ -784,6 +871,34 @@ pub(crate) struct IssuedApiKey {
     pub(crate) created_at: String,
     pub(crate) requests_per_minute: i32,
     pub(crate) requests_per_day: i32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct IssuedAccountApiKey {
+    pub(crate) api_key_id: Uuid,
+    pub(crate) public_id: String,
+    pub(crate) key_prefix: String,
+    pub(crate) label: String,
+    pub(crate) status: String,
+    pub(crate) expires_at: Option<String>,
+    pub(crate) created_at: String,
+    pub(crate) requests_per_minute: i32,
+    pub(crate) requests_per_day: i32,
+}
+
+#[derive(FromRow)]
+struct AccountIssueRow {
+    id: Uuid,
+    public_id: String,
+}
+#[derive(FromRow)]
+struct AccountIssuedKeyRow {
+    api_key_id: Uuid,
+    key_prefix: String,
+    label: String,
+    status: String,
+    expires_at: Option<String>,
+    created_at: String,
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -1,10 +1,16 @@
-use axum::{body::Bytes, extract::State, http::HeaderMap, Json};
+use axum::{
+    body::Bytes,
+    extract::{Extension, State},
+    http::HeaderMap,
+    Json,
+};
 
 use crate::adapters::http::presenters::balances::BalancesResponsePresenter;
 use crate::application::balances::command::GetBalancesCommand;
 use crate::application::balances::result::GetBalancesResult;
 use crate::{
     adapters::http::{
+        auth::{require_network_scopes, ApiKeyPrincipal},
         dto::balances::{
             requests::BulkBalanceRequest, requests::SingleBalanceRequest, BulkBalanceResponse,
             SingleBalanceResponse,
@@ -24,11 +30,24 @@ use error::{balance_assembler_error_to_api_error, balance_service_error_to_api_e
 
 pub async fn resolve_single_balance(
     State(state): State<AppState>,
+    principal: Option<Extension<ApiKeyPrincipal>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<SingleBalanceResponse>, ApiError> {
     let request = SingleBalanceRequest::try_from((&headers, &body))?;
     let command = GetBalancesCommand::try_from(request)?;
+    let network_slugs = command
+        .accounts()
+        .iter()
+        .map(|account| account.network_slug.clone())
+        .collect::<Vec<_>>();
+    require_network_scopes(
+        &state,
+        principal.as_ref().map(|principal| &principal.0),
+        crate::domain::capabilities::Capability::BalancesRead,
+        &network_slugs,
+    )
+    .await?;
     let result = resolve_balances(&state, command).await?;
 
     let response = BalancesResponsePresenter
@@ -40,11 +59,24 @@ pub async fn resolve_single_balance(
 
 pub async fn resolve_bulk_balances(
     State(state): State<AppState>,
+    principal: Option<Extension<ApiKeyPrincipal>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<BulkBalanceResponse>, ApiError> {
     let request = BulkBalanceRequest::try_from((&headers, &body))?;
     let command = GetBalancesCommand::try_from(request)?;
+    let network_slugs = command
+        .accounts()
+        .iter()
+        .map(|account| account.network_slug.clone())
+        .collect::<Vec<_>>();
+    require_network_scopes(
+        &state,
+        principal.as_ref().map(|principal| &principal.0),
+        crate::domain::capabilities::Capability::BalancesRead,
+        &network_slugs,
+    )
+    .await?;
     let result = resolve_balances(&state, command).await?;
 
     let response = BalancesResponsePresenter.bulk(result);

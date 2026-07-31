@@ -1,0 +1,7 @@
+{% extends "web/base.html" %}
+{% block title %}Your demo key · Iron Burrow{% endblock %}
+{% block content %}
+<h1>Your demo key</h1>
+<p>Copy this key now. It cannot be shown again and expires at {{ expires_at }}.</p>
+<code>{{ raw_key }}</code>
+{% endblock %}

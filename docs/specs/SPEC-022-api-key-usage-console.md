@@ -7,6 +7,9 @@ agent_edit_policy: update_when_relevant
 
 # SPEC-022 - API-Key Usage Console
 
+> Deferred after RFC-003 Phase 3. Its routes and browser-session model must be
+> redesigned for ADR-001's `www.ironburrow.com` host before implementation.
+
 ## Purpose
 
 Implement a deliberately small authenticated Data Lab page that lets a Mother
@@ -15,7 +18,7 @@ capability-level aggregates, without changing existing `/v1/*` contracts.
 
 ## Scope
 
-- Askama-rendered usage console routes under `/app`.
+- No implementation is scheduled in Phase 3.
 - API key subject-kind (`human|agent|machine`) persistence and operator
   visibility.
 - Credential-derived server-side console session.
@@ -34,7 +37,7 @@ capability-level aggregates, without changing existing `/v1/*` contracts.
 
 ## Dependencies
 
-- RFC-003 (El Vasco architecture and `/v1` vs `/app` boundary).
+- RFC-003 and ADR-001 (machine API versus human web-host boundary).
 - SPEC-013 (capability authorization foundation).
 - SPEC-014 (Mother web runtime and homepage shell).
 
@@ -42,8 +45,8 @@ capability-level aggregates, without changing existing `/v1/*` contracts.
 
 - Raw API keys are never persisted after verification, never rendered in HTML,
   and never stored in browser storage.
-- Session cookie must be `Secure`, `HttpOnly`, `SameSite=Lax`, path-scoped to
-  `/app`, and carry only an opaque random session identifier.
+- Any future session cookie must be `Secure`, `HttpOnly`, `SameSite=Lax`,
+  host-scoped, and carry only an opaque random session identifier.
 - Session storage persists only a hash of session identifier, bound
   `api_key_id`, issuance, expiry, and invalidation timestamps.
 - Access failures are generic and indistinguishable across malformed, unknown,
@@ -75,16 +78,14 @@ Required route behavior:
 
 ```text
 GET  /                    -> public landing page (SPEC-014)
-GET  /app/access          -> key-entry form
-POST /app/access          -> validate bearer key; create session; redirect
-GET  /app/usage           -> authenticated key-scoped usage console
-POST /app/logout          -> invalidate session; redirect
+Future route names are deliberately undecided and must be allocated under
+`www.ironburrow.com`, not `/app`.
 ```
 
 Route boundary rules:
 
 - `/v1/*` and `/health` behavior remains unchanged.
-- `/app/usage` may return only the authenticated session key's own data.
+- A future console may return only the authenticated session key's own data.
 - HTML rendering failures return generic HTML `500` and do not alter JSON API
   behavior.
 
@@ -141,7 +142,7 @@ Retention:
 
 ## Console data contract
 
-`GET /app/usage` renders:
+The future usage page renders:
 
 - key prefix, label, subject-kind, state, expiry, last-use timestamp
 - configured per-minute and per-day limits
@@ -198,5 +199,4 @@ All durable data remains in Postgres under `mother_api` schema.
 
 ## Suggested implementation phase
 
-Phase 3, after SPEC-014 establishes web runtime shell and before broader
-account-backed Workspace slices.
+Deferred until a dedicated ADR-001-aligned implementation phase is accepted.

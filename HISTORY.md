@@ -397,3 +397,10 @@ implementation, and documentation changes.
   pages at `/scan`, `/scan/{network_slug}`, and `/access`; moved static files
   to `/assets/*`; and moved generated OpenAPI to `/openapi.json` on the API
   hostname.
+
+- Implemented RFC-003 Phase 3 account entry, caller classification, and
+  anonymous demo-key foundation with additive Postgres ownership/session
+  tables, Resend passwordless links, secure browser sessions, and account-key
+  operator issuance. Existing `/v1` contracts and legacy keys remain intact.
+- Added constrained anonymous demo issuance on the human web host and recorded
+  its external WAF prerequisite; deferred SPEC-022 usage-console work.

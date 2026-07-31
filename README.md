@@ -85,9 +85,10 @@ guide. The web entry runs in the same Mother API binary; it is not a second
 frontend service or another version of the public machine API.
 
 `https://api.ironburrow.com/openapi.json` remains the machine-readable API
-contract. `app.ironburrow.com` is not configured in this phase. The current
-web pages do not implement account sessions, Workspaces, API-key management,
-or Scan data access. When those arrive, a human product capability will not
+contract. `app.ironburrow.com` is not configured. The web entry includes
+passwordless account entry and a constrained anonymous demo-key flow; it does
+not implement Workspaces, browser self-service key management, or Scan data
+access. A human product capability will not
 automatically receive a corresponding `/v1` JSON endpoint; promotion still
 requires deliberate validation, a formal specification, and a `CONTRACTS.md`
 compatibility decision.

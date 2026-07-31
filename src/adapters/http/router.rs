@@ -72,7 +72,7 @@ pub fn build_router(state: AppState) -> Router {
     ));
 
     Router::new()
-        .merge(web::routes())
+        .merge(web::routes(state.clone()))
         .nest_service("/assets", static_assets)
         .route("/health", get(health))
         .route("/openapi.json", get(web::openapi_document))

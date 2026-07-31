@@ -1,0 +1,10 @@
+{% extends "web/base.html" %}
+{% block title %}{{ heading }} · Iron Burrow{% endblock %}
+{% block content %}
+<h1>{{ heading }}</h1>
+<p>We will send a one-time link to your email address.</p>
+<form action="{{ action }}" method="post">
+  <label>Email <input name="email" type="email" required autocomplete="email"></label>
+  <button type="submit">Continue</button>
+</form>
+{% endblock %}

@@ -28,8 +28,8 @@ same change.
 The repository-owned public web entry is served at
 `https://www.ironburrow.com`. These routes are presentation surfaces, not
 additional `/v1` machine API capabilities. Their copy and visual design may
-evolve, but they do not authenticate a browser, issue a credential, expose
-account data, or grant access to protected operations.
+evolve independently from `/v1`, but the account-entry and anonymous-demo
+flows below are deliberate human-web contracts.
 
 | Method | Path | Content type | Current purpose |
 | ------ | ---- | ------------ | --------------- |
@@ -37,7 +37,11 @@ account data, or grant access to protected operations.
 | `GET` | `/scan` | `text/html; charset=utf-8` | Public Scan holding page. |
 | `GET` | `/scan/{network_slug}` | `text/html; charset=utf-8` | Public network-specific Scan holding page. |
 | `GET` | `/access` | `text/html; charset=utf-8` | Private-Beta API access information. |
+| `POST` | `/access/demo` | `text/html; charset=utf-8` | Issues one scoped, short-lived anonymous demo key after a one-time form intent. |
 | `GET` | `/docs` | `text/html; charset=utf-8` | Human-readable current private-Beta API documentation. |
+| `GET`/`POST` | `/signup`, `/login` | `text/html; charset=utf-8` | Generic passwordless account-entry forms. |
+| `GET`/`POST` | `/verify-email` | `text/html; charset=utf-8` | Displays then consumes a one-time entry link. |
+| `POST` | `/logout` | `text/html; charset=utf-8` | Invalidates the current browser session. |
 
 Static files are served only below `/assets/` and are not a machine API
 surface. `/app` and `/app/assets/*` are not public delivery surfaces.
@@ -52,7 +56,9 @@ All HTML responses set `Content-Security-Policy`, `X-Content-Type-Options:
 nosniff`, `X-Frame-Options: DENY`, and `Referrer-Policy:
 strict-origin-when-cross-origin`. The initial pages require no browser
 credentials, cookies, forms, inline scripts, inline styles, or third-party
-assets. Future account/session behavior requires SPEC-016.
+assets. Account and secret-display responses additionally use no-store and
+no-referrer policy. Account entry is passwordless, non-enumerating, and uses
+opaque hash-only sessions; it does not add an API authentication scheme.
 
 ## Conventions
 

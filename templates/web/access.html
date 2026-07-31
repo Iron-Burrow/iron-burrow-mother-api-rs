@@ -10,5 +10,14 @@
   <div class="actions">
     <a class="button" href="/docs">Read the API docs</a>
   </div>
+  {% match demo_intent %}
+  {% when Some with (intent) %}
+  <form action="/access/demo" method="post">
+    <input type="hidden" name="intent" value="{{ intent }}">
+    <button type="submit">Create a 24-hour demo key</button>
+  </form>
+  {% when None %}
+  <p>Demo key issuance is temporarily unavailable.</p>
+  {% endmatch %}
 </section>
 {% endblock %}
