@@ -43,18 +43,23 @@ flows below are deliberate human-web contracts.
 | `GET`/`POST` | `/verify-email` | `text/html; charset=utf-8` | Displays then consumes a one-time entry link. |
 | `POST` | `/logout` | `text/html; charset=utf-8` | Invalidates the current browser session. |
 | `GET`/`POST` | `/workspaces` | `text/html; charset=utf-8` | Signed-in account Workspace list and creation. |
-| `GET` | `/workspaces/{workspace_id}` | `text/html; charset=utf-8` | Signed-in account-owned Workspace view. |
+| `GET` | `/workspaces/{workspace_id}`, `/workspaces/{workspace_id}/activity` | `text/html; charset=utf-8` | Signed-in account-owned Workspace and append-only activity/evidence timeline. |
 | `POST` | `/workspaces/{workspace_id}/rename`, `/workspaces/{workspace_id}/archive`, `/workspaces/{workspace_id}/restore` | `text/html; charset=utf-8` | CSRF-protected Workspace lifecycle actions. |
 | `POST` | `/workspaces/{workspace_id}/addresses` | `text/html; charset=utf-8` | Registers a watch-only EVM address. |
 | `GET`/`POST` | `/workspaces/{workspace_id}/addresses/{member_id}/*` | `text/html; charset=utf-8` | Account-owned address labels plus scoped balance and transfer views. |
+| `GET` | `/workspaces/{workspace_id}/activity.json` | `application/json` | Private account-key Workspace activity/evidence export; evolving web-product transport, not `/v1`. |
 
 Static files are served only below `/assets/` and are not a machine API
 surface. `/app` and `/app/assets/*` are not public delivery surfaces.
 
 Workspace pages require an active browser session and use account ownership,
-CSRF, and same-origin checks. They are private, no-store HTML surfaces, not
-additional JSON or `/v1` APIs. Registered addresses are watch-only; they do
-not assert blockchain ownership or custody.
+CSRF, and same-origin checks. They are private, no-store HTML surfaces. The
+activity JSON export requires an active account-owned bearer key with both
+owner and key `workspace.activity.read` grants, returns only the owning
+account's Workspace, and uses `limit` (default 50, maximum 100) plus optional
+`before=wae_*` pagination. It is not a `/v1` API or OpenAPI operation.
+Registered addresses are watch-only; they do not assert blockchain ownership
+or custody.
 
 The machine-readable OpenAPI document is served at
 `https://api.ironburrow.com/openapi.json`. It reflects whether feature-gated

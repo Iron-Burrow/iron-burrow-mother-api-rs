@@ -847,7 +847,7 @@ The implementation map is intentionally split into:
 | SPEC-018 | Planned draft | Quotas, allowances, and usage accounting model beyond current Beta defaults. |
 | SPEC-019 | Planned draft | Client registry and delegated key/access model. |
 | SPEC-020 | Planned draft | Workspace-scoped balance and transfer application views under `/app`. |
-| SPEC-021 | Planned draft | Workspace activity/evidence log and source-aware presentation policy. |
+| SPEC-021 | Accepted | Workspace activity/evidence log and source-aware presentation policy. |
 | SPEC-022 | Deferred draft | API-key usage console; its host and browser model require a later ADR-001-aligned decision. |
 
 ### Deferred roadmap specs (not required for first slice)
@@ -900,12 +900,12 @@ or draft artifact in this repository. Unchecked items remain planned.
 - [x] Implement Workspace create/list/select/archive behavior with account ownership boundaries.
 - [x] Implement watch-only address registration and labels inside Workspaces.
 - [x] Deliver Workspace-scoped balance and transfer views on `www.ironburrow.com` through SPEC-020.
-- [ ] Phase 5: implement the append-only Workspace activity/evidence log and an agent-facing structured equivalent through SPEC-021.
-- [ ] Preserve source-awareness in Data Lab outputs, including network, block/time evidence, price timestamps, and partial-failure indicators where relevant.
+- [x] Phase 5: implement the append-only Workspace activity/evidence log and an agent-facing structured equivalent through SPEC-021.
+- [x] Preserve source-awareness in Phase 5 Workspace outputs, including network, block/time evidence, price timestamps, and partial-failure indicators where relevant.
 - [ ] Phase 6: expand treasury and historical analysis capabilities incrementally after the vertical slice is operational.
 - [ ] Add curated Data Lab asset, network, price, scan, and lab experiences only through focused accepted specs and shared application services.
 - [ ] Keep any future `/v1` expansion behind deliberate promotion decisions, accepted specs, compatibility tests, and coordinated `CONTRACTS.md` updates.
-- [ ] Write the planned near-term specs that do not yet exist: SPEC-018, SPEC-019, SPEC-020, and SPEC-021.
+- [ ] Write the planned near-term specs that do not yet exist: SPEC-018 and SPEC-019.
 - [ ] Implement the later quota and usage-accounting model beyond current Beta defaults through SPEC-018.
 - [ ] Implement the future client registry and delegated access model through SPEC-019.
 - [ ] Keep payment/402 entitlements, advanced RPC/Otterscan, and Bitcoin/Lightning work deferred until dedicated accepted specs exist.

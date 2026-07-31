@@ -27,6 +27,8 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ApiKeyPrincipal {
     pub(crate) api_key_id: Uuid,
+    pub(crate) ib_account_id: Option<Uuid>,
+    pub(crate) key_kind: String,
     pub(crate) consumer_id: Uuid,
     pub(crate) consumer_slug: String,
     pub(crate) consumer_category: String,
@@ -48,6 +50,13 @@ pub(crate) async fn require_transfer_api_key(
     next: Next,
 ) -> Response {
     require_api_key_for(Capability::Erc20TransfersRead, state, request, next).await
+}
+pub(crate) async fn require_workspace_activity_api_key(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    require_api_key_for(Capability::WorkspaceActivityRead, state, request, next).await
 }
 
 pub(crate) async fn require_network_scopes(
@@ -311,6 +320,8 @@ fn principal_from_lookup(lookup: ApiKeyLookup) -> Result<ApiKeyPrincipal, AuthEr
 
     Ok(ApiKeyPrincipal {
         api_key_id: lookup.api_key_id,
+        ib_account_id: lookup.ib_account_id,
+        key_kind: lookup.key_kind,
         consumer_id: lookup.consumer_id,
         consumer_slug: lookup.consumer_slug,
         consumer_category: lookup.consumer_category,
@@ -670,6 +681,8 @@ mod tests {
     fn active_lookup() -> ApiKeyLookup {
         ApiKeyLookup {
             api_key_id: Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
+            ib_account_id: None,
+            key_kind: "legacy".to_string(),
             consumer_id: Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap(),
             consumer_slug: "first-customer".to_string(),
             consumer_category: "partner".to_string(),

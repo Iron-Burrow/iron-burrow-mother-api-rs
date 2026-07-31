@@ -2012,6 +2012,8 @@ async fn assert_public_auth_error(
 fn active_api_key_lookup() -> ApiKeyLookup {
     ApiKeyLookup {
         api_key_id: Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
+        ib_account_id: None,
+        key_kind: "legacy".to_string(),
         consumer_id: Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap(),
         consumer_slug: "first-customer".to_string(),
         consumer_category: "partner".to_string(),

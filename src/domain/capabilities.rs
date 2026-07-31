@@ -1,20 +1,28 @@
 //! Product authorization concepts. HTTP routes and persistence adapters map
 //! into this module; neither is the source of authorization truth.
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(crate) enum Capability {
     BalancesRead,
     Erc20TransfersRead,
+    WorkspaceActivityRead,
 }
 
 impl Capability {
-    pub(crate) const ALL: [Self; 2] = [Self::BalancesRead, Self::Erc20TransfersRead];
+    pub(crate) const ALL: [Self; 3] = [
+        Self::BalancesRead,
+        Self::Erc20TransfersRead,
+        Self::WorkspaceActivityRead,
+    ];
     pub(crate) const LEGACY_BASELINE: [Self; 2] = [Self::BalancesRead, Self::Erc20TransfersRead];
+    pub(crate) const ACCOUNT_BASELINE: [Self; 3] = Self::ALL;
 
     pub(crate) const fn id(self) -> &'static str {
         match self {
             Self::BalancesRead => "balances.read",
             Self::Erc20TransfersRead => "transfers.read",
+            Self::WorkspaceActivityRead => "workspace.activity.read",
         }
     }
 
@@ -162,7 +170,8 @@ mod tests {
 
     #[test]
     fn legacy_baseline_stays_pinned_to_the_compatibility_capabilities() {
-        assert_eq!(Capability::LEGACY_BASELINE, Capability::ALL);
+        assert_eq!(Capability::LEGACY_BASELINE.len(), 2);
+        assert_eq!(Capability::ACCOUNT_BASELINE, Capability::ALL);
     }
 
     #[test]

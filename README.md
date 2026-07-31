@@ -88,8 +88,11 @@ frontend service or another version of the public machine API.
 contract. `app.ironburrow.com` is not configured. The web entry includes
 passwordless account entry, a constrained anonymous demo-key flow, and
 account-owned Workspaces at `/workspaces`. Workspaces hold watch-only Ethereum
-or Base addresses with labels and selected-address balance or transfer views;
-they are not a browser key-management or Scan explorer surface. A human product capability will not
+or Base addresses with labels, selected-address balance or transfer views, and
+an append-only activity/evidence timeline. Account-owned API keys can export
+their Workspace timeline at `/workspaces/{workspace_id}/activity.json`; this
+is an evolving web-product transport, not a `/v1` endpoint. Workspaces are not
+a browser key-management or Scan explorer surface. A human product capability will not
 automatically receive a corresponding `/v1` JSON endpoint; promotion still
 requires deliberate validation, a formal specification, and a `CONTRACTS.md`
 compatibility decision.

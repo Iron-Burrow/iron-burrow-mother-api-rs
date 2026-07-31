@@ -2,7 +2,7 @@ use uuid::Uuid;
 
 use crate::{
     adapters::postgres::{
-        workspaces::{AddMemberOutcome, Workspace, WorkspaceMemberAddress},
+        workspaces::{AddMemberOutcome, Workspace, WorkspaceActivityEvent, WorkspaceMemberAddress},
         WorkspaceRepository,
     },
     domain::validation::is_evm_address,
@@ -73,6 +73,17 @@ impl WorkspaceService {
     ) -> Result<Vec<WorkspaceMemberAddress>, crate::adapters::postgres::errors::RepositoryError>
     {
         self.repository.members(workspace_id).await
+    }
+    pub(crate) async fn activity(
+        &self,
+        workspace_id: Uuid,
+        before: Option<&str>,
+        limit: i64,
+    ) -> Result<Vec<WorkspaceActivityEvent>, crate::adapters::postgres::errors::RepositoryError>
+    {
+        self.repository
+            .list_activity(workspace_id, before, limit)
+            .await
     }
     pub(crate) async fn find_member(
         &self,

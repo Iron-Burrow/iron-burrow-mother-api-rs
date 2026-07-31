@@ -185,6 +185,8 @@ impl ApiKeyRepository {
             r#"
             select
                 api_key.id as api_key_id,
+                api_key.ib_account_id,
+                api_key.kind as key_kind,
                 coalesce(api_key.consumer_id, '00000000-0000-0000-0000-000000000000'::uuid) as consumer_id,
                 coalesce(api_consumer.slug, ib_account.public_id, 'anonymous-demo') as consumer_slug,
                 case when api_key.kind = 'legacy' then api_consumer.category else api_key.kind end as consumer_category,
@@ -358,7 +360,7 @@ impl ApiKeyRepository {
             requests_per_day,
         )
         .await?;
-        for capability in Capability::LEGACY_BASELINE {
+        for capability in Capability::ACCOUNT_BASELINE {
             sqlx::query("insert into mother_api.api_key_capability_grant (api_key_id, capability_id, network_scope) values ($1, $2, '*')")
                 .bind(row.api_key_id).bind(capability.id()).execute(&mut *transaction).await.map_err(|error| ApiKeyIssueRepositoryError::Repository(RepositoryError::new(error)))?;
         }
@@ -1136,6 +1138,8 @@ fn map_issue_insert_error(error: sqlx::Error) -> ApiKeyIssueRepositoryError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ApiKeyLookup {
     pub(crate) api_key_id: Uuid,
+    pub(crate) ib_account_id: Option<Uuid>,
+    pub(crate) key_kind: String,
     pub(crate) consumer_id: Uuid,
     pub(crate) consumer_slug: String,
     pub(crate) consumer_category: String,
@@ -1151,6 +1155,8 @@ pub(crate) struct ApiKeyLookup {
 #[derive(FromRow)]
 struct ApiKeyLookupRow {
     api_key_id: Uuid,
+    ib_account_id: Option<Uuid>,
+    key_kind: String,
     consumer_id: Uuid,
     consumer_slug: String,
     consumer_category: String,
@@ -1167,6 +1173,8 @@ impl From<ApiKeyLookupRow> for ApiKeyLookup {
     fn from(row: ApiKeyLookupRow) -> Self {
         Self {
             api_key_id: row.api_key_id,
+            ib_account_id: row.ib_account_id,
+            key_kind: row.key_kind,
             consumer_id: row.consumer_id,
             consumer_slug: row.consumer_slug,
             consumer_category: row.consumer_category,

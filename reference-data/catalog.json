@@ -8,6 +8,10 @@
     {
       "id": "transfers.read",
       "description": "Search bounded ERC-20 transfers."
+    },
+    {
+      "id": "workspace.activity.read",
+      "description": "Read account-owned Workspace activity and evidence."
     }
   ],
   "assets": [
