@@ -1,12 +1,31 @@
 ---
-status: accepted
+status: archived
 owner: iron-burrow
-last_reviewed: 2026-06-18
-agent_edit_policy: update_when_relevant
+last_reviewed: 2026-07-30
+agent_edit_policy: do_not_update
+superseded_by: ../specs/SPEC-012-balance-endpoint-v0-3-explicit-token-selectors-and-historical-balances.md
 external_contract:
   - iron-burrow-price-indexer/CONTRACTS.md@2026-06-02
   - iron-burrow-infra-gateway/CONTRACTS.md@3.5.0
 ---
+
+> Archived: 2026-07-30
+>
+> Status: Archived
+>
+> Reason: This latest-only, catalog-asset balance design has been superseded
+> by accepted [SPEC-012](../specs/SPEC-012-balance-endpoint-v0-3-explicit-token-selectors-and-historical-balances.md).
+>
+> Evidence:
+> - [CONTRACTS.md](../../CONTRACTS.md) now binds `tokens.asset_slugs`,
+>   `tokens.contract_addresses`, and latest, timestamp, and block-number
+>   `as_of` forms for both balance routes.
+> - `src/adapters/http/dto/balances/` and `src/adapters/bigwig/client.rs`
+>   implement the SPEC-012 request model and the v2 Bigwig balances primitive.
+>
+> Notes:
+> - Historical context is preserved below.
+> - Public API names remain unchanged.
 
 # SPEC-006 - Network-Scoped Balances v1
 

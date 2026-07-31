@@ -1,14 +1,15 @@
 ---
-status: active
+status: accepted
 owner: iron-burrow
-last_reviewed: 2026-06-25
+last_reviewed: 2026-07-30
 agent_edit_policy: update_when_relevant
 external_contract: iron-burrow-price-indexer/CONTRACTS.md@2026-06-02
 ---
 
-# SPEC-002 - Asset Detail Enrichment for UI and Demo
+# SPEC-002 - Asset Detail Enrichment for Data Lab Asset Pages
 
-Mother API asset-detail enrichment for UI surfaces and the demo, backed by the
+Accepted implementation specification for Mother API asset-detail enrichment
+used by the future authenticated Data Lab asset page, backed by the
 `iron-burrow-price-indexer` Query Layer.
 
 This spec was split out of the original `SPEC-002` draft, which mixed two
@@ -16,37 +17,50 @@ distinct consumers. The low-level, agent-facing signal endpoints
 (`/v1/assets/{slug}/signal/*`) now live in `SPEC-003 - Price Signal Endpoints
 for MCP and Agents`. This spec covers only the asset-page enrichment use case.
 
-This spec defines how the existing asset-detail endpoint composes optional
+This spec records how the implemented asset-detail endpoint composes optional
 price intelligence. It does not authorize Mother API to re-own, recalculate,
 or reinterpret price-derived intelligence. `price-indexer` owns price
 observations, bucketization, statistics, trend formulas, confidence, and
-warning semantics.
+warning semantics. The binding public behavior is in
+[`CONTRACTS.md`](../../CONTRACTS.md).
+
+## Status
+
+Accepted and implemented as the current Alpha asset-detail composition. The
+forward product delivery target is an authenticated Data Lab page under
+`/app`, not an expansion of `/v1`. A later focused implementation spec must
+use the shared application service directly, define browser authorization and
+presentation behavior, and make a separate compatibility decision for the
+existing Alpha route. The dedicated strict signal endpoints remain separately
+defined by `SPEC-003` while they continue to exist.
 
 ## Purpose
 
-The asset-detail endpoint is the asset-page endpoint:
+The current Alpha transport for the asset-detail composition is:
 
 ```http
 GET /v1/assets/{slug}
 ```
 
-It should support a UI/demo use case where a single call can return everything
-needed to render an asset page:
+The same composition supports a future Data Lab asset page where one
+application-service call returns everything needed to render one asset:
 
 - asset identity
 - asset network maps / asset metadata
 - latest price block
 - optional price stats
 - optional price trend
-- optional price series snippet for UI/demo charting
+- optional price series snippet for Data Lab charting
 
-All three optional signals, including `priceSeries`, are in scope for V0. The
-asset page is the UI/demo charting surface, so `priceSeries` ships in the same
-V0 asset-detail enrichment work as `priceStats` and `priceTrend`.
+All three optional signals, including `priceSeries`, are part of the accepted
+asset-detail composition. The Data Lab asset page is the intended charting
+surface, so `priceSeries` ships alongside `priceStats` and `priceTrend`.
 
-The goal is one round trip for the asset page. The goal is **not** to make the
-asset page a strict signal endpoint. Strict, single-signal access for agents
-is `SPEC-003`.
+The goal is one application-service composition for the Data Lab asset page.
+The goal is **not** to turn the page into a new public JSON endpoint. The
+existing strict signal routes remain the separately implemented behavior
+recorded by `SPEC-003`; no new `/v1` signal endpoint is authorized by this
+spec.
 
 The upstream source documents for this spec are:
 
@@ -135,7 +149,7 @@ Upstream mapping for each requested enrichment:
 | ------------- | --------------------- | ----- |
 | `priceStats`  | `GET /prices/stats`   | Pass-through of upstream stats fields and `warnings`. |
 | `priceTrend`  | `GET /prices/trend`   | Pass-through of upstream trend fields and `warnings`. |
-| `priceSeries` | `GET /prices/series`  | UI/demo charting series; pass-through of upstream `points` and `meta`. Uses the same `window`/`granularity` model and obeys ADR-001. |
+| `priceSeries` | `GET /prices/series`  | Data Lab charting series; pass-through of upstream `points` and `meta`. Uses the same `window`/`granularity` model and obeys ADR-001. |
 
 Shared upstream parameters (echoing `SPEC-003`):
 
@@ -204,13 +218,15 @@ the existing Mother API snake_case envelope style (`asset_network_maps`,
 
 Rules:
 
-- `signals` is present only when `include` requested at least one enrichment.
+- `signals` is present only when `include` requested at least one known
+  enrichment.
 - Each requested enrichment appears as a key under `signals`
   (`price_stats`, `price_trend`, `price_series`). On success the value is the
   pass-through upstream payload; on failure the value is `null` and a
   corresponding entry is added to `enrichment_errors`.
 - `enrichment_errors` is present only when `include` requested at least one
-  enrichment. It is an empty array when all requested enrichments succeed.
+  known enrichment. It is an empty array when all requested enrichments
+  succeed.
 - Successful upstream `warnings` arrays are preserved exactly inside each
   signal payload. Warnings are not failures and do not produce an
   `enrichment_errors` entry.
@@ -264,8 +280,8 @@ of as a top-level error envelope:
 Mother API must not propagate upstream `error.message` verbatim into
 `enrichment_errors[].message`. Public messages are owned by Mother API.
 
-The implementation PR must update `CONTRACTS.md` with any new public fields and
-enrichment error codes introduced by this endpoint.
+`CONTRACTS.md` records the implemented public fields and enrichment error
+codes. Any future public behavior change must update it in the same change.
 
 ## Configuration
 
@@ -287,23 +303,22 @@ Behavior:
   `enrichment_errors` entry. The base asset response still returns `200 OK`.
 - Invalid `PRICE_INDEXER_TIMEOUT_MS` remains a startup configuration error.
 
-## Implementation notes
+## Implemented design
 
-- Extend the existing [src/price_indexer/](../../src/price_indexer/) client. Do
-  not create a second client, token convention, timeout setting, or base URL.
-- Stats and trend request helpers are shared with `SPEC-003`. This spec is a
-  second consumer of the same typed helpers; the asset service composes them.
-- This spec also adds a typed `GET /prices/series` request helper to the same
-  client, because the direct MCP/agent series endpoint in `SPEC-003` remains
-  future/optional and does not provide one. The helper obeys ADR-001
-  (`window`/`granularity`, never `range`/`resolution`).
-- The asset-detail handler lives in the existing assets routing family
-  ([src/routes/assets.rs](../../src/routes/assets.rs),
-  [src/assets/service.rs](../../src/assets/service.rs)).
-- Structs parsing upstream successful responses must avoid
+- The shared [price-indexer adapter](../../src/adapters/price_indexer/) owns
+  the client, token convention, timeout setting, and base URL configuration.
+  Mother API does not create a second client.
+- Stats, trend, and series helpers use the same `window`/`granularity` request
+  model. The asset service composes them; the direct agent signal routes remain
+  the separate consumer described by `SPEC-003`.
+- The handler and composition service live in the existing assets routing
+  family: [routes](../../src/adapters/http/routes/assets.rs) and
+  [application service](../../src/application/assets/service.rs).
+- Successful upstream payloads are passed through as raw JSON. Typed upstream
+  response parsing must avoid
   `deny_unknown_fields`, because `price-indexer` may add informational fields
   without a contract break.
-- Enrichment lookups should be independent: one failing enrichment must not
+- Enrichment lookups are independent: one failing enrichment does not
   prevent the others or the base asset response.
 
 ## Non-goals
@@ -322,19 +337,18 @@ This spec explicitly does not cover:
 - Exposing upstream `asOf` in V0.
 - Extending the price-indexer `window` and `granularity` matrix.
 
-## Open questions
+## Recorded decisions
 
-- Whether the `priceSeries` enrichment should pass through the full upstream
-  `points` array or apply a bounded shape for charting. V0 ships `priceSeries`
-  and passes upstream `points` and `meta` through; any bounding is a
-  presentation refinement, not a reason to defer the enrichment.
-- Whether enrichment query parameters should apply uniformly to all requested
-  enrichments, or whether per-enrichment overrides are ever needed. V0 assumes
-  uniform `quoteCurrency`/`window`/`granularity`.
+- `priceSeries` passes through the upstream `points` and `meta` payload for
+  Data Lab charting. A bounded presentation shape is a future UI refinement,
+  not a reason to change the data contract.
+- Requested enrichments use uniform `quoteCurrency`, `window`, and
+  `granularity` parameters. Per-enrichment overrides are not part of this
+  contract.
 
-## Tests and definition of done
+## Completion evidence
 
-The implementation is complete when tests prove:
+The implemented route and regression tests prove:
 
 - Existing `/v1/assets/{slug}` response shape is unchanged when `include` is
   absent.

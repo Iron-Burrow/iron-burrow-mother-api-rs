@@ -11,10 +11,18 @@ external_contract: iron-burrow-price-indexer/CONTRACTS.md@2026-06-02
 Low-level, precise price signal endpoints for MCP tools and AI agents, backed
 by the `iron-burrow-price-indexer` Query Layer.
 
+This document records the currently implemented Alpha `/v1` signal routes. It
+does not authorize additional public signal routes or make price signals a
+default part of the production API. The future Data Lab may use the same
+Mother application services for authenticated product pages without creating
+another `/v1` endpoint. Any retirement, deprecation, or promotion decision for
+the existing routes requires a focused compatibility change to
+`CONTRACTS.md` and the implementation.
+
 This spec was split out of the original `SPEC-002` draft, which mixed two
-distinct consumers. The UI/demo asset-page enrichment use case now lives in
-`SPEC-002 - Asset Detail Enrichment for UI and Demo`. This spec covers only
-the dedicated `/v1/assets/{slug}/signal/*` endpoints for agents.
+distinct consumers. The Data Lab asset-page enrichment use case now lives in
+`SPEC-002 - Asset Detail Enrichment for Data Lab Asset Pages`. This spec covers
+only the dedicated `/v1/assets/{slug}/signal/*` endpoints for agents.
 
 This spec defines the Mother API -> price-indexer integration boundary only.
 It does not authorize Mother API to re-own, recalculate, or reinterpret

@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-06-25
+last_reviewed: 2026-07-30
 agent_edit_policy: append_only
 ---
 
@@ -352,3 +352,26 @@ implementation, and documentation changes.
   `CONTRACTS.md`, README, OpenAPI examples, runbooks, smoke docs, and
   `HISTORY.md`.
 - Promoted SPEC-012 to accepted and aligned the release version at `0.3.0`.
+
+## 2026-07-30
+
+- Added the first capability-authorization compatibility slice for protected
+  Beta balance and ERC-20 transfer routes. Required capability declarations
+  and legacy consumer/key grants are applied by the embedded reference-data
+  lifecycle; key grants cannot broaden the owner boundary.
+- Added the stable `403 capability_not_granted` response, OpenAPI coverage,
+  and domain/route characterization tests without adding any new public route
+  or advanced node capability.
+- Accepted SPEC-002 as the implemented asset-detail enrichment record and
+  clarified that its one-call composition is the data foundation for a future
+  production asset-page view. RFC-003 now requires a focused follow-on SPEC
+  before an HTML asset page is delivered; the existing `/v1` contract remains
+  unchanged.
+- Established the `/v1` versus `/app` delivery boundary in RFC-003 and the
+  repository documentation: `/v1` remains the conservative, versioned
+  external API, while the future authenticated Data Lab evolves under `/app`
+  through shared application services.
+- Reoriented the planned asset, price, and Scan product routes under `/app`
+  and made `/v1` promotion a separate compatibility and contract decision.
+  No runtime route or existing public contract changed in this documentation
+  update.

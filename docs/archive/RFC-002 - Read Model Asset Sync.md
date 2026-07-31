@@ -1,9 +1,28 @@
 ---
-status: draft
+status: archived
 owner: iron-burrow
-last_reviewed: 2026-06-02
-agent_edit_policy: update_when_relevant
+last_reviewed: 2026-07-30
+agent_edit_policy: do_not_update
+superseded_by: ../rfcs/RFC-003 - Mother API El Vasco Architecture.md
 ---
+
+> Archived: 2026-07-30
+>
+> Status: Archived
+>
+> Reason: This RFC has been superseded by the accepted El Vasco internal
+> application and read-model synchronization boundary in [RFC-003](../rfcs/RFC-003%20-%20Mother%20API%20El%20Vasco%20Architecture.md).
+>
+> Evidence:
+> - RFC-003 now identifies El Vasco as the location for internal UI,
+>   orchestration, and read-model catalog-discovery functions.
+> - RFC-003 preserves Mother’s catalog ownership, Read Model refresh
+>   ownership, and the prohibition on adding a public `/v1/assets/active`
+>   contract.
+>
+> Notes:
+> - Historical context and the alternatives considered are preserved below.
+> - Public API names and contracts remain unchanged.
 
 # RFC-002 - Read Model Asset Sync
 

@@ -24,8 +24,10 @@ language only.
 - [CONTRACTS.md](../../CONTRACTS.md) is authoritative for exact public request
   bodies, response bodies, validation behavior, limits, and error envelopes.
 - [README.md](../../README.md) is the high-level public Beta navigation guide.
-- [SPEC-006](SPEC-006-network-scoped-balances-v1.md) is the accepted balance
-  design record.
+- Archived [SPEC-006](../archive/SPEC-006-network-scoped-balances-v1.md) is
+  the historical v0.2 balance design record.
+- [SPEC-012](SPEC-012-balance-endpoint-v0-3-explicit-token-selectors-and-historical-balances.md)
+  is the current accepted balance design record.
 - [SPEC-007](SPEC-007-public-erc-20-transfer-search-v1.md) is the accepted
   ERC-20 transfer search design record.
 - [SPEC-008](SPEC-008-balance-endpoint-beta-contract-hardening.md) is the
@@ -94,7 +96,8 @@ surface, but that is not the private Beta v0.2 customer surface.
 
 ### `POST /v1/balances/bulk`
 
-Binding contract: `CONTRACTS.md`, accepted design: SPEC-006 and SPEC-008.
+The historical v0.2 design is recorded by archived SPEC-006 and accepted
+SPEC-008. `CONTRACTS.md` is binding for the current balance contract.
 
 Request DTO:
 
@@ -347,7 +350,8 @@ SPEC-011 is used to organize review or release PRs, split work this way:
 
 2. Balance Beta verification
    - Verify `/v1/balances` and `/v1/balances/bulk` DTOs, limits, examples,
-     OpenAPI paths, and validation errors match SPEC-006/SPEC-008.
+    OpenAPI paths, and validation errors match the then-current
+    SPEC-006/SPEC-008 v0.2 design.
    - Confirm balance upstream degradation remains item-level where contracted.
 
 3. ERC-20 transfer verification

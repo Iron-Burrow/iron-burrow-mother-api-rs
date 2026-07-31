@@ -4,13 +4,16 @@ use serde::Deserialize;
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
 
-use crate::domain::validation::{is_asset_slug, is_evm_address};
+use crate::domain::{
+    capabilities::Capability,
+    validation::{is_asset_slug, is_evm_address},
+};
 
 const EMBEDDED_CATALOG_JSON: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/reference-data/catalog.json"
 ));
-const CATALOG_VERSION: u32 = 1;
+const CATALOG_VERSION: u32 = 2;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ReferenceDataError {
@@ -26,9 +29,17 @@ pub(crate) enum ReferenceDataError {
 #[serde(deny_unknown_fields)]
 struct Catalog {
     version: u32,
+    capabilities: Vec<CapabilityDeclaration>,
     assets: Vec<AssetDeclaration>,
     networks: Vec<NetworkDeclaration>,
     asset_chain_maps: Vec<AssetChainMapDeclaration>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CapabilityDeclaration {
+    id: String,
+    description: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -101,6 +112,12 @@ async fn apply_catalog(pool: &PgPool, catalog: &Catalog) -> Result<(), Reference
     .await
     .map_err(ReferenceDataError::Database)?;
 
+    for capability in &catalog.capabilities {
+        upsert_capability(&mut transaction, capability).await?;
+    }
+
+    reconcile_legacy_capability_grants(&mut transaction).await?;
+
     for asset in &catalog.assets {
         upsert_asset(&mut transaction, asset).await?;
     }
@@ -133,6 +150,26 @@ fn validate_catalog(catalog: &Catalog) -> Result<(), ReferenceDataError> {
         if !asset_slugs.insert(asset.slug.as_str()) {
             return invalid(format!("duplicate asset slug {:?}", asset.slug));
         }
+    }
+
+    let mut declared_capabilities = HashSet::new();
+    for capability in &catalog.capabilities {
+        validate_non_empty("capability id", &capability.id)?;
+        validate_non_empty("capability description", &capability.description)?;
+        if Capability::parse(&capability.id).is_none() {
+            return invalid(format!("unknown capability id {:?}", capability.id));
+        }
+        if !declared_capabilities.insert(capability.id.as_str()) {
+            return invalid(format!("duplicate capability id {:?}", capability.id));
+        }
+    }
+
+    let required_capabilities = Capability::ALL
+        .into_iter()
+        .map(Capability::id)
+        .collect::<HashSet<_>>();
+    if declared_capabilities != required_capabilities {
+        return invalid("capability declarations must match the application registry".to_string());
     }
 
     let mut network_slugs = HashSet::new();
@@ -449,6 +486,68 @@ async fn upsert_asset(
     Ok(())
 }
 
+async fn upsert_capability(
+    transaction: &mut Transaction<'_, Postgres>,
+    capability: &CapabilityDeclaration,
+) -> Result<(), ReferenceDataError> {
+    sqlx::query(
+        r#"
+        insert into mother_api.capability as existing (id, description)
+        values ($1, $2)
+        on conflict (id) do update
+        set
+            description = excluded.description,
+            updated_at = now()
+        where existing.description is distinct from excluded.description
+        "#,
+    )
+    .bind(&capability.id)
+    .bind(&capability.description)
+    .execute(&mut **transaction)
+    .await
+    .map_err(ReferenceDataError::Database)?;
+
+    Ok(())
+}
+
+async fn reconcile_legacy_capability_grants(
+    transaction: &mut Transaction<'_, Postgres>,
+) -> Result<(), ReferenceDataError> {
+    for capability in Capability::LEGACY_BASELINE {
+        sqlx::query(
+            r#"
+            insert into mother_api.api_consumer_capability_grant (
+                consumer_id, capability_id, network_scope
+            )
+            select id, $1, '*'
+            from mother_api.api_consumer
+            on conflict (consumer_id, capability_id, network_scope) do nothing
+            "#,
+        )
+        .bind(capability.id())
+        .execute(&mut **transaction)
+        .await
+        .map_err(ReferenceDataError::Database)?;
+
+        sqlx::query(
+            r#"
+            insert into mother_api.api_key_capability_grant (
+                api_key_id, capability_id, network_scope
+            )
+            select id, $1, '*'
+            from mother_api.api_key
+            on conflict (api_key_id, capability_id, network_scope) do nothing
+            "#,
+        )
+        .bind(capability.id())
+        .execute(&mut **transaction)
+        .await
+        .map_err(ReferenceDataError::Database)?;
+    }
+
+    Ok(())
+}
+
 async fn upsert_network(
     transaction: &mut Transaction<'_, Postgres>,
     network: &NetworkDeclaration,
@@ -640,7 +739,11 @@ mod tests {
     fn unknown_chain_field_fails_to_parse() {
         let json = r#"
         {
-          "version": 1,
+          "version": 2,
+          "capabilities": [
+            {"id": "balances.read", "description": "Read supported latest and historical balance snapshots."},
+            {"id": "transfers.read", "description": "Search bounded ERC-20 transfers."}
+          ],
           "assets": [],
           "networks": [{"slug": "eth-mainnet", "name": "Ethereum Mainnet", "family": "evm", "chain": 1, "chain_id": 1, "caip2": "eip155:1", "metadata": {}, "status": "active", "sort_order": 10}],
           "asset_chain_maps": []
@@ -848,6 +951,17 @@ mod tests {
 
         Catalog {
             version: CATALOG_VERSION,
+            capabilities: vec![
+                CapabilityDeclaration {
+                    id: "balances.read".to_string(),
+                    description: "Read supported latest and historical balance snapshots."
+                        .to_string(),
+                },
+                CapabilityDeclaration {
+                    id: "transfers.read".to_string(),
+                    description: "Search bounded ERC-20 transfers.".to_string(),
+                },
+            ],
             assets: vec![declared_asset],
             networks: vec![NetworkDeclaration {
                 slug: network_slug.clone(),

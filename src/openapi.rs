@@ -192,6 +192,11 @@ struct Erc20TransfersApiDoc;
             body = ErrorResponse
         ),
         (
+            status = 403,
+            description = "The valid Beta API key lacks the capability required by this operation",
+            body = ErrorResponse
+        ),
+        (
             status = 429,
             description = "The valid Beta API key exceeded a configured request limit",
             body = ErrorResponse
@@ -243,6 +248,11 @@ async fn resolve_single_balance_operation() {}
             body = ErrorResponse
         ),
         (
+            status = 403,
+            description = "The valid Beta API key lacks the capability required by this operation",
+            body = ErrorResponse
+        ),
+        (
             status = 429,
             description = "The valid Beta API key exceeded a configured request limit",
             body = ErrorResponse
@@ -284,6 +294,11 @@ async fn resolve_bulk_balances_operation() {}
         (
             status = 401,
             description = "The protected Beta route request lacks a valid active API key",
+            body = ErrorResponse
+        ),
+        (
+            status = 403,
+            description = "The valid Beta API key lacks the capability required by this operation",
             body = ErrorResponse
         ),
         (
@@ -660,6 +675,15 @@ fn add_protected_route_error_examples(operation: &mut Operation) {
     );
     add_response_examples(
         operation,
+        "403",
+        [(
+            "capability_not_granted",
+            "Valid Beta API key lacks the required capability",
+            capability_not_granted_response(),
+        )],
+    );
+    add_response_examples(
+        operation,
         "429",
         [(
             "rate_limited",
@@ -694,6 +718,16 @@ fn rate_limited_response() -> Value {
         "error": {
             "code": "rate_limited",
             "message": "The valid API key exceeded a request limit."
+        }
+    })
+}
+
+fn capability_not_granted_response() -> Value {
+    serde_json::json!({
+        "ok": false,
+        "error": {
+            "code": "capability_not_granted",
+            "message": "The API key is not authorized for this operation."
         }
     })
 }
@@ -1356,7 +1390,7 @@ mod tests {
             .as_object()
             .expect("transfer-search responses should be an object");
         for status in [
-            "200", "400", "401", "404", "429", "422", "500", "502", "503", "504",
+            "200", "400", "401", "403", "404", "429", "422", "500", "502", "503", "504",
         ] {
             assert!(responses.contains_key(status), "missing response {status}");
         }
@@ -1553,7 +1587,7 @@ mod tests {
             format!("#/components/schemas/{response_schema}")
         );
 
-        for status in ["400", "401", "413", "429", "500", "503"] {
+        for status in ["400", "401", "403", "413", "429", "500", "503"] {
             assert_eq!(
                 operation["responses"][status]["content"]["application/json"]["schema"]["$ref"],
                 "#/components/schemas/ErrorResponse",
@@ -1570,6 +1604,7 @@ mod tests {
                 "200".to_string(),
                 "400".to_string(),
                 "401".to_string(),
+                "403".to_string(),
                 "413".to_string(),
                 "429".to_string(),
                 "500".to_string(),
@@ -1673,6 +1708,11 @@ mod tests {
         let unauthorized = response_example_value(responses, "401", "unauthorized");
         assert_error_example(unauthorized.clone());
         assert_eq!(unauthorized, unauthorized_response());
+
+        let capability_not_granted =
+            response_example_value(responses, "403", "capability_not_granted");
+        assert_error_example(capability_not_granted.clone());
+        assert_eq!(capability_not_granted, capability_not_granted_response());
 
         let rate_limited = response_example_value(responses, "429", "rate_limited");
         assert_error_example(rate_limited.clone());

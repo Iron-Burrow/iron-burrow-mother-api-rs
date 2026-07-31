@@ -1,5 +1,6 @@
 use crate::adapters::postgres::api_keys::{DailyAcceptedOutcome, UsageResponseClass};
 use crate::adapters::postgres::ApiKeyRepository;
+use crate::domain::capabilities::{Capability, CapabilityGrant, NetworkScope};
 use crate::test_utils::postgres::migrated_pool;
 use serde_json::json;
 use sqlx::PgPool;
@@ -952,6 +953,61 @@ async fn api_key_adoption_migrations_and_reference_data_create_no_real_keys() {
     assert_eq!(key_count, 0);
     assert_eq!(policy_count, 0);
     assert_eq!(usage_count, 0);
+
+    let capabilities = sqlx::query_as::<_, (String, String)>(
+        "select id, description from mother_api.capability order by id",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        capabilities,
+        vec![
+            (
+                "balances.read".to_string(),
+                "Read supported latest and historical balance snapshots.".to_string(),
+            ),
+            (
+                "transfers.read".to_string(),
+                "Search bounded ERC-20 transfers.".to_string(),
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn reference_data_reconciles_legacy_capability_grants_for_existing_keys() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let (consumer_slug, _key_prefix, consumer_id, key_id) =
+        insert_repository_test_key(&pool, &suffix, vec![60_u8; 32]).await;
+
+    crate::reference_data::apply_embedded_catalog(&pool)
+        .await
+        .unwrap();
+
+    let owner_grant_count = sqlx::query_scalar::<_, i64>(
+        "select count(*) from mother_api.api_consumer_capability_grant where consumer_id = $1",
+    )
+    .bind(consumer_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let key_grant_count = sqlx::query_scalar::<_, i64>(
+        "select count(*) from mother_api.api_key_capability_grant where api_key_id = $1",
+    )
+    .bind(key_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(owner_grant_count, 2);
+    assert_eq!(key_grant_count, 2);
+
+    delete_api_consumer_test_rows(&pool, &consumer_slug).await;
 }
 
 #[tokio::test]
@@ -1901,6 +1957,59 @@ async fn api_key_repository_creates_and_finds_policy() {
         repository.find_policy(uuid::Uuid::new_v4()).await.unwrap(),
         None
     );
+
+    delete_api_consumer_test_rows(&pool, &consumer_slug).await;
+}
+
+#[tokio::test]
+async fn capability_grants_are_persisted_at_owner_and_key_boundaries() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    crate::reference_data::apply_embedded_catalog(&pool)
+        .await
+        .unwrap();
+    let (consumer_slug, _key_prefix, consumer_id, key_id) =
+        insert_repository_test_key(&pool, &suffix, vec![61_u8; 32]).await;
+
+    sqlx::query(
+        r#"
+        insert into mother_api.api_consumer_capability_grant (
+            consumer_id, capability_id, network_scope
+        )
+        values ($1, 'balances.read', 'eth-mainnet')
+        "#,
+    )
+    .bind(consumer_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        r#"
+        insert into mother_api.api_key_capability_grant (
+            api_key_id, capability_id, network_scope
+        )
+        values ($1, 'balances.read', 'eth-mainnet')
+        "#,
+    )
+    .bind(key_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let grants = ApiKeyRepository::database(pool.clone())
+        .find_authorization_grants(key_id)
+        .await
+        .unwrap();
+    let expected = CapabilityGrant::active(
+        Capability::BalancesRead,
+        NetworkScope::Exact("eth-mainnet".to_string()),
+    );
+
+    assert_eq!(grants.owner_grants, vec![expected.clone()]);
+    assert_eq!(grants.key_grants, vec![expected]);
 
     delete_api_consumer_test_rows(&pool, &consumer_slug).await;
 }

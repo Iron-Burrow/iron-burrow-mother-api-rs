@@ -10,10 +10,13 @@ agent_edit_policy: update_when_relevant
 Accepted implementation spec for tightening Mother API balance endpoints for
 the private Beta surface.
 
-This spec records the accepted Beta hardening delta. Accepted
-[SPEC-006](SPEC-006-network-scoped-balances-v1.md) remains the balance design
-record, accepted [SPEC-007](SPEC-007-public-erc-20-transfer-search-v1.md)
-remains the ERC-20 transfer-search design record, and
+This spec records the accepted Beta hardening delta. Archived
+[SPEC-006](../archive/SPEC-006-network-scoped-balances-v1.md) records the
+superseded v0.2 balance design; accepted
+[SPEC-012](SPEC-012-balance-endpoint-v0-3-explicit-token-selectors-and-historical-balances.md)
+is the current balance design record. Accepted
+[SPEC-007](SPEC-007-public-erc-20-transfer-search-v1.md) remains the ERC-20
+transfer-search design record, and
 [CONTRACTS.md](../../CONTRACTS.md) remains authoritative for implemented
 public callers.
 
@@ -26,8 +29,9 @@ Mother API Beta exposes a deliberately small public surface:
 - `POST /v1/balances/bulk`
 - `POST /v1/erc20-transfers/search`, when its feature gate is enabled
 
-The balance endpoints are implemented and described by SPEC-006. This spec
-adds the Beta-level public contract discipline needed for external consumers:
+This spec added the Beta-level public contract discipline for the v0.2 balance
+endpoints. The current balance contract is described by SPEC-012 and
+`CONTRACTS.md`. This hardening record covers
 strict request parsing, schema-ready HTTP DTOs, reusable examples, OpenAPI
 coverage, public error examples, smoke checks, and route-surface tests.
 
@@ -186,7 +190,7 @@ Validation must also cover:
 - unsupported quote currency;
 - too many accounts, assets, or account-asset resolution items.
 
-The accepted SPEC-006 public limits remain:
+The v0.2 SPEC-006 public limits were:
 
 | Limit | Maximum |
 | ----- | ------- |
@@ -217,8 +221,8 @@ Request-wide errors must document:
 - example response;
 - whether the failure is request-side, dependency-side, or internal.
 
-Bigwig and Price Indexer runtime failures for supported balance items remain
-item-level balance response errors as specified by SPEC-006. They are covered
+Bigwig and Price Indexer runtime failures for supported balance items were
+item-level balance response errors in v0.2 as specified by SPEC-006. They are covered
 by success-response examples with `status: "partial"` or
 `status: "failed"` rather than incorrectly promoted to request-wide HTTP
 errors.

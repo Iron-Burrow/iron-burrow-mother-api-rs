@@ -1,10 +1,29 @@
 ---
-status: draft
+status: archived
 owner: iron-burrow
-last_reviewed: 2026-06-25
-agent_edit_policy: update_when_relevant
+last_reviewed: 2026-07-30
+agent_edit_policy: do_not_update
 external_contract: iron-burrow-defi-intelligence-service/CONTRACTS.md@2026-06-01
 ---
+
+> Archived: 2026-07-30
+>
+> Status: Archived
+>
+> Reason: This hackathon-scoped portfolio-estimation profile was never
+> implemented and no longer matches Mother API's current product direction.
+>
+> Evidence:
+> - `src/adapters/http/router.rs` and `src/openapi.rs` expose no portfolio
+>   estimation route.
+> - `CONTRACTS.md` excludes Aave V3 and other DIS-backed protocol-intelligence
+>   endpoints from Mother API's public surface.
+> - `docs/rfcs/RFC-003 - Mother API El Vasco Architecture.md` keeps `/v1`
+>   intentionally small and records DIS as a dormant boundary.
+>
+> Notes:
+> - Historical context is preserved.
+> - The public API contract remains unchanged.
 
 # SPEC-005 - Aave V3 Portfolio Estimate Endpoint
 
@@ -27,22 +46,20 @@ POST /v1/portfolio/aave-v3/estimate
 
 ## Dependencies
 
-This spec composes two existing internal capabilities. It does not redefine or
-reimplement either of them.
+This draft describes a possible composition of future internal capabilities.
+It does not redefine or reimplement either of them.
 
-- **DIS Aave V3 realized yield** — Mother API consumes the internal DIS client
-  defined by
-  [SPEC-001](SPEC-001-dis-aave-v3-realized-yield.md). That client owns the DIS
-  request shape, response parsing, error mapping, retry, and decimal policy for
-  `POST /internal/v1/aave/v3/yield/realized`. SPEC-001 is a **prerequisite**:
-  this endpoint cannot ship until the SPEC-001 Aave realized-yield client
-  exists. SPEC-005 only constructs the resolved block range and consumes
-  `realized_yield`.
+- **Potential DIS Aave V3 realized-yield integration** —
+  [SPEC-001](../specs/SPEC-001-dis-aave-v3-realized-yield.md) preserves the service
+  boundary but defines no implemented Aave client, internal DIS contract, or
+  `realized_yield` capability. This draft cannot ship until a future accepted
+  scope defines and implements that integration, including its contract,
+  failure behavior, tests, and operational expectations.
 - **Price Indexer point-in-time price (`/prices/at`)** — Mother API also
   depends on the existing internal Price Indexer point-in-time price capability
   documented by the Price Indexer contract
   (`iron-burrow-price-indexer/CONTRACTS.md@2026-06-02`) and referenced by
-  [SPEC-002](SPEC-002-asset-detail-enrichment.md). This is an **internal-only**
+  [SPEC-002](../specs/SPEC-002-asset-detail-enrichment.md). This is an **internal-only**
   dependency of the portfolio estimator. Mother API does **not** expose a
   point-in-time, `asOf`, or historical price endpoint publicly in this spec.
 

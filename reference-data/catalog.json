@@ -1,5 +1,15 @@
 {
-  "version": 1,
+  "version": 2,
+  "capabilities": [
+    {
+      "id": "balances.read",
+      "description": "Read supported latest and historical balance snapshots."
+    },
+    {
+      "id": "transfers.read",
+      "description": "Search bounded ERC-20 transfers."
+    }
+  ],
   "assets": [
     {
       "slug": "bitcoin",

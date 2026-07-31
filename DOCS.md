@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-06-01
+last_reviewed: 2026-07-30
 agent_edit_policy: update_when_relevant
 ---
 
@@ -119,12 +119,28 @@ plus `/health`. Per the rules above, those promises must remain captured in
 `CONTRACTS.md` with `status: contract` and
 `agent_edit_policy: update_only_if_contract_changes`.
 
+## Delivery surfaces
+
+Mother has two deliberately different delivery surfaces:
+
+- `/v1` is the stable, versioned machine API for external integrations. A
+  capability belongs here only after an accepted implementation spec and a
+  coordinated `CONTRACTS.md` update make its compatibility promise explicit.
+- `/app` is the future authenticated Iron Burrow Data Lab for people with an
+  authorized Iron Burrow Account. Its pages may call Mother application
+  services directly. Availability in the Data Lab does not by itself create a
+  `/v1` endpoint or a public JSON compatibility promise.
+
+The Data Lab remains subject to focused specs, authorization, tests, and clear
+user-facing documentation. It is not a shortcut around the public API
+contract. Until an `/app` runtime is implemented, documentation must describe
+it as planned rather than as an available route.
+
 The [README.md](README.md) endpoint section should stay brief and
 navigational. `CONTRACTS.md` is the authoritative reference for implemented
 Mother API endpoint promises.
 
-The first Mother API spec under [docs/specs/](docs/specs/) is
-`SPEC-001-dis-aave-v3-realized-yield.md`, which describes how Mother API
-will consume the DIS Aave V3 realized yield internal endpoint. It does not
-relieve the need for `CONTRACTS.md` covering Mother API's own public
-surface.
+`SPEC-001-dis-aave-v3-realized-yield.md` records the currently valid but
+dormant DIS protocol-intelligence boundary. It defines no implemented DIS
+endpoint or Mother API public surface, and it does not relieve the need for
+`CONTRACTS.md` covering Mother API's own public surface.

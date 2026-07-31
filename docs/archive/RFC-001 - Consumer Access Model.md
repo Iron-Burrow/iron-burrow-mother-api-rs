@@ -1,11 +1,30 @@
-# RFC-001 — Consumer Access Model
-
 ---
-status: draft
+status: archived
 owner: iron-burrow
-last_reviewed: 2026-06-01
-agent_edit_policy: update_when_relevant
+last_reviewed: 2026-07-30
+agent_edit_policy: do_not_update
+superseded_by: ../rfcs/RFC-003 - Mother API El Vasco Architecture.md
 ---
+
+> Archived: 2026-07-30
+>
+> Status: Archived
+>
+> Reason: This RFC has been superseded by the accepted access, authorization,
+> and product-growth decisions in [RFC-003](../rfcs/RFC-003%20-%20Mother%20API%20El%20Vasco%20Architecture.md).
+>
+> Evidence:
+> - RFC-003 records the implemented private-Beta consumer/key capability and
+>   quota model, while preserving the curated Mother API boundary.
+> - RFC-003 consolidates the demonstrated-demand growth principle and defines
+>   the current consumer categories as operator-managed metadata rather than
+>   plan, onboarding, support, or billing promises.
+>
+> Notes:
+> - Historical context is preserved below.
+> - Public API names and contracts remain unchanged.
+
+# RFC-001 — Consumer Access Model
 
 Status: Draft
 

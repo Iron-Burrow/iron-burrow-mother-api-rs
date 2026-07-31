@@ -11,7 +11,7 @@ use tracing::{debug, warn};
 
 use crate::{
     adapters::http::{
-        auth::require_api_key,
+        auth::{require_api_key, require_transfer_api_key},
         error::ApiError,
         routes::{
             assets::{get_asset, get_price_stats_signal, get_price_trend_signal, list_assets},
@@ -51,7 +51,7 @@ pub fn build_router(state: AppState) -> Router {
 
         if beta_auth_enabled {
             transfer_search_route = transfer_search_route.route_layer(
-                middleware::from_fn_with_state(state.clone(), require_api_key),
+                middleware::from_fn_with_state(state.clone(), require_transfer_api_key),
             );
         }
 
