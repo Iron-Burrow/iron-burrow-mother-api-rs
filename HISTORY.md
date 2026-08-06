@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-31
+last_reviewed: 2026-08-06
 agent_edit_policy: append_only
 ---
 
@@ -412,3 +412,19 @@ implementation, and documentation changes.
   adding a `/v1` endpoint, OpenAPI operation, activity log, or data aggregation.
 - Accepted SPEC-020, reconciled Phase 4 with ADR-001's retired `/app` route
   namespace, and updated the web-host Caddy allowlist and contracts.
+
+- Completed RFC-003 Phase 5 with an append-only Workspace activity/evidence
+  store, atomic lifecycle/address/label events, and source-aware balance and
+  transfer observation snapshots.
+- Added the private account-key Workspace activity JSON export and browser
+  timeline without adding a `/v1` route or OpenAPI operation; legacy and
+  anonymous keys do not receive the new `workspace.activity.read` capability.
+- Accepted SPEC-021 and updated the web contract and release tracking.
+
+## 2026-08-06
+
+- Archived SPEC-001's unimplemented DIS protocol-intelligence direction and
+  drafted SPEC-024's Mother-owned DeFi position discovery and search design.
+  No runtime route, OpenAPI operation, migration, or public API contract was
+  added; exact integrations, Bigwig primitives, limits, and registry details
+  remain acceptance blockers.

@@ -1,0 +1,3 @@
+{% extends "web/base.html" %}
+{% block title %}Activity — {{ workspace.name }}{% endblock %}
+{% block content %}<p><a href="/workspaces/{{ workspace.public_id }}">Back to workspace</a></p><h1>Activity</h1><ul>{% for event in events %}<li><strong>{{ event.event_type }}</strong> <time>{{ event.occurred_at }}</time><pre>{{ event.payload }}</pre></li>{% endfor %}</ul>{% if let Some(before) = next_before %}<a href="/workspaces/{{ workspace.public_id }}/activity?before={{ before }}">Older activity</a>{% endif %}{% endblock %}

@@ -81,15 +81,24 @@ shapes.
 
 `https://www.ironburrow.com` serves the public Iron Burrow homepage, Scan
 holding pages, API-access information, and `/docs` for the human-readable API
-guide. The web entry runs in the same Mother API binary; it is not a second
+guide. Authenticated Data Lab catalog, price, Lab, and Workspace treasury
+snapshot presenters run in the same Mother API binary; they are evolving web
+product transports, not `/v1` operations. The web entry is not a second
 frontend service or another version of the public machine API.
+
+The authenticated Lab also includes a bounded DeFi protocol realized-yield
+study. Its first adapter is Aave V3 on Ethereum; it remains a browser product
+transport and is not part of the Beta machine API.
 
 `https://api.ironburrow.com/openapi.json` remains the machine-readable API
 contract. `app.ironburrow.com` is not configured. The web entry includes
 passwordless account entry, a constrained anonymous demo-key flow, and
 account-owned Workspaces at `/workspaces`. Workspaces hold watch-only Ethereum
-or Base addresses with labels and selected-address balance or transfer views;
-they are not a browser key-management or Scan explorer surface. A human product capability will not
+or Base addresses with labels, selected-address balance or transfer views, and
+an append-only activity/evidence timeline. Account-owned API keys can export
+their Workspace timeline at `/workspaces/{workspace_id}/activity.json`; this
+is an evolving web-product transport, not a `/v1` endpoint. Workspaces are not
+a browser key-management or Scan explorer surface. A human product capability will not
 automatically receive a corresponding `/v1` JSON endpoint; promotion still
 requires deliberate validation, a formal specification, and a `CONTRACTS.md`
 compatibility decision.

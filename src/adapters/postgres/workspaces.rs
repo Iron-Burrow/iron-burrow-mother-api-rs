@@ -1,4 +1,6 @@
-use sqlx::{FromRow, PgPool};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use super::errors::RepositoryError;
@@ -25,6 +27,26 @@ pub(crate) struct WorkspaceMemberAddress {
     pub(crate) address: String,
     pub(crate) client_ref: Option<String>,
     pub(crate) labels: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct WorkspaceActivityEvent {
+    pub(crate) public_id: String,
+    pub(crate) event_type: String,
+    pub(crate) actor_kind: String,
+    pub(crate) payload_version: i32,
+    pub(crate) payload: Value,
+    pub(crate) occurred_at: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct WorkspaceTreasurySnapshot {
+    pub(crate) public_id: String,
+    pub(crate) requested_as_of: Value,
+    pub(crate) quote_currency: String,
+    pub(crate) asset_slugs: Value,
+    pub(crate) payload: Value,
+    pub(crate) captured_at: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -56,8 +78,18 @@ impl WorkspaceRepository {
     ) -> Result<Workspace, RepositoryError> {
         let id = Uuid::new_v4();
         let public_id = format!("wsp_{}", id.simple());
-        sqlx::query_as::<_, WorkspaceRow>("insert into mother_api.workspace (id, public_id, owner_ib_account_id, name, description) values ($1, $2, $3, $4, $5) returning id, public_id, name, description, status")
-            .bind(id).bind(public_id).bind(account_id).bind(name).bind(description).fetch_one(&self.0).await.map_err(RepositoryError::new).map(Into::into)
+        let mut tx = self.0.begin().await.map_err(RepositoryError::new)?;
+        let workspace = sqlx::query_as::<_, WorkspaceRow>("insert into mother_api.workspace (id, public_id, owner_ib_account_id, name, description) values ($1, $2, $3, $4, $5) returning id, public_id, name, description, status")
+            .bind(id).bind(public_id).bind(account_id).bind(name).bind(description).fetch_one(&mut *tx).await.map_err(RepositoryError::new)?;
+        append_event(
+            &mut tx,
+            id,
+            "workspace.created",
+            json!({"workspace": {"name": name, "description": description}}),
+        )
+        .await?;
+        tx.commit().await.map_err(RepositoryError::new)?;
+        Ok(workspace.into())
     }
 
     pub(crate) async fn find_owned(
@@ -75,8 +107,20 @@ impl WorkspaceRepository {
         public_id: &str,
         name: &str,
     ) -> Result<bool, RepositoryError> {
-        sqlx::query("update mother_api.workspace set name = $3, updated_at = now() where owner_ib_account_id = $1 and public_id = $2 and status = 'active'")
-            .bind(account_id).bind(public_id).bind(name).execute(&self.0).await.map_err(RepositoryError::new).map(|result| result.rows_affected() == 1)
+        let mut tx = self.0.begin().await.map_err(RepositoryError::new)?;
+        let id = sqlx::query_scalar::<_, Uuid>("update mother_api.workspace set name = $3, updated_at = now() where owner_ib_account_id = $1 and public_id = $2 and status = 'active' returning id")
+            .bind(account_id).bind(public_id).bind(name).fetch_optional(&mut *tx).await.map_err(RepositoryError::new)?;
+        if let Some(id) = id {
+            append_event(
+                &mut tx,
+                id,
+                "workspace.renamed",
+                json!({"workspace": {"name": name}}),
+            )
+            .await?;
+        }
+        tx.commit().await.map_err(RepositoryError::new)?;
+        Ok(id.is_some())
     }
 
     pub(crate) async fn set_archived(
@@ -86,8 +130,24 @@ impl WorkspaceRepository {
         archived: bool,
     ) -> Result<bool, RepositoryError> {
         let target = if archived { "archived" } else { "active" };
-        sqlx::query("update mother_api.workspace set status = $3, archived_at = case when $3 = 'archived' then now() else null end, updated_at = now() where owner_ib_account_id = $1 and public_id = $2 and status <> $3")
-            .bind(account_id).bind(public_id).bind(target).execute(&self.0).await.map_err(RepositoryError::new).map(|result| result.rows_affected() == 1)
+        let mut tx = self.0.begin().await.map_err(RepositoryError::new)?;
+        let id = sqlx::query_scalar::<_, Uuid>("update mother_api.workspace set status = $3, archived_at = case when $3 = 'archived' then now() else null end, updated_at = now() where owner_ib_account_id = $1 and public_id = $2 and status <> $3 returning id")
+            .bind(account_id).bind(public_id).bind(target).fetch_optional(&mut *tx).await.map_err(RepositoryError::new)?;
+        if let Some(id) = id {
+            append_event(
+                &mut tx,
+                id,
+                if archived {
+                    "workspace.archived"
+                } else {
+                    "workspace.restored"
+                },
+                json!({"workspace": {"status": target}}),
+            )
+            .await?;
+        }
+        tx.commit().await.map_err(RepositoryError::new)?;
+        Ok(id.is_some())
     }
 
     pub(crate) async fn members(
@@ -159,8 +219,9 @@ impl WorkspaceRepository {
                     let id = Uuid::new_v4();
                     let public_id = format!("wma_{}", id.simple());
                     let result = sqlx::query("insert into mother_api.workspace_member_address (id, public_id, workspace_id, network_slug, address, client_ref) values ($1, $2, $3, $4, $5, $6) on conflict (workspace_id, network_slug, address) do nothing")
-                        .bind(id).bind(public_id).bind(workspace_id).bind(network_slug).bind(address).bind(client_ref).execute(&mut *transaction).await.map_err(RepositoryError::new)?;
+                        .bind(id).bind(&public_id).bind(workspace_id).bind(network_slug).bind(address).bind(client_ref).execute(&mut *transaction).await.map_err(RepositoryError::new)?;
                     if result.rows_affected() == 1 {
+                        append_event(&mut transaction, workspace_id, "member_address.added", json!({"member": {"public_id": public_id, "network_slug": network_slug, "address": address, "client_ref": client_ref}})).await?;
                         AddMemberOutcome::Added
                     } else {
                         AddMemberOutcome::AlreadyPresent
@@ -178,8 +239,27 @@ impl WorkspaceRepository {
         member_id: Uuid,
         label: &str,
     ) -> Result<(), RepositoryError> {
-        sqlx::query("insert into mother_api.workspace_member_address_label (member_address_id, label) values ($1, $2) on conflict do nothing")
-            .bind(member_id).bind(label).execute(&self.0).await.map_err(RepositoryError::new).map(|_| ())
+        let mut tx = self.0.begin().await.map_err(RepositoryError::new)?;
+        let workspace_id = sqlx::query_scalar::<_, Uuid>(
+            "select workspace_id from mother_api.workspace_member_address where id = $1",
+        )
+        .bind(member_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(RepositoryError::new)?;
+        let result = sqlx::query("insert into mother_api.workspace_member_address_label (member_address_id, label) values ($1, $2) on conflict do nothing")
+            .bind(member_id).bind(label).execute(&mut *tx).await.map_err(RepositoryError::new)?;
+        if result.rows_affected() == 1 {
+            append_event(
+                &mut tx,
+                workspace_id,
+                "member_address.label_added",
+                json!({"member_address_id": member_id, "label": label}),
+            )
+            .await?;
+        }
+        tx.commit().await.map_err(RepositoryError::new)?;
+        Ok(())
     }
 
     pub(crate) async fn remove_label(
@@ -187,9 +267,103 @@ impl WorkspaceRepository {
         member_id: Uuid,
         label: &str,
     ) -> Result<(), RepositoryError> {
-        sqlx::query("delete from mother_api.workspace_member_address_label where member_address_id = $1 and lower(label) = lower($2)")
-            .bind(member_id).bind(label).execute(&self.0).await.map_err(RepositoryError::new).map(|_| ())
+        let mut tx = self.0.begin().await.map_err(RepositoryError::new)?;
+        let workspace_id = sqlx::query_scalar::<_, Uuid>(
+            "select workspace_id from mother_api.workspace_member_address where id = $1",
+        )
+        .bind(member_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(RepositoryError::new)?;
+        let result = sqlx::query("delete from mother_api.workspace_member_address_label where member_address_id = $1 and lower(label) = lower($2)")
+            .bind(member_id).bind(label).execute(&mut *tx).await.map_err(RepositoryError::new)?;
+        if result.rows_affected() == 1 {
+            append_event(
+                &mut tx,
+                workspace_id,
+                "member_address.label_removed",
+                json!({"member_address_id": member_id, "label": label}),
+            )
+            .await?;
+        }
+        tx.commit().await.map_err(RepositoryError::new)?;
+        Ok(())
     }
+
+    pub(crate) async fn append_observation(
+        &self,
+        workspace_id: Uuid,
+        event_type: &str,
+        payload: Value,
+    ) -> Result<(), RepositoryError> {
+        let mut tx = self.0.begin().await.map_err(RepositoryError::new)?;
+        append_event(&mut tx, workspace_id, event_type, payload).await?;
+        tx.commit().await.map_err(RepositoryError::new)
+    }
+
+    pub(crate) async fn list_activity(
+        &self,
+        workspace_id: Uuid,
+        before: Option<&str>,
+        limit: i64,
+    ) -> Result<Vec<WorkspaceActivityEvent>, RepositoryError> {
+        sqlx::query_as::<_, ActivityRow>(r#"select public_id, event_type, actor_kind, payload_version, payload, to_char(occurred_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as occurred_at
+            from mother_api.workspace_activity_event
+            where workspace_id = $1 and ($2::text is null or (occurred_at, public_id) < (select occurred_at, public_id from mother_api.workspace_activity_event where workspace_id = $1 and public_id = $2))
+            order by occurred_at desc, public_id desc limit $3"#)
+            .bind(workspace_id).bind(before).bind(limit).fetch_all(&self.0).await.map_err(RepositoryError::new).map(|rows| rows.into_iter().map(Into::into).collect())
+    }
+
+    pub(crate) async fn list_treasury_snapshots(
+        &self,
+        workspace_id: Uuid,
+    ) -> Result<Vec<WorkspaceTreasurySnapshot>, RepositoryError> {
+        sqlx::query_as::<_, TreasurySnapshotRow>(
+            "select public_id, requested_as_of, quote_currency, asset_slugs, payload, to_char(captured_at at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') as captured_at from mother_api.workspace_treasury_snapshot where workspace_id = $1 order by captured_at desc, public_id desc",
+        )
+        .bind(workspace_id)
+        .fetch_all(&self.0)
+        .await
+        .map_err(RepositoryError::new)
+        .map(|rows| rows.into_iter().map(Into::into).collect())
+    }
+
+    pub(crate) async fn create_treasury_snapshot(
+        &self,
+        workspace_id: Uuid,
+        requested_as_of: Value,
+        quote_currency: &str,
+        asset_slugs: Value,
+        payload: Value,
+    ) -> Result<WorkspaceTreasurySnapshot, RepositoryError> {
+        let id = Uuid::new_v4();
+        sqlx::query_as::<_, TreasurySnapshotRow>(
+            "insert into mother_api.workspace_treasury_snapshot (id, public_id, workspace_id, requested_as_of, quote_currency, asset_slugs, payload) values ($1, $2, $3, $4, $5, $6, $7) returning public_id, requested_as_of, quote_currency, asset_slugs, payload, to_char(captured_at at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') as captured_at",
+        )
+        .bind(id)
+        .bind(format!("wts_{}", id.simple()))
+        .bind(workspace_id)
+        .bind(requested_as_of)
+        .bind(quote_currency)
+        .bind(asset_slugs)
+        .bind(payload)
+        .fetch_one(&self.0)
+        .await
+        .map_err(RepositoryError::new)
+        .map(Into::into)
+    }
+}
+
+async fn append_event(
+    tx: &mut Transaction<'_, Postgres>,
+    workspace_id: Uuid,
+    event_type: &str,
+    payload: Value,
+) -> Result<(), RepositoryError> {
+    let id = Uuid::new_v4();
+    sqlx::query("insert into mother_api.workspace_activity_event (id, public_id, workspace_id, event_type, actor_kind, payload_version, payload) values ($1, $2, $3, $4, 'browser_session', 1, $5)")
+        .bind(id).bind(format!("wae_{}", id.simple())).bind(workspace_id).bind(event_type).bind(payload).execute(&mut **tx).await.map_err(RepositoryError::new)?;
+    Ok(())
 }
 
 #[derive(FromRow)]
@@ -219,6 +393,48 @@ struct MemberRow {
     address: String,
     client_ref: Option<String>,
     labels: Vec<String>,
+}
+#[derive(FromRow)]
+struct ActivityRow {
+    public_id: String,
+    event_type: String,
+    actor_kind: String,
+    payload_version: i32,
+    payload: Value,
+    occurred_at: String,
+}
+#[derive(FromRow)]
+struct TreasurySnapshotRow {
+    public_id: String,
+    requested_as_of: Value,
+    quote_currency: String,
+    asset_slugs: Value,
+    payload: Value,
+    captured_at: String,
+}
+impl From<ActivityRow> for WorkspaceActivityEvent {
+    fn from(row: ActivityRow) -> Self {
+        Self {
+            public_id: row.public_id,
+            event_type: row.event_type,
+            actor_kind: row.actor_kind,
+            payload_version: row.payload_version,
+            payload: row.payload,
+            occurred_at: row.occurred_at,
+        }
+    }
+}
+impl From<TreasurySnapshotRow> for WorkspaceTreasurySnapshot {
+    fn from(row: TreasurySnapshotRow) -> Self {
+        Self {
+            public_id: row.public_id,
+            requested_as_of: row.requested_as_of,
+            quote_currency: row.quote_currency,
+            asset_slugs: row.asset_slugs,
+            payload: row.payload,
+            captured_at: row.captured_at,
+        }
+    }
 }
 impl From<MemberRow> for WorkspaceMemberAddress {
     fn from(row: MemberRow) -> Self {

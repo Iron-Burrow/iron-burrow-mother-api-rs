@@ -1,20 +1,76 @@
 //! Product authorization concepts. HTTP routes and persistence adapters map
 //! into this module; neither is the source of authorization truth.
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(crate) enum Capability {
     BalancesRead,
     Erc20TransfersRead,
+    WorkspaceActivityRead,
+    CatalogRead,
+    PricesRead,
+    ScanRead,
+    LabRead,
+    TreasuryRead,
+    TreasurySnapshotWrite,
 }
 
 impl Capability {
-    pub(crate) const ALL: [Self; 2] = [Self::BalancesRead, Self::Erc20TransfersRead];
+    pub(crate) const ALL: [Self; 9] = [
+        Self::BalancesRead,
+        Self::Erc20TransfersRead,
+        Self::WorkspaceActivityRead,
+        Self::CatalogRead,
+        Self::PricesRead,
+        Self::ScanRead,
+        Self::LabRead,
+        Self::TreasuryRead,
+        Self::TreasurySnapshotWrite,
+    ];
     pub(crate) const LEGACY_BASELINE: [Self; 2] = [Self::BalancesRead, Self::Erc20TransfersRead];
+    /// New Phase 6 capabilities are deliberately opt-in for API keys. Browser
+    /// sessions receive their account grants directly; no existing or newly
+    /// issued account key is broadened by a catalog migration.
+    pub(crate) const ACCOUNT_BASELINE: [Self; 3] = [
+        Self::BalancesRead,
+        Self::Erc20TransfersRead,
+        Self::WorkspaceActivityRead,
+    ];
+    pub(crate) const DATALAB_BROWSER_BASELINE: [Self; 6] = [
+        Self::CatalogRead,
+        Self::PricesRead,
+        Self::ScanRead,
+        Self::LabRead,
+        Self::TreasuryRead,
+        Self::TreasurySnapshotWrite,
+    ];
 
     pub(crate) const fn id(self) -> &'static str {
         match self {
             Self::BalancesRead => "balances.read",
             Self::Erc20TransfersRead => "transfers.read",
+            Self::WorkspaceActivityRead => "workspace.activity.read",
+            Self::CatalogRead => "catalog.read",
+            Self::PricesRead => "prices.read",
+            Self::ScanRead => "scan.read",
+            Self::LabRead => "lab.read",
+            Self::TreasuryRead => "treasury.read",
+            Self::TreasurySnapshotWrite => "treasury.snapshot.write",
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) const fn description(self) -> &'static str {
+        match self {
+            Self::BalancesRead => "Read supported latest and historical balance snapshots.",
+            Self::Erc20TransfersRead => "Search bounded ERC-20 transfers.",
+            Self::WorkspaceActivityRead => "Read account-owned Workspace activity and evidence.",
+            Self::CatalogRead => "Read authenticated Data Lab asset and network catalog views.",
+            Self::PricesRead => "Read authenticated Data Lab price views.",
+            Self::ScanRead => "Read authenticated Workspace-member Scan views.",
+            Self::LabRead => "Run authenticated curated Data Lab research.",
+            Self::TreasuryRead => "Read account-owned Workspace treasury snapshots.",
+            Self::TreasurySnapshotWrite => "Capture account-owned Workspace treasury snapshots.",
         }
     }
 
@@ -115,11 +171,15 @@ pub(crate) struct AuthorizationContext {
     /// boundary without allowing keys to become broader.
     pub(crate) owner_grants: Vec<CapabilityGrant>,
     pub(crate) key_grants: Vec<CapabilityGrant>,
+    /// Delegated Client grants apply only to agent keys. Their absence means
+    /// the credential is owned directly by the compatibility owner/account.
+    pub(crate) client_grants: Option<Vec<CapabilityGrant>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum AuthorizationDeny {
     OwnerCapabilityNotGranted,
+    ClientCapabilityNotGranted,
     KeyCapabilityNotGranted,
 }
 
@@ -139,6 +199,12 @@ pub(crate) fn evaluate_authorization(
         .any(|grant| grant.permits(request))
     {
         return AuthorizationDecision::Deny(AuthorizationDeny::OwnerCapabilityNotGranted);
+    }
+
+    if let Some(grants) = context.client_grants.as_ref() {
+        if !grants.iter().any(|grant| grant.permits(request)) {
+            return AuthorizationDecision::Deny(AuthorizationDeny::ClientCapabilityNotGranted);
+        }
     }
 
     if !context
@@ -162,7 +228,8 @@ mod tests {
 
     #[test]
     fn legacy_baseline_stays_pinned_to_the_compatibility_capabilities() {
-        assert_eq!(Capability::LEGACY_BASELINE, Capability::ALL);
+        assert_eq!(Capability::LEGACY_BASELINE.len(), 2);
+        assert_eq!(Capability::ACCOUNT_BASELINE.len(), 3);
     }
 
     #[test]
@@ -221,6 +288,7 @@ mod tests {
                     &AuthorizationContext {
                         owner_grants,
                         key_grants,
+                        client_grants: None,
                     },
                     &request,
                 ),
@@ -228,5 +296,48 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    fn client_grants_apply_only_to_agent_keys_and_empty_sets_deny() {
+        let request = AuthorizationRequest::route(Capability::BalancesRead);
+        let owner_grants = vec![grant(Capability::BalancesRead, NetworkScope::Any)];
+        let key_grants = vec![grant(Capability::BalancesRead, NetworkScope::Any)];
+
+        assert_eq!(
+            evaluate_authorization(
+                &AuthorizationContext {
+                    owner_grants: owner_grants.clone(),
+                    key_grants: key_grants.clone(),
+                    client_grants: None,
+                },
+                &request,
+            ),
+            AuthorizationDecision::Allow
+        );
+
+        assert_eq!(
+            evaluate_authorization(
+                &AuthorizationContext {
+                    owner_grants: owner_grants.clone(),
+                    key_grants: key_grants.clone(),
+                    client_grants: Some(vec![]),
+                },
+                &request,
+            ),
+            AuthorizationDecision::Deny(AuthorizationDeny::ClientCapabilityNotGranted)
+        );
+
+        assert_eq!(
+            evaluate_authorization(
+                &AuthorizationContext {
+                    owner_grants,
+                    key_grants,
+                    client_grants: Some(vec![grant(Capability::BalancesRead, NetworkScope::Any)]),
+                },
+                &request,
+            ),
+            AuthorizationDecision::Allow
+        );
     }
 }

@@ -8,6 +8,34 @@
     {
       "id": "transfers.read",
       "description": "Search bounded ERC-20 transfers."
+    },
+    {
+      "id": "workspace.activity.read",
+      "description": "Read account-owned Workspace activity and evidence."
+    },
+    {
+      "id": "catalog.read",
+      "description": "Read authenticated Data Lab asset and network catalog views."
+    },
+    {
+      "id": "prices.read",
+      "description": "Read authenticated Data Lab price views."
+    },
+    {
+      "id": "scan.read",
+      "description": "Read authenticated Workspace-member Scan views."
+    },
+    {
+      "id": "lab.read",
+      "description": "Run authenticated curated Data Lab research."
+    },
+    {
+      "id": "treasury.read",
+      "description": "Read account-owned Workspace treasury snapshots."
+    },
+    {
+      "id": "treasury.snapshot.write",
+      "description": "Capture account-owned Workspace treasury snapshots."
     }
   ],
   "assets": [
@@ -169,6 +197,18 @@
       "metadata": {"demo_seed": true},
       "status": "active",
       "sort_order": 110
+    },
+    {
+      "slug": "dai",
+      "symbol": "DAI",
+      "name": "Dai Stablecoin",
+      "asset_kind": "crypto",
+      "category": "stablecoin",
+      "canonical_path": "/assets/dai",
+      "aliases": ["dai", "maker dai"],
+      "metadata": {"source": "aave-v3-realized-yield"},
+      "status": "active",
+      "sort_order": 115
     },
     {
       "slug": "metapool-dao",
@@ -533,6 +573,18 @@
       "metadata": {"demo_seed": true, "source": "user_asset_chain_map"},
       "status": "active",
       "sort_order": 180
+    },
+    {
+      "asset_slug": "dai",
+      "network_slug": "eth-mainnet",
+      "is_native": false,
+      "deployment_address": "0x6b175474e89094c44da98b954eedeac495271d0f",
+      "deployment_block": 8928158,
+      "decimals": 18,
+      "token_standard": "erc20",
+      "metadata": {"source": "aave-v3-realized-yield"},
+      "status": "active",
+      "sort_order": 185
     },
     {
       "asset_slug": "gho",

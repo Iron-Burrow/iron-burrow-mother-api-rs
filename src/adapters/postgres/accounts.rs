@@ -117,7 +117,11 @@ impl AccountRepository {
             .map_err(RepositoryError::new)?;
         sqlx::query("update mother_api.account_identity set status = 'verified', verified_at = coalesce(verified_at, now()), updated_at = now() where id = $1").bind(row.identity_id).execute(&mut *tx).await.map_err(RepositoryError::new)?;
         sqlx::query("update mother_api.ib_account set status = 'active', updated_at = now() where id = $1 and status = 'pending_verification'").bind(row.account_id).execute(&mut *tx).await.map_err(RepositoryError::new)?;
-        for capability in Capability::LEGACY_BASELINE {
+        for capability in Capability::ACCOUNT_BASELINE {
+            sqlx::query("insert into mother_api.ib_account_capability_grant (ib_account_id, capability_id, network_scope) values ($1, $2, '*') on conflict do nothing")
+                .bind(row.account_id).bind(capability.id()).execute(&mut *tx).await.map_err(RepositoryError::new)?;
+        }
+        for capability in Capability::DATALAB_BROWSER_BASELINE {
             sqlx::query("insert into mother_api.ib_account_capability_grant (ib_account_id, capability_id, network_scope) values ($1, $2, '*') on conflict do nothing")
                 .bind(row.account_id).bind(capability.id()).execute(&mut *tx).await.map_err(RepositoryError::new)?;
         }

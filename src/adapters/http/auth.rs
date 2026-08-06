@@ -27,6 +27,8 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ApiKeyPrincipal {
     pub(crate) api_key_id: Uuid,
+    pub(crate) ib_account_id: Option<Uuid>,
+    pub(crate) key_kind: String,
     pub(crate) consumer_id: Uuid,
     pub(crate) consumer_slug: String,
     pub(crate) consumer_category: String,
@@ -48,6 +50,41 @@ pub(crate) async fn require_transfer_api_key(
     next: Next,
 ) -> Response {
     require_api_key_for(Capability::Erc20TransfersRead, state, request, next).await
+}
+pub(crate) async fn require_workspace_activity_api_key(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    require_api_key_for(Capability::WorkspaceActivityRead, state, request, next).await
+}
+pub(crate) async fn require_treasury_api_key(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    require_api_key_for(Capability::TreasuryRead, state, request, next).await
+}
+pub(crate) async fn require_catalog_api_key(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    require_api_key_for(Capability::CatalogRead, state, request, next).await
+}
+pub(crate) async fn require_prices_api_key(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    require_api_key_for(Capability::PricesRead, state, request, next).await
+}
+pub(crate) async fn require_lab_api_key(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    require_api_key_for(Capability::LabRead, state, request, next).await
 }
 
 pub(crate) async fn require_network_scopes(
@@ -73,6 +110,7 @@ pub(crate) async fn require_network_scopes(
     let context = AuthorizationContext {
         owner_grants: grants.owner_grants,
         key_grants: grants.key_grants,
+        client_grants: grants.client_grants,
     };
     for network_slug in network_slugs {
         if evaluate_authorization(
@@ -198,6 +236,7 @@ fn is_authorized_for_route(
         &AuthorizationContext {
             owner_grants: grants.owner_grants.clone(),
             key_grants: grants.key_grants.clone(),
+            client_grants: grants.client_grants.clone(),
         },
         &AuthorizationRequest::route(required_capability),
     ) == AuthorizationDecision::Allow
@@ -311,6 +350,8 @@ fn principal_from_lookup(lookup: ApiKeyLookup) -> Result<ApiKeyPrincipal, AuthEr
 
     Ok(ApiKeyPrincipal {
         api_key_id: lookup.api_key_id,
+        ib_account_id: lookup.ib_account_id,
+        key_kind: lookup.key_kind,
         consumer_id: lookup.consumer_id,
         consumer_slug: lookup.consumer_slug,
         consumer_category: lookup.consumer_category,
@@ -433,6 +474,7 @@ mod tests {
                         Capability::BalancesRead,
                         NetworkScope::Any,
                     )],
+                    client_grants: None,
                 },
             ),
             (
@@ -443,6 +485,7 @@ mod tests {
                         NetworkScope::Any,
                     )],
                     key_grants: vec![],
+                    client_grants: None,
                 },
             ),
         ] {
@@ -661,6 +704,7 @@ mod tests {
             api_key_minute_limiter: crate::adapters::http::rate_limit::ApiKeyMinuteLimiter::default(
             ),
             asset_repository: None,
+            defi_protocol_repository: None,
             price_indexer_client: None,
             dis_client: None,
             bigwig_client: None,
@@ -670,6 +714,9 @@ mod tests {
     fn active_lookup() -> ApiKeyLookup {
         ApiKeyLookup {
             api_key_id: Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
+            ib_account_id: None,
+            client_id: None,
+            key_kind: "legacy".to_string(),
             consumer_id: Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap(),
             consumer_slug: "first-customer".to_string(),
             consumer_category: "partner".to_string(),

@@ -51,7 +51,7 @@
 	}
 
 	@web {
-		path / /scan /scan/* /access /access/demo /docs /docs/* /assets/* /signup /login /verify-email /logout /workspaces /workspaces/*
+		path / /scan /scan/* /access /access/demo /docs /docs/* /assets/* /signup /login /verify-email /logout /workspaces /workspaces/* /catalog /catalog/* /prices /prices/* /lab /lab/* /lab.json
 	}
 	handle @web {
 		reverse_proxy mother-api:3000

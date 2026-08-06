@@ -36,7 +36,9 @@ pub(crate) enum BrowserPrincipal {
 }
 
 pub(crate) fn routes(state: AppState) -> Router<AppState> {
-    html_routes(state.clone()).merge(super::workspaces::routes(state))
+    html_routes(state.clone())
+        .merge(super::workspaces::routes(state.clone()))
+        .merge(super::data_lab::routes(state))
 }
 
 fn html_routes(state: AppState) -> Router<AppState> {

@@ -30,6 +30,8 @@ pub(crate) struct Config {
     pub(crate) infra_gateway_url: Option<String>,
     pub(crate) infra_gateway_token: Option<String>,
     pub(crate) bigwig_request_timeout_ms: u64,
+    pub(crate) bigwig_archive_route: String,
+    pub(crate) aave_v3_min_block_confirmations: u64,
     pub(crate) erc20_transfers_enabled: bool,
     pub(crate) erc20_transfers_max_token_filters: u64,
     pub(crate) bigwig_max_contract_addresses: u64,
@@ -84,6 +86,13 @@ impl Config {
                 DEFAULT_BIGWIG_REQUEST_TIMEOUT_MS,
             )
             .map_err(ConfigError::InvalidBigwigRequestTimeout)?,
+            bigwig_archive_route: optional_env("BIGWIG_ARCHIVE_ROUTE")
+                .unwrap_or_else(|| DEFAULT_BIGWIG_ARCHIVE_ROUTE.to_string()),
+            aave_v3_min_block_confirmations: parse_optional_u64_env(
+                "AAVE_V3_MIN_BLOCK_CONFIRMATIONS",
+                DEFAULT_AAVE_V3_MIN_BLOCK_CONFIRMATIONS,
+            )
+            .map_err(ConfigError::InvalidAaveV3MinBlockConfirmations)?,
             erc20_transfers_enabled: parse_optional_bool_env(
                 "ERC20_TRANSFERS_ENABLED",
                 DEFAULT_ERC20_TRANSFERS_ENABLED,
@@ -159,6 +168,8 @@ impl Default for Config {
             infra_gateway_url: None,
             infra_gateway_token: None,
             bigwig_request_timeout_ms: DEFAULT_BIGWIG_REQUEST_TIMEOUT_MS,
+            bigwig_archive_route: DEFAULT_BIGWIG_ARCHIVE_ROUTE.to_string(),
+            aave_v3_min_block_confirmations: DEFAULT_AAVE_V3_MIN_BLOCK_CONFIRMATIONS,
             erc20_transfers_enabled: DEFAULT_ERC20_TRANSFERS_ENABLED,
             erc20_transfers_max_token_filters: DEFAULT_ERC20_TRANSFERS_MAX_TOKEN_FILTERS,
             bigwig_max_contract_addresses: DEFAULT_BIGWIG_MAX_CONTRACT_ADDRESSES,
@@ -204,6 +215,11 @@ impl std::fmt::Debug for Config {
                 &self.infra_gateway_token.as_ref().map(|_| "<redacted>"),
             )
             .field("bigwig_request_timeout_ms", &self.bigwig_request_timeout_ms)
+            .field("bigwig_archive_route", &self.bigwig_archive_route)
+            .field(
+                "aave_v3_min_block_confirmations",
+                &self.aave_v3_min_block_confirmations,
+            )
             .field("erc20_transfers_enabled", &self.erc20_transfers_enabled)
             .field(
                 "erc20_transfers_max_token_filters",
