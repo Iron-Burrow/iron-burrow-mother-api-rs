@@ -39,6 +39,16 @@ pub(crate) struct WorkspaceActivityEvent {
     pub(crate) occurred_at: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct WorkspaceTreasurySnapshot {
+    pub(crate) public_id: String,
+    pub(crate) requested_as_of: Value,
+    pub(crate) quote_currency: String,
+    pub(crate) asset_slugs: Value,
+    pub(crate) payload: Value,
+    pub(crate) captured_at: String,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum AddMemberOutcome {
     Added,
@@ -303,6 +313,45 @@ impl WorkspaceRepository {
             order by occurred_at desc, public_id desc limit $3"#)
             .bind(workspace_id).bind(before).bind(limit).fetch_all(&self.0).await.map_err(RepositoryError::new).map(|rows| rows.into_iter().map(Into::into).collect())
     }
+
+    pub(crate) async fn list_treasury_snapshots(
+        &self,
+        workspace_id: Uuid,
+    ) -> Result<Vec<WorkspaceTreasurySnapshot>, RepositoryError> {
+        sqlx::query_as::<_, TreasurySnapshotRow>(
+            "select public_id, requested_as_of, quote_currency, asset_slugs, payload, captured_at::text as captured_at from mother_api.workspace_treasury_snapshot where workspace_id = $1 order by captured_at desc, public_id desc",
+        )
+        .bind(workspace_id)
+        .fetch_all(&self.0)
+        .await
+        .map_err(RepositoryError::new)
+        .map(|rows| rows.into_iter().map(Into::into).collect())
+    }
+
+    pub(crate) async fn create_treasury_snapshot(
+        &self,
+        workspace_id: Uuid,
+        requested_as_of: Value,
+        quote_currency: &str,
+        asset_slugs: Value,
+        payload: Value,
+    ) -> Result<WorkspaceTreasurySnapshot, RepositoryError> {
+        let id = Uuid::new_v4();
+        sqlx::query_as::<_, TreasurySnapshotRow>(
+            "insert into mother_api.workspace_treasury_snapshot (id, public_id, workspace_id, requested_as_of, quote_currency, asset_slugs, payload) values ($1, $2, $3, $4, $5, $6, $7) returning public_id, requested_as_of, quote_currency, asset_slugs, payload, captured_at::text as captured_at",
+        )
+        .bind(id)
+        .bind(format!("wts_{}", id.simple()))
+        .bind(workspace_id)
+        .bind(requested_as_of)
+        .bind(quote_currency)
+        .bind(asset_slugs)
+        .bind(payload)
+        .fetch_one(&self.0)
+        .await
+        .map_err(RepositoryError::new)
+        .map(Into::into)
+    }
 }
 
 async fn append_event(
@@ -354,6 +403,15 @@ struct ActivityRow {
     payload: Value,
     occurred_at: String,
 }
+#[derive(FromRow)]
+struct TreasurySnapshotRow {
+    public_id: String,
+    requested_as_of: Value,
+    quote_currency: String,
+    asset_slugs: Value,
+    payload: Value,
+    captured_at: String,
+}
 impl From<ActivityRow> for WorkspaceActivityEvent {
     fn from(row: ActivityRow) -> Self {
         Self {
@@ -363,6 +421,18 @@ impl From<ActivityRow> for WorkspaceActivityEvent {
             payload_version: row.payload_version,
             payload: row.payload,
             occurred_at: row.occurred_at,
+        }
+    }
+}
+impl From<TreasurySnapshotRow> for WorkspaceTreasurySnapshot {
+    fn from(row: TreasurySnapshotRow) -> Self {
+        Self {
+            public_id: row.public_id,
+            requested_as_of: row.requested_as_of,
+            quote_currency: row.quote_currency,
+            asset_slugs: row.asset_slugs,
+            payload: row.payload,
+            captured_at: row.captured_at,
         }
     }
 }

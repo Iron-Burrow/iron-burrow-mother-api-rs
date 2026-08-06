@@ -1,4 +1,5 @@
 pub(crate) mod auth;
+pub(crate) mod data_lab;
 pub(crate) mod dto;
 pub(crate) mod error;
 pub(crate) mod json_body;

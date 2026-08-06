@@ -13,12 +13,14 @@ use serde_json::{json, Value};
 use crate::{
     adapters::{
         http::{
-            auth::{require_workspace_activity_api_key, ApiKeyPrincipal},
+            auth::{require_treasury_api_key, require_workspace_activity_api_key, ApiKeyPrincipal},
             dto::onchain_time::as_of::AsOfRequest,
             error::ApiError,
             web::{self, BrowserPrincipal},
         },
-        postgres::workspaces::{Workspace, WorkspaceActivityEvent, WorkspaceMemberAddress},
+        postgres::workspaces::{
+            Workspace, WorkspaceActivityEvent, WorkspaceMemberAddress, WorkspaceTreasurySnapshot,
+        },
     },
     application::{
         balances::{
@@ -50,6 +52,18 @@ pub(crate) fn routes(state: AppState) -> Router<AppState> {
         .route("/workspaces", get(list_workspaces).post(create_workspace))
         .route("/workspaces/{workspace_id}", get(workspace_detail))
         .route("/workspaces/{workspace_id}/activity", get(activity_view))
+        .route("/workspaces/{workspace_id}/treasury", get(treasury_view))
+        .route(
+            "/workspaces/{workspace_id}/treasury/snapshots",
+            post(capture_treasury_snapshot),
+        )
+        .route(
+            "/workspaces/{workspace_id}/treasury.json",
+            get(treasury_json).route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                require_treasury_api_key,
+            )),
+        )
         .route(
             "/workspaces/{workspace_id}/activity.json",
             get(activity_json).route_layer(middleware::from_fn_with_state(
@@ -324,7 +338,7 @@ async fn activity_json(
     let Some(account_id) = principal.ib_account_id else {
         return ApiError::capability_not_granted().into_response();
     };
-    if principal.key_kind != "account" {
+    if !matches!(principal.key_kind.as_str(), "account" | "agent") {
         return ApiError::capability_not_granted().into_response();
     }
     let Some(service) = service(&state) else {
@@ -360,6 +374,206 @@ async fn activity_json(
         .headers_mut()
         .insert(CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
     response
+}
+
+#[derive(Deserialize)]
+struct TreasuryForm {
+    csrf: String,
+    asset_slugs: String,
+    quote_currency: Option<String>,
+    as_of_kind: Option<String>,
+    as_of_timestamp: Option<String>,
+    as_of_block_number: Option<String>,
+}
+
+async fn treasury_view(
+    State(state): State<AppState>,
+    Extension(principal): Extension<BrowserPrincipal>,
+    Path(workspace_id): Path<String>,
+) -> Response {
+    let Some((account_id, _)) = authenticated(principal) else {
+        return Redirect::to("/login").into_response();
+    };
+    let (Some(service), Some(accounts)) = (service(&state), state.account_repository.as_ref())
+    else {
+        return unavailable();
+    };
+    let workspace = match service.find(account_id, &workspace_id).await {
+        Ok(Some(value)) => value,
+        Ok(None) => return not_found(),
+        Err(_) => return unavailable(),
+    };
+    match allowed(accounts, account_id, Capability::TreasuryRead, "*").await {
+        Ok(true) => {}
+        Ok(false) => return StatusCode::FORBIDDEN.into_response(),
+        Err(()) => return unavailable(),
+    }
+    let snapshots = match service.treasury_snapshots(workspace.id).await {
+        Ok(value) => value,
+        Err(_) => return unavailable(),
+    };
+    web::private_html_response(TreasuryTemplate {
+        workspace,
+        snapshots,
+    })
+}
+
+async fn capture_treasury_snapshot(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(principal): Extension<BrowserPrincipal>,
+    Path(workspace_id): Path<String>,
+    Form(form): Form<TreasuryForm>,
+) -> Response {
+    let Some((account_id, csrf_hash)) = authenticated(principal) else {
+        return Redirect::to("/login").into_response();
+    };
+    if !csrf_valid(&state, &headers, &csrf_hash, &form.csrf) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let (Some(service), Some(accounts), Some(asset_repository)) = (
+        service(&state),
+        state.account_repository.as_ref(),
+        state.asset_repository.clone(),
+    ) else {
+        return unavailable();
+    };
+    let workspace = match service.find(account_id, &workspace_id).await {
+        Ok(Some(value)) => value,
+        Ok(None) => return not_found(),
+        Err(_) => return unavailable(),
+    };
+    match allowed(accounts, account_id, Capability::TreasurySnapshotWrite, "*").await {
+        Ok(true) => {}
+        Ok(false) => return StatusCode::FORBIDDEN.into_response(),
+        Err(()) => return unavailable(),
+    }
+    let asset_slugs = split_values(Some(form.asset_slugs));
+    if asset_slugs.is_empty() || asset_slugs.len() > 10 {
+        return invalid();
+    }
+    let members = match service.members(workspace.id).await {
+        Ok(value) if !value.is_empty() => value,
+        Ok(_) => return invalid(),
+        Err(_) => return unavailable(),
+    };
+    for member in &members {
+        match allowed(
+            accounts,
+            account_id,
+            Capability::BalancesRead,
+            &member.network_slug,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => return StatusCode::FORBIDDEN.into_response(),
+            Err(()) => return unavailable(),
+        }
+    }
+    let as_of = match AsOf::try_from(AsOfRequest {
+        kind: form.as_of_kind.unwrap_or_else(|| "latest".to_string()),
+        timestamp: non_empty(form.as_of_timestamp),
+        block_number: non_empty(form.as_of_block_number),
+    }) {
+        Ok(value) => value,
+        Err(_) => return invalid(),
+    };
+    let quote_currency = form.quote_currency.unwrap_or_else(|| "USD".to_string());
+    let command = match crate::application::balances::command::GetBalancesCommand::try_new(
+        as_of.clone(),
+        members
+            .iter()
+            .map(|member| OnchainAccount {
+                network_slug: member.network_slug.clone(),
+                address: member.address.clone(),
+                client_ref: member.client_ref.clone(),
+            })
+            .collect(),
+        quote_currency.clone(),
+        TokenSelector {
+            asset_slugs: asset_slugs.clone(),
+            contract_addresses: vec![],
+        },
+    ) {
+        Ok(value) => value,
+        Err(_) => return invalid(),
+    };
+    let result = match BalanceSnapshotService::new(
+        CatalogBalanceTargetResolver::new(asset_repository),
+        state.bigwig_client.clone(),
+        state
+            .price_indexer_client
+            .clone()
+            .map(PriceQuoteClient::new),
+    )
+    .resolve(command)
+    .await
+    {
+        Ok(value) => value,
+        Err(_) => return unavailable(),
+    };
+    let payload = json!({
+        "operation": "treasury.snapshot",
+        "valuation": if matches!(as_of, AsOf::Latest) { "latest_quote_when_available" } else { "unavailable_historical_quote" },
+        "balances": treasury_balance_payload(&result),
+    });
+    if service
+        .create_treasury_snapshot(
+            workspace.id,
+            json!({"as_of": format!("{:?}", as_of)}),
+            &quote_currency,
+            json!(asset_slugs),
+            payload,
+        )
+        .await
+        .is_err()
+    {
+        return unavailable();
+    }
+    Redirect::to(&format!("/workspaces/{workspace_id}/treasury")).into_response()
+}
+
+async fn treasury_json(
+    State(state): State<AppState>,
+    Extension(principal): Extension<ApiKeyPrincipal>,
+    Path(workspace_id): Path<String>,
+) -> Response {
+    let Some(account_id) = principal.ib_account_id else {
+        return ApiError::capability_not_granted().into_response();
+    };
+    let Some(service) = service(&state) else {
+        return ApiError::database_unavailable_for_auth().into_response();
+    };
+    let workspace = match service.find(account_id, &workspace_id).await {
+        Ok(Some(value)) => value,
+        Ok(None) => return not_found(),
+        Err(_) => return ApiError::database_unavailable_for_auth().into_response(),
+    };
+    let snapshots = match service.treasury_snapshots(workspace.id).await {
+        Ok(value) => value,
+        Err(_) => return ApiError::database_unavailable_for_auth().into_response(),
+    };
+    let mut response =
+        Json(json!({"ok":true,"workspace_id":workspace.public_id,"snapshots":snapshots}))
+            .into_response();
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("private, no-store"));
+    response
+}
+
+fn treasury_balance_payload(result: &GetBalancesResult) -> Value {
+    json!({
+        "as_of": format!("{:?}", result.as_of),
+        "quote_currency": result.quote_currency,
+        "accounts": result.accounts.iter().map(|account| json!({
+            "network_slug": account.account.network_slug,
+            "address": account.account.address,
+            "evidence": account.evidence.as_ref().map(|evidence| json!({"source":"bigwig","block_number":evidence.block_number,"block_hash":evidence.block_hash,"block_timestamp":evidence.block_timestamp,"observed_at":evidence.observed_at})),
+            "items": account.items.iter().map(balance_item).collect::<Vec<_>>(),
+        })).collect::<Vec<_>>(),
+    })
 }
 
 #[derive(Deserialize)]
@@ -944,6 +1158,12 @@ struct DataViewTemplate {
     workspace: Workspace,
     member: WorkspaceMemberAddress,
     detail: String,
+}
+#[derive(Template)]
+#[template(path = "web/workspace_treasury.html")]
+struct TreasuryTemplate {
+    workspace: Workspace,
+    snapshots: Vec<WorkspaceTreasurySnapshot>,
 }
 
 #[cfg(test)]

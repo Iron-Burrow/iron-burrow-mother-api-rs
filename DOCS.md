@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-30
+last_reviewed: 2026-08-06
 agent_edit_policy: update_when_relevant
 ---
 
@@ -142,7 +142,9 @@ The [README.md](README.md) endpoint section should stay brief and
 navigational. `CONTRACTS.md` is the authoritative reference for implemented
 Mother API endpoint promises.
 
-`SPEC-001-dis-aave-v3-realized-yield.md` records the currently valid but
-dormant DIS protocol-intelligence boundary. It defines no implemented DIS
-endpoint or Mother API public surface, and it does not relieve the need for
-`CONTRACTS.md` covering Mother API's own public surface.
+Archived [SPEC-001](docs/archive/SPEC-001-dis-aave-v3-realized-yield.md)
+preserves the abandoned DIS protocol-intelligence direction. Draft
+[SPEC-024](docs/specs/SPEC-024-mother-owned-defi-position-discovery-and-search.md) proposes a
+Mother-owned replacement but defines no implemented endpoint or public
+surface, and it does not relieve the need for `CONTRACTS.md` covering Mother
+API's own public surface.

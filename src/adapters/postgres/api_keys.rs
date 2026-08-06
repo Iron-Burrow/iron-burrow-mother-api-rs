@@ -185,15 +185,17 @@ impl ApiKeyRepository {
             r#"
             select
                 api_key.id as api_key_id,
-                api_key.ib_account_id,
+                coalesce(api_key.ib_account_id, ib_client.ib_account_id) as ib_account_id,
+                api_key.client_id,
                 api_key.kind as key_kind,
                 coalesce(api_key.consumer_id, '00000000-0000-0000-0000-000000000000'::uuid) as consumer_id,
-                coalesce(api_consumer.slug, ib_account.public_id, 'anonymous-demo') as consumer_slug,
+                coalesce(api_consumer.slug, ib_account.public_id, ib_client.public_id, 'anonymous-demo') as consumer_slug,
                 case when api_key.kind = 'legacy' then api_consumer.category else api_key.kind end as consumer_category,
                 case
                     when api_key.kind = 'legacy' then api_consumer.status
                     when api_key.kind = 'account' then ib_account.status
                     when api_key.kind = 'anonymous_demo' then 'active'
+                    when api_key.kind = 'agent' then case when ib_account.status = 'active' and ib_client.status = 'active' then 'active' else 'revoked' end
                 end as consumer_status,
                 api_key.key_prefix,
                 api_key.label as key_label,
@@ -205,8 +207,10 @@ impl ApiKeyRepository {
             from mother_api.api_key api_key
             left join mother_api.api_consumer api_consumer
                 on api_consumer.id = api_key.consumer_id
+            left join mother_api.ib_client ib_client
+                on ib_client.id = api_key.client_id
             left join mother_api.ib_account ib_account
-                on ib_account.id = api_key.ib_account_id
+                on ib_account.id = coalesce(api_key.ib_account_id, ib_client.ib_account_id)
             where api_key.key_prefix = $1
                 and api_key.key_hash = $2
             "#,
@@ -255,10 +259,30 @@ impl ApiKeyRepository {
             join mother_api.api_key api_key on api_key.ib_account_id = grant.ib_account_id
             where api_key.id = $1 and api_key.kind = 'account'
             union all
+            select grant.capability_id, grant.network_scope, grant.status,
+                grant.expires_at is not null and grant.expires_at <= now() as is_expired
+            from mother_api.ib_account_capability_grant grant
+            join mother_api.ib_client client on client.ib_account_id = grant.ib_account_id
+            join mother_api.api_key api_key on api_key.client_id = client.id
+            where api_key.id = $1 and api_key.kind = 'agent'
+            union all
             select capability_id, 'eth-mainnet'::text as network_scope, 'active'::text as status, false as is_expired
             from mother_api.capability
             where id in ('balances.read', 'transfers.read')
               and exists (select 1 from mother_api.api_key where id = $1 and kind = 'anonymous_demo')
+            "#,
+        )
+        .bind(api_key_id)
+        .fetch_all(pool)
+        .await
+        .map_err(RepositoryError::new)?;
+        let client_grants = sqlx::query_as::<_, CapabilityGrantRow>(
+            r#"
+            select grant.capability_id, grant.network_scope, grant.status,
+                grant.expires_at is not null and grant.expires_at <= now() as is_expired
+            from mother_api.ib_client_capability_grant grant
+            join mother_api.api_key api_key on api_key.client_id = grant.ib_client_id
+            where api_key.id = $1 and api_key.kind = 'agent'
             "#,
         )
         .bind(api_key_id)
@@ -287,6 +311,12 @@ impl ApiKeyRepository {
                 .into_iter()
                 .filter_map(CapabilityGrantRow::into_domain)
                 .collect(),
+            client_grants: (!client_grants.is_empty()).then(|| {
+                client_grants
+                    .into_iter()
+                    .filter_map(CapabilityGrantRow::into_domain)
+                    .collect()
+            }),
         })
     }
 
@@ -802,6 +832,7 @@ impl ApiKeyRepository {
 pub(crate) struct ApiKeyAuthorizationGrants {
     pub(crate) owner_grants: Vec<CapabilityGrant>,
     pub(crate) key_grants: Vec<CapabilityGrant>,
+    pub(crate) client_grants: Option<Vec<CapabilityGrant>>,
 }
 
 impl ApiKeyAuthorizationGrants {
@@ -815,6 +846,7 @@ impl ApiKeyAuthorizationGrants {
         Self {
             owner_grants: grants.clone(),
             key_grants: grants,
+            client_grants: None,
         }
     }
 }
@@ -1139,6 +1171,7 @@ fn map_issue_insert_error(error: sqlx::Error) -> ApiKeyIssueRepositoryError {
 pub(crate) struct ApiKeyLookup {
     pub(crate) api_key_id: Uuid,
     pub(crate) ib_account_id: Option<Uuid>,
+    pub(crate) client_id: Option<Uuid>,
     pub(crate) key_kind: String,
     pub(crate) consumer_id: Uuid,
     pub(crate) consumer_slug: String,
@@ -1156,6 +1189,7 @@ pub(crate) struct ApiKeyLookup {
 struct ApiKeyLookupRow {
     api_key_id: Uuid,
     ib_account_id: Option<Uuid>,
+    client_id: Option<Uuid>,
     key_kind: String,
     consumer_id: Uuid,
     consumer_slug: String,
@@ -1174,6 +1208,7 @@ impl From<ApiKeyLookupRow> for ApiKeyLookup {
         Self {
             api_key_id: row.api_key_id,
             ib_account_id: row.ib_account_id,
+            client_id: row.client_id,
             key_kind: row.key_kind,
             consumer_id: row.consumer_id,
             consumer_slug: row.consumer_slug,

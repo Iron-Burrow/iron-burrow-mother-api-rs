@@ -81,7 +81,9 @@ shapes.
 
 `https://www.ironburrow.com` serves the public Iron Burrow homepage, Scan
 holding pages, API-access information, and `/docs` for the human-readable API
-guide. The web entry runs in the same Mother API binary; it is not a second
+guide. Authenticated Data Lab catalog, price, Lab, and Workspace treasury
+snapshot presenters run in the same Mother API binary; they are evolving web
+product transports, not `/v1` operations. The web entry is not a second
 frontend service or another version of the public machine API.
 
 `https://api.ironburrow.com/openapi.json` remains the machine-readable API

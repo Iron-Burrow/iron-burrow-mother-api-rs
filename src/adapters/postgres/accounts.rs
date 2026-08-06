@@ -121,6 +121,10 @@ impl AccountRepository {
             sqlx::query("insert into mother_api.ib_account_capability_grant (ib_account_id, capability_id, network_scope) values ($1, $2, '*') on conflict do nothing")
                 .bind(row.account_id).bind(capability.id()).execute(&mut *tx).await.map_err(RepositoryError::new)?;
         }
+        for capability in Capability::DATALAB_BROWSER_BASELINE {
+            sqlx::query("insert into mother_api.ib_account_capability_grant (ib_account_id, capability_id, network_scope) values ($1, $2, '*') on conflict do nothing")
+                .bind(row.account_id).bind(capability.id()).execute(&mut *tx).await.map_err(RepositoryError::new)?;
+        }
         sqlx::query("update mother_api.browser_session set revoked_at = now() where ib_account_id = $1 and revoked_at is null")
             .bind(row.account_id).execute(&mut *tx).await.map_err(RepositoryError::new)?;
         sqlx::query("insert into mother_api.browser_session (ib_account_id, account_identity_id, session_hash, csrf_hash, expires_at, idle_expires_at) values ($1, $2, $3, $4, now() + make_interval(secs => $5), now() + make_interval(secs => $6))")

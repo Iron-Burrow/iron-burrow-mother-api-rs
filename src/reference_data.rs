@@ -951,21 +951,13 @@ mod tests {
 
         Catalog {
             version: CATALOG_VERSION,
-            capabilities: vec![
-                CapabilityDeclaration {
-                    id: "balances.read".to_string(),
-                    description: "Read supported latest and historical balance snapshots."
-                        .to_string(),
-                },
-                CapabilityDeclaration {
-                    id: "transfers.read".to_string(),
-                    description: "Search bounded ERC-20 transfers.".to_string(),
-                },
-                CapabilityDeclaration {
-                    id: "workspace.activity.read".to_string(),
-                    description: "Read account-owned Workspace activity and evidence.".to_string(),
-                },
-            ],
+            capabilities: Capability::ALL
+                .into_iter()
+                .map(|capability| CapabilityDeclaration {
+                    id: capability.id().to_string(),
+                    description: capability.id().to_string(),
+                })
+                .collect(),
             assets: vec![declared_asset],
             networks: vec![NetworkDeclaration {
                 slug: network_slug.clone(),

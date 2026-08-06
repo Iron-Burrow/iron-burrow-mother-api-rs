@@ -7,22 +7,55 @@ pub(crate) enum Capability {
     BalancesRead,
     Erc20TransfersRead,
     WorkspaceActivityRead,
+    CatalogRead,
+    PricesRead,
+    ScanRead,
+    LabRead,
+    TreasuryRead,
+    TreasurySnapshotWrite,
 }
 
 impl Capability {
-    pub(crate) const ALL: [Self; 3] = [
+    pub(crate) const ALL: [Self; 9] = [
+        Self::BalancesRead,
+        Self::Erc20TransfersRead,
+        Self::WorkspaceActivityRead,
+        Self::CatalogRead,
+        Self::PricesRead,
+        Self::ScanRead,
+        Self::LabRead,
+        Self::TreasuryRead,
+        Self::TreasurySnapshotWrite,
+    ];
+    pub(crate) const LEGACY_BASELINE: [Self; 2] = [Self::BalancesRead, Self::Erc20TransfersRead];
+    /// New Phase 6 capabilities are deliberately opt-in for API keys. Browser
+    /// sessions receive their account grants directly; no existing or newly
+    /// issued account key is broadened by a catalog migration.
+    pub(crate) const ACCOUNT_BASELINE: [Self; 3] = [
         Self::BalancesRead,
         Self::Erc20TransfersRead,
         Self::WorkspaceActivityRead,
     ];
-    pub(crate) const LEGACY_BASELINE: [Self; 2] = [Self::BalancesRead, Self::Erc20TransfersRead];
-    pub(crate) const ACCOUNT_BASELINE: [Self; 3] = Self::ALL;
+    pub(crate) const DATALAB_BROWSER_BASELINE: [Self; 6] = [
+        Self::CatalogRead,
+        Self::PricesRead,
+        Self::ScanRead,
+        Self::LabRead,
+        Self::TreasuryRead,
+        Self::TreasurySnapshotWrite,
+    ];
 
     pub(crate) const fn id(self) -> &'static str {
         match self {
             Self::BalancesRead => "balances.read",
             Self::Erc20TransfersRead => "transfers.read",
             Self::WorkspaceActivityRead => "workspace.activity.read",
+            Self::CatalogRead => "catalog.read",
+            Self::PricesRead => "prices.read",
+            Self::ScanRead => "scan.read",
+            Self::LabRead => "lab.read",
+            Self::TreasuryRead => "treasury.read",
+            Self::TreasurySnapshotWrite => "treasury.snapshot.write",
         }
     }
 
@@ -123,6 +156,9 @@ pub(crate) struct AuthorizationContext {
     /// boundary without allowing keys to become broader.
     pub(crate) owner_grants: Vec<CapabilityGrant>,
     pub(crate) key_grants: Vec<CapabilityGrant>,
+    /// Delegated Client grants apply only to agent keys. Their absence means
+    /// the credential is owned directly by the compatibility owner/account.
+    pub(crate) client_grants: Option<Vec<CapabilityGrant>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -149,6 +185,14 @@ pub(crate) fn evaluate_authorization(
         return AuthorizationDecision::Deny(AuthorizationDeny::OwnerCapabilityNotGranted);
     }
 
+    if context
+        .client_grants
+        .as_ref()
+        .is_some_and(|grants| !grants.iter().any(|grant| grant.permits(request)))
+    {
+        return AuthorizationDecision::Deny(AuthorizationDeny::OwnerCapabilityNotGranted);
+    }
+
     if !context
         .key_grants
         .iter()
@@ -171,7 +215,7 @@ mod tests {
     #[test]
     fn legacy_baseline_stays_pinned_to_the_compatibility_capabilities() {
         assert_eq!(Capability::LEGACY_BASELINE.len(), 2);
-        assert_eq!(Capability::ACCOUNT_BASELINE, Capability::ALL);
+        assert_eq!(Capability::ACCOUNT_BASELINE.len(), 3);
     }
 
     #[test]
@@ -230,6 +274,7 @@ mod tests {
                     &AuthorizationContext {
                         owner_grants,
                         key_grants,
+                        client_grants: None,
                     },
                     &request,
                 ),

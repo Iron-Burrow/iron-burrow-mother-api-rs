@@ -1,7 +1,7 @@
 ---
 status: accepted
 owner: iron-burrow
-last_reviewed: 2026-07-31
+last_reviewed: 2026-08-06
 agent_edit_policy: update_when_relevant
 ---
 
@@ -32,8 +32,10 @@ El Vasco is Iron Burrow's source-aware on-chain Data Lab. Mother API is the
 runtime and policy boundary that delivers this product through multiple
 presentations: homepage and Data Lab pages, structured JSON responses, CLI
 consumers, and future agent-facing transports. It remains a product and policy
-boundary, not a replacement for Bigwig, the Price Indexer, DIS, or the Read
-Model.
+boundary, not a replacement for Bigwig, the Price Indexer, or the Read Model.
+Under a future accepted SPEC-024 scope, it may own DeFi position discovery and
+protocol-specific resolution while continuing to use Bigwig for controlled
+blockchain reads and Price Indexer for prices and FX.
 
 The product has two delivery surfaces with intentionally different promises:
 `/v1` is the small, stable, versioned production API for external
@@ -364,8 +366,9 @@ flowchart LR
 ```
 
 DIS is intentionally absent from the current-runtime diagram: no current
-Mother API capability calls it. `SPEC-001` retains DIS as a possible future
-read-only protocol-intelligence boundary.
+Mother API capability calls it. Archived SPEC-001 preserves the abandoned DIS
+protocol-intelligence direction; draft SPEC-024 proposes the Mother-owned
+replacement without creating a current capability.
 
 ## Proposed architecture
 
@@ -673,9 +676,7 @@ flowchart LR
   Edge --> Erigon
 ```
 
-SPEC-024 decides task-oriented versus constrained RPC-compatible delivery,
-API-level probing, version incompatibility behavior, and exact `ots_*`
-methods. Anonymous demos are categorically denied.
+Anonymous demos are categorically denied.
 
 ## Bitcoin Core integration
 

@@ -2,7 +2,10 @@ use uuid::Uuid;
 
 use crate::{
     adapters::postgres::{
-        workspaces::{AddMemberOutcome, Workspace, WorkspaceActivityEvent, WorkspaceMemberAddress},
+        workspaces::{
+            AddMemberOutcome, Workspace, WorkspaceActivityEvent, WorkspaceMemberAddress,
+            WorkspaceTreasurySnapshot,
+        },
         WorkspaceRepository,
     },
     domain::validation::is_evm_address,
@@ -83,6 +86,31 @@ impl WorkspaceService {
     {
         self.repository
             .list_activity(workspace_id, before, limit)
+            .await
+    }
+    pub(crate) async fn treasury_snapshots(
+        &self,
+        workspace_id: Uuid,
+    ) -> Result<Vec<WorkspaceTreasurySnapshot>, crate::adapters::postgres::errors::RepositoryError>
+    {
+        self.repository.list_treasury_snapshots(workspace_id).await
+    }
+    pub(crate) async fn create_treasury_snapshot(
+        &self,
+        workspace_id: Uuid,
+        requested_as_of: serde_json::Value,
+        quote_currency: &str,
+        asset_slugs: serde_json::Value,
+        payload: serde_json::Value,
+    ) -> Result<WorkspaceTreasurySnapshot, crate::adapters::postgres::errors::RepositoryError> {
+        self.repository
+            .create_treasury_snapshot(
+                workspace_id,
+                requested_as_of,
+                quote_currency,
+                asset_slugs,
+                payload,
+            )
             .await
     }
     pub(crate) async fn find_member(

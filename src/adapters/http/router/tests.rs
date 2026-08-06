@@ -649,6 +649,7 @@ async fn beta_route_capabilities_preserve_balance_access_and_restrict_transfer_a
             Capability::BalancesRead,
             NetworkScope::Any,
         )],
+        client_grants: None,
     };
     let repository = ApiKeyRepository::in_memory_with_policies_and_grants(
         vec![(
@@ -815,7 +816,7 @@ fn production_caddy_separates_machine_and_human_route_surfaces() {
         .expect("Caddy must declare a dedicated web site");
     assert!(api_site.contains("path /v1/* /health /openapi.json"));
     assert!(!api_site.contains("/scan"));
-    assert!(web_site.contains("path / /scan /scan/* /access /access/demo /docs /docs/* /assets/* /signup /login /verify-email /logout /workspaces /workspaces/*"));
+    assert!(web_site.contains("path / /scan /scan/* /access /access/demo /docs /docs/* /assets/* /signup /login /verify-email /logout /workspaces /workspaces/* /catalog /catalog/* /prices /prices/* /lab /lab.json"));
     assert!(!web_site.contains("/v1/*"));
     assert!(caddyfile.contains("reverse_proxy mother-api:3000"));
     assert!(!caddyfile.contains("CADDY_DOMAIN"));
@@ -2013,6 +2014,7 @@ fn active_api_key_lookup() -> ApiKeyLookup {
     ApiKeyLookup {
         api_key_id: Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
         ib_account_id: None,
+        client_id: None,
         key_kind: "legacy".to_string(),
         consumer_id: Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap(),
         consumer_slug: "first-customer".to_string(),

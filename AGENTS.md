@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-01
+last_reviewed: 2026-08-06
 agent_edit_policy: update_when_relevant
 ---
 
@@ -73,10 +73,11 @@ Agents must respect the role of each document in this repo:
     `/v1/search-engine`.
   - `iron-burrow-price-indexer` Query Layer owns price availability,
     derivation, and historical price data. Mother API consumes it read-only.
-  - `iron-burrow-defi-intelligence-service` (DIS) owns protocol-specific
-    DeFi intelligence, such as Aave V3 realized yield resolution. Mother
-    API consumes DIS internal endpoints and must not reimplement protocol
-    math, Bigwig archive calls, or reserve lookup.
+  - Mother API is the proposed future owner of DeFi position discovery,
+    protocol-specific resolution, and normalized position composition under
+    accepted SPEC-024 scope. Bigwig remains the controlled blockchain-read
+    boundary and Price Indexer remains the price and FX boundary; no DeFi
+    route or integration may be implemented before that scope is accepted.
   - `iron-burrow-read-model` owns refresh scheduling and hot caches.
   - Mother API owns the documented private-Beta API-key access layer and
     per-key request limits for protected Beta `/v1/*` routes. It does not own

@@ -1,0 +1,13 @@
+{% extends "web/base.html" %}
+{% block title %}Treasury · Iron Burrow{% endblock %}
+{% block content %}
+<h1>{{ workspace.name }} treasury</h1>
+<p>Snapshots are manual and immutable. Historical snapshots retain balance evidence; their valuation is unavailable until a time-aligned quote exists.</p>
+<ul>
+{% for snapshot in snapshots %}
+  <li><code>{{ snapshot.public_id }}</code> captured {{ snapshot.captured_at }} ({{ snapshot.quote_currency }})</li>
+{% else %}
+  <li>No treasury snapshots yet.</li>
+{% endfor %}
+</ul>
+{% endblock %}

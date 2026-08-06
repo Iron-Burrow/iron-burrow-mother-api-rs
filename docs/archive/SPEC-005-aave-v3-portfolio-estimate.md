@@ -50,7 +50,7 @@ This draft describes a possible composition of future internal capabilities.
 It does not redefine or reimplement either of them.
 
 - **Potential DIS Aave V3 realized-yield integration** —
-  [SPEC-001](../specs/SPEC-001-dis-aave-v3-realized-yield.md) preserves the service
+  [SPEC-001](SPEC-001-dis-aave-v3-realized-yield.md) preserves the service
   boundary but defines no implemented Aave client, internal DIS contract, or
   `realized_yield` capability. This draft cannot ship until a future accepted
   scope defines and implements that integration, including its contract,

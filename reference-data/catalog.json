@@ -12,6 +12,30 @@
     {
       "id": "workspace.activity.read",
       "description": "Read account-owned Workspace activity and evidence."
+    },
+    {
+      "id": "catalog.read",
+      "description": "Read authenticated Data Lab asset and network catalog views."
+    },
+    {
+      "id": "prices.read",
+      "description": "Read authenticated Data Lab price views."
+    },
+    {
+      "id": "scan.read",
+      "description": "Read authenticated Workspace-member Scan views."
+    },
+    {
+      "id": "lab.read",
+      "description": "Run authenticated curated Data Lab research."
+    },
+    {
+      "id": "treasury.read",
+      "description": "Read account-owned Workspace treasury snapshots."
+    },
+    {
+      "id": "treasury.snapshot.write",
+      "description": "Capture account-owned Workspace treasury snapshots."
     }
   ],
   "assets": [

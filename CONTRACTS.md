@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-07-31
+last_reviewed: 2026-08-06
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -48,14 +48,19 @@ flows below are deliberate human-web contracts.
 | `POST` | `/workspaces/{workspace_id}/addresses` | `text/html; charset=utf-8` | Registers a watch-only EVM address. |
 | `GET`/`POST` | `/workspaces/{workspace_id}/addresses/{member_id}/*` | `text/html; charset=utf-8` | Account-owned address labels plus scoped balance and transfer views. |
 | `GET` | `/workspaces/{workspace_id}/activity.json` | `application/json` | Private account-key Workspace activity/evidence export; evolving web-product transport, not `/v1`. |
+| `GET` | `/workspaces/{workspace_id}/treasury` | `text/html; charset=utf-8` | Signed-in account-owned treasury snapshot timeline. |
+| `POST` | `/workspaces/{workspace_id}/treasury/snapshots` | `text/html; charset=utf-8` | CSRF-protected manual immutable treasury snapshot capture. |
+| `GET` | `/workspaces/{workspace_id}/treasury.json` | `application/json` | Private account/Client-key treasury snapshot export; evolving web-product transport, not `/v1`. |
+| `GET` | `/catalog/assets`, `/catalog/assets/{slug}`, `/prices/{slug}`, `/lab` | `text/html; charset=utf-8` | Authenticated Data Lab presenters. |
+| `GET` | `/catalog/assets.json`, `/catalog/assets/{slug}/export.json`, `/prices/{slug}/export.json`, `/lab.json` | `application/json` | Private key-authenticated Data Lab exports; evolving web-product transports, not `/v1`. |
 
 Static files are served only below `/assets/` and are not a machine API
 surface. `/app` and `/app/assets/*` are not public delivery surfaces.
 
 Workspace pages require an active browser session and use account ownership,
 CSRF, and same-origin checks. They are private, no-store HTML surfaces. The
-activity JSON export requires an active account-owned bearer key with both
-owner and key `workspace.activity.read` grants, returns only the owning
+activity JSON export requires an active account-owned or delegated Client bearer key with both
+owner/Client and key `workspace.activity.read` grants, returns only the owning
 account's Workspace, and uses `limit` (default 50, maximum 100) plus optional
 `before=wae_*` pagination. It is not a `/v1` API or OpenAPI operation.
 Registered addresses are watch-only; they do not assert blockchain ownership
@@ -2187,11 +2192,12 @@ not be assumed to exist or behave consistently if encountered:
   `iron-burrow-read-model` requires an accepted proposal, implementation,
   and CONTRACTS.md revision before it becomes part of this surface.
 - Aave V3 realized yield or any other DeFi-protocol-specific endpoint.
-  Mother API currently has no DIS-backed protocol-intelligence capability.
-  [`SPEC-001`](docs/specs/SPEC-001-dis-aave-v3-realized-yield.md) retains a
-  dormant architectural boundary only; a future public wrapper requires an
-  accepted scope, implementation, and a CONTRACTS.md revision before it
-  becomes part of this surface.
+  Mother API currently has no DeFi position capability. Archived
+  [`SPEC-001`](docs/archive/SPEC-001-dis-aave-v3-realized-yield.md) preserves
+  the abandoned DIS direction; draft SPEC-024 proposes a Mother-owned
+  replacement. A future public operation requires accepted scope,
+  implementation, and a CONTRACTS.md revision before it becomes part of this
+  surface.
 - Direct exposure of internal DIS or read-model service shapes. Price
   signal endpoints preserve price-indexer signal payload fields inside
   Mother API envelopes; other public responses are owned by this contract,
