@@ -245,6 +245,17 @@ impl ApiKeyRepository {
         }
 
         let pool = self.database_pool()?;
+        let key_kind: String = sqlx::query_scalar(
+            r#"
+            select kind
+            from mother_api.api_key
+            where id = $1
+            "#,
+        )
+        .bind(api_key_id)
+        .fetch_one(pool)
+        .await
+        .map_err(RepositoryError::new)?;
         let owner_grants = sqlx::query_as::<_, CapabilityGrantRow>(
             r#"
             select grant.capability_id, grant.network_scope, grant.status,
@@ -311,12 +322,16 @@ impl ApiKeyRepository {
                 .into_iter()
                 .filter_map(CapabilityGrantRow::into_domain)
                 .collect(),
-            client_grants: (!client_grants.is_empty()).then(|| {
-                client_grants
-                    .into_iter()
-                    .filter_map(CapabilityGrantRow::into_domain)
-                    .collect()
-            }),
+            client_grants: if key_kind == "agent" {
+                Some(
+                    client_grants
+                        .into_iter()
+                        .filter_map(CapabilityGrantRow::into_domain)
+                        .collect(),
+                )
+            } else {
+                None
+            },
         })
     }
 

@@ -59,6 +59,21 @@ impl Capability {
         }
     }
 
+    #[allow(dead_code)]
+    pub(crate) const fn description(self) -> &'static str {
+        match self {
+            Self::BalancesRead => "Read supported latest and historical balance snapshots.",
+            Self::Erc20TransfersRead => "Search bounded ERC-20 transfers.",
+            Self::WorkspaceActivityRead => "Read account-owned Workspace activity and evidence.",
+            Self::CatalogRead => "Read authenticated Data Lab asset and network catalog views.",
+            Self::PricesRead => "Read authenticated Data Lab price views.",
+            Self::ScanRead => "Read authenticated Workspace-member Scan views.",
+            Self::LabRead => "Run authenticated curated Data Lab research.",
+            Self::TreasuryRead => "Read account-owned Workspace treasury snapshots.",
+            Self::TreasurySnapshotWrite => "Capture account-owned Workspace treasury snapshots.",
+        }
+    }
+
     pub(crate) fn parse(value: &str) -> Option<Self> {
         Self::ALL
             .into_iter()
@@ -164,6 +179,7 @@ pub(crate) struct AuthorizationContext {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum AuthorizationDeny {
     OwnerCapabilityNotGranted,
+    ClientCapabilityNotGranted,
     KeyCapabilityNotGranted,
 }
 
@@ -185,12 +201,10 @@ pub(crate) fn evaluate_authorization(
         return AuthorizationDecision::Deny(AuthorizationDeny::OwnerCapabilityNotGranted);
     }
 
-    if context
-        .client_grants
-        .as_ref()
-        .is_some_and(|grants| !grants.iter().any(|grant| grant.permits(request)))
-    {
-        return AuthorizationDecision::Deny(AuthorizationDeny::OwnerCapabilityNotGranted);
+    if let Some(grants) = context.client_grants.as_ref() {
+        if !grants.iter().any(|grant| grant.permits(request)) {
+            return AuthorizationDecision::Deny(AuthorizationDeny::ClientCapabilityNotGranted);
+        }
     }
 
     if !context
@@ -282,5 +296,48 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    fn client_grants_apply_only_to_agent_keys_and_empty_sets_deny() {
+        let request = AuthorizationRequest::route(Capability::BalancesRead);
+        let owner_grants = vec![grant(Capability::BalancesRead, NetworkScope::Any)];
+        let key_grants = vec![grant(Capability::BalancesRead, NetworkScope::Any)];
+
+        assert_eq!(
+            evaluate_authorization(
+                &AuthorizationContext {
+                    owner_grants: owner_grants.clone(),
+                    key_grants: key_grants.clone(),
+                    client_grants: None,
+                },
+                &request,
+            ),
+            AuthorizationDecision::Allow
+        );
+
+        assert_eq!(
+            evaluate_authorization(
+                &AuthorizationContext {
+                    owner_grants: owner_grants.clone(),
+                    key_grants: key_grants.clone(),
+                    client_grants: Some(vec![]),
+                },
+                &request,
+            ),
+            AuthorizationDecision::Deny(AuthorizationDeny::ClientCapabilityNotGranted)
+        );
+
+        assert_eq!(
+            evaluate_authorization(
+                &AuthorizationContext {
+                    owner_grants,
+                    key_grants,
+                    client_grants: Some(vec![grant(Capability::BalancesRead, NetworkScope::Any)]),
+                },
+                &request,
+            ),
+            AuthorizationDecision::Allow
+        );
     }
 }

@@ -75,7 +75,7 @@ Agents must respect the role of each document in this repo:
     derivation, and historical price data. Mother API consumes it read-only.
   - Mother API is the proposed future owner of DeFi position discovery,
     protocol-specific resolution, and normalized position composition under
-    accepted SPEC-024 scope. Bigwig remains the controlled blockchain-read
+    draft SPEC-024 scope. Bigwig remains the controlled blockchain-read
     boundary and Price Indexer remains the price and FX boundary; no DeFi
     route or integration may be implemented before that scope is accepted.
   - `iron-burrow-read-model` owns refresh scheduling and hot caches.

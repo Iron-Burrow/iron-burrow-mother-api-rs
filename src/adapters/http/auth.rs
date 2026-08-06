@@ -704,6 +704,7 @@ mod tests {
             api_key_minute_limiter: crate::adapters::http::rate_limit::ApiKeyMinuteLimiter::default(
             ),
             asset_repository: None,
+            defi_protocol_repository: None,
             price_indexer_client: None,
             dis_client: None,
             bigwig_client: None,

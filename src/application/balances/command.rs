@@ -169,6 +169,7 @@ mod tests {
             api_key_minute_limiter: crate::adapters::http::rate_limit::ApiKeyMinuteLimiter::default(
             ),
             asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
+            defi_protocol_repository: None,
             price_indexer_client,
             dis_client: None,
             bigwig_client,

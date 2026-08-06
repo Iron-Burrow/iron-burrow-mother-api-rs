@@ -86,6 +86,10 @@ snapshot presenters run in the same Mother API binary; they are evolving web
 product transports, not `/v1` operations. The web entry is not a second
 frontend service or another version of the public machine API.
 
+The authenticated Lab also includes a bounded DeFi protocol realized-yield
+study. Its first adapter is Aave V3 on Ethereum; it remains a browser product
+transport and is not part of the Beta machine API.
+
 `https://api.ironburrow.com/openapi.json` remains the machine-readable API
 contract. `app.ironburrow.com` is not configured. The web entry includes
 passwordless account entry, a constrained anonymous demo-key flow, and

@@ -15,6 +15,11 @@ protocol-specific resolution, normalization, and response composition. Bigwig
 will remain the controlled blockchain-read boundary, and Price Indexer will
 remain the pricing and FX boundary. DIS is not part of this capability.
 
+Accepted [SPEC-029](SPEC-029-defi-protocol-realized-yield-lab-study.md)
+introduces the shared canonical protocol registry for a bounded browser Lab
+study. It does not accept, enable, or otherwise advance the discovery/search
+operations proposed here.
+
 This document proposes two protected public operations:
 
 ```http

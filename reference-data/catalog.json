@@ -199,6 +199,18 @@
       "sort_order": 110
     },
     {
+      "slug": "dai",
+      "symbol": "DAI",
+      "name": "Dai Stablecoin",
+      "asset_kind": "crypto",
+      "category": "stablecoin",
+      "canonical_path": "/assets/dai",
+      "aliases": ["dai", "maker dai"],
+      "metadata": {"source": "aave-v3-realized-yield"},
+      "status": "active",
+      "sort_order": 115
+    },
+    {
       "slug": "metapool-dao",
       "symbol": "MPDAO",
       "name": "MPDAO Governance Token",
@@ -561,6 +573,18 @@
       "metadata": {"demo_seed": true, "source": "user_asset_chain_map"},
       "status": "active",
       "sort_order": 180
+    },
+    {
+      "asset_slug": "dai",
+      "network_slug": "eth-mainnet",
+      "is_native": false,
+      "deployment_address": "0x6b175474e89094c44da98b954eedeac495271d0f",
+      "deployment_block": 8928158,
+      "decimals": 18,
+      "token_standard": "erc20",
+      "metadata": {"source": "aave-v3-realized-yield"},
+      "status": "active",
+      "sort_order": 185
     },
     {
       "asset_slug": "gho",

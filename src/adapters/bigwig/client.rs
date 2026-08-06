@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use reqwest::{header::RETRY_AFTER, StatusCode, Url};
+use serde_json::{json, Value};
 use tracing::warn;
 
 use crate::adapters::bigwig::{
@@ -13,6 +14,7 @@ use crate::config::Config;
 const CLIENT_SERVICE: &str = "mother-api";
 const BALANCES_PATH: &str = "/internal/v1/primitives/evm/balances";
 const ERC20_TRANSFERS_PATH: &str = "/internal/v1/extractions/erc20-transfers";
+const DEFAULT_ARCHIVE_ROUTE: &str = "/v1/rpc/eth/mainnet/archive";
 
 #[derive(Clone)]
 pub(crate) struct BigwigClient {
@@ -20,6 +22,7 @@ pub(crate) struct BigwigClient {
     base_url: Url,
     token: String,
     timeout: Duration,
+    archive_route: String,
 }
 
 impl BigwigClient {
@@ -48,7 +51,13 @@ impl BigwigClient {
             base_url,
             token: token.to_string(),
             timeout: Duration::from_millis(timeout_ms),
+            archive_route: DEFAULT_ARCHIVE_ROUTE.to_string(),
         })
+    }
+
+    pub(crate) fn with_archive_route(mut self, route: &str) -> Self {
+        self.archive_route = format!("/{}", route.trim().trim_matches('/'));
+        self
     }
 
     #[cfg(test)]
@@ -128,12 +137,53 @@ impl BigwigClient {
         Err(map_error_response(status, &body, retry_after_seconds))
     }
 
+    pub(crate) async fn archive_rpc(
+        &self,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, BigwigError> {
+        if !matches!(
+            method,
+            "eth_blockNumber" | "eth_call" | "eth_getBlockByNumber"
+        ) {
+            return Err(BigwigError::InvalidExtractionRequest);
+        }
+        let response = self
+            .client
+            .post(self.archive_url())
+            .bearer_auth(&self.token)
+            .header("X-Client-Service", CLIENT_SERVICE)
+            .timeout(self.timeout)
+            .json(&json!({"jsonrpc":"2.0", "id": 1, "method": method, "params": params}))
+            .send()
+            .await
+            .map_err(map_reqwest_error)?;
+        let status = response.status();
+        let body = response.bytes().await.map_err(map_reqwest_error)?;
+        if !status.is_success() {
+            return Err(map_error_response(status, &body, None));
+        }
+        let value: Value =
+            serde_json::from_slice(&body).map_err(|_| BigwigError::MalformedSuccessResponse)?;
+        if value.get("error").is_some() {
+            return Err(BigwigError::RpcError);
+        }
+        value
+            .get("result")
+            .cloned()
+            .ok_or(BigwigError::MalformedSuccessResponse)
+    }
+
     fn balances_url(&self) -> Url {
         self.url_for_path(BALANCES_PATH)
     }
 
     fn erc20_transfers_url(&self) -> Url {
         self.url_for_path(ERC20_TRANSFERS_PATH)
+    }
+
+    fn archive_url(&self) -> Url {
+        self.url_for_path(&self.archive_route)
     }
 
     fn url_for_path(&self, path: &str) -> Url {
@@ -172,6 +222,7 @@ impl TryFrom<&Config> for BigwigClient {
             .ok_or(BigwigClientInitError::MissingToken)?;
 
         Self::new(base_url, token, config.bigwig_request_timeout_ms)
+            .map(|client| client.with_archive_route(&config.bigwig_archive_route))
     }
 }
 

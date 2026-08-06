@@ -64,6 +64,7 @@ fn beta_app_with_api_key_repository(api_key_repository: Option<ApiKeyRepository>
         workspace_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
+        defi_protocol_repository: None,
         price_indexer_client: None,
         dis_client: None,
         bigwig_client: None,
@@ -91,6 +92,7 @@ fn test_app_with_price_indexer(price_indexer_url: &str, timeout_ms: u64) -> Rout
         workspace_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
+        defi_protocol_repository: None,
         price_indexer_client: Some(price_indexer_client),
         dis_client: None,
         bigwig_client: None,
@@ -673,6 +675,7 @@ async fn beta_route_capabilities_preserve_balance_access_and_restrict_transfer_a
         workspace_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
+        defi_protocol_repository: None,
         price_indexer_client: None,
         dis_client: None,
         bigwig_client: None,
@@ -802,6 +805,35 @@ async fn beta_surface_preserves_not_found_for_unknown_routes() {
     }
 }
 
+#[tokio::test]
+async fn realized_yield_is_generic_browser_lab_route_and_legacy_aave_route_is_absent() {
+    let app = test_app();
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/lab/defi-protocols/realized-yield")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(response.headers().get("location").unwrap(), "/login");
+
+    for uri in [
+        "/lab/aave-v3/realized-yield",
+        "/v1/defi-protocols/realized-yield",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{uri}");
+    }
+}
+
 #[test]
 fn production_caddy_separates_machine_and_human_route_surfaces() {
     let caddyfile = include_str!(concat!(
@@ -816,7 +848,7 @@ fn production_caddy_separates_machine_and_human_route_surfaces() {
         .expect("Caddy must declare a dedicated web site");
     assert!(api_site.contains("path /v1/* /health /openapi.json"));
     assert!(!api_site.contains("/scan"));
-    assert!(web_site.contains("path / /scan /scan/* /access /access/demo /docs /docs/* /assets/* /signup /login /verify-email /logout /workspaces /workspaces/* /catalog /catalog/* /prices /prices/* /lab /lab.json"));
+    assert!(web_site.contains("path / /scan /scan/* /access /access/demo /docs /docs/* /assets/* /signup /login /verify-email /logout /workspaces /workspaces/* /catalog /catalog/* /prices /prices/* /lab /lab/* /lab.json"));
     assert!(!web_site.contains("/v1/*"));
     assert!(caddyfile.contains("reverse_proxy mother-api:3000"));
     assert!(!caddyfile.contains("CADDY_DOMAIN"));
@@ -954,6 +986,7 @@ async fn assets_list_requests_batch_price_enrichment_by_slug() {
         workspace_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(repository),
+        defi_protocol_repository: None,
         price_indexer_client: Some(price_indexer_client),
         dis_client: None,
         bigwig_client: None,
@@ -1124,6 +1157,7 @@ async fn asset_detail_requests_price_enrichment_by_slug() {
         workspace_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(repository),
+        defi_protocol_repository: None,
         price_indexer_client: Some(price_indexer_client),
         dis_client: None,
         bigwig_client: None,

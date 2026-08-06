@@ -12,6 +12,8 @@ pub(crate) enum ConfigError {
     InvalidDisRetryMaxAttempts(String),
     #[error("BIGWIG_REQUEST_TIMEOUT_MS must be a positive u64, got {0:?}")]
     InvalidBigwigRequestTimeout(String),
+    #[error("AAVE_V3_MIN_BLOCK_CONFIRMATIONS must be a valid u64, got {0:?}")]
+    InvalidAaveV3MinBlockConfirmations(String),
     #[error("ERC20_TRANSFERS_ENABLED must be a boolean, got {0:?}")]
     InvalidErc20TransfersEnabled(String),
     #[error("ERC20_TRANSFERS_MAX_TOKEN_FILTERS must be a positive u64, got {0:?}")]

@@ -9,6 +9,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tracing::warn;
 
 use crate::{
     adapters::{
@@ -521,7 +522,7 @@ async fn capture_treasury_snapshot(
     if service
         .create_treasury_snapshot(
             workspace.id,
-            json!({"as_of": format!("{:?}", as_of)}),
+            requested_as_of_json(&as_of),
             &quote_currency,
             json!(asset_slugs),
             payload,
@@ -902,7 +903,7 @@ async fn balance_view(
                 .await
                 .is_err()
             {
-                return unavailable();
+                warn!(workspace_id = %workspace.id, "failed to append balance observation event");
             }
             format!("{value:#?}")
         }
@@ -916,7 +917,7 @@ async fn balance_view(
                 .await
                 .is_err()
             {
-                return unavailable();
+                warn!(workspace_id = %workspace.id, "failed to append balance observation event");
             }
             format!("Balance data is unavailable: {error}")
         }
@@ -1030,7 +1031,7 @@ async fn transfer_view(
                 .await
                 .is_err()
             {
-                return unavailable();
+                warn!(workspace_id = %workspace.id, "failed to append transfer observation event");
             }
             format!("{value:#?}")
         }
@@ -1044,7 +1045,7 @@ async fn transfer_view(
                 .await
                 .is_err()
             {
-                return unavailable();
+                warn!(workspace_id = %workspace.id, "failed to append transfer observation event");
             }
             format!("Transfer data is unavailable: {error}")
         }
@@ -1122,6 +1123,18 @@ fn transfer_payload(
     result: &crate::application::erc20_transfers::service::Erc20TransferSearchResult,
 ) -> Value {
     json!({"operation":"transfers.read","outcome":if result.extraction.truncated {"partial"} else {"complete"},"request":{"network_slug":member.network_slug,"address":member.address,"direction":format!("{:?}",result.plan.extraction_request.direction),"window":format!("{:?}",result.plan.extraction_request.window)},"source":"bigwig","truncated":result.extraction.truncated,"transfers":result.extraction.rows.iter().map(|row| json!({"block_number":row.block_number,"tx_hash":row.tx_hash,"log_index":row.log_index,"token":row.token,"from":row.from,"to":row.to,"value":row.value})).collect::<Vec<_>>()})
+}
+
+fn requested_as_of_json(as_of: &AsOf) -> Value {
+    match as_of {
+        AsOf::Latest => json!({"kind": "latest"}),
+        AsOf::Timestamp { timestamp } => {
+            json!({"kind": "timestamp", "timestamp": timestamp})
+        }
+        AsOf::BlockNumber { block_number } => {
+            json!({"kind": "block_number", "block_number": block_number})
+        }
+    }
 }
 
 #[derive(Template)]

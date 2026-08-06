@@ -4,7 +4,8 @@ use crate::adapters::bigwig::{client::create_bigwig_client, BigwigClient};
 use crate::adapters::dis::{client::create_dis_client, DisClient};
 use crate::adapters::http::rate_limit::ApiKeyMinuteLimiter;
 use crate::adapters::postgres::{
-    AccountRepository, ApiKeyRepository, GlobalAssetRepository, WorkspaceRepository,
+    AccountRepository, ApiKeyRepository, DefiProtocolRepository, GlobalAssetRepository,
+    WorkspaceRepository,
 };
 use crate::adapters::price_indexer::{client::create_price_indexer_client, PriceIndexerClient};
 use crate::config::Config;
@@ -20,6 +21,7 @@ pub(crate) struct AppState {
     pub(crate) workspace_repository: Option<WorkspaceRepository>,
     pub(crate) api_key_minute_limiter: ApiKeyMinuteLimiter,
     pub(crate) asset_repository: Option<GlobalAssetRepository>,
+    pub(crate) defi_protocol_repository: Option<DefiProtocolRepository>,
     pub(crate) price_indexer_client: Option<PriceIndexerClient>,
     pub(crate) dis_client: Option<DisClient>,
     #[allow(dead_code)]
@@ -38,6 +40,7 @@ impl AppState {
         let account_repository = database_pool.clone().map(AccountRepository::database);
         let workspace_repository = database_pool.clone().map(WorkspaceRepository::database);
         let asset_repository = database_pool.clone().map(GlobalAssetRepository::database);
+        let defi_protocol_repository = database_pool.clone().map(DefiProtocolRepository::database);
         let price_indexer_client = create_price_indexer_client(&config);
         let dis_client = create_dis_client(&config);
         let bigwig_client = create_bigwig_client(&config);
@@ -51,6 +54,7 @@ impl AppState {
             workspace_repository,
             api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
             asset_repository,
+            defi_protocol_repository,
             price_indexer_client,
             dis_client,
             bigwig_client,
@@ -71,6 +75,7 @@ impl AppState {
             workspace_repository: None,
             api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
             asset_repository: Some(asset_repository),
+            defi_protocol_repository: None,
             price_indexer_client: None,
             dis_client: None,
             bigwig_client: None,
@@ -92,6 +97,7 @@ impl AppState {
             workspace_repository: None,
             api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
             asset_repository: Some(asset_repository),
+            defi_protocol_repository: None,
             price_indexer_client: None,
             dis_client: None,
             bigwig_client: Some(bigwig_client),

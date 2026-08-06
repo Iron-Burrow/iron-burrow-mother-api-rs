@@ -2191,11 +2191,11 @@ not be assumed to exist or behave consistently if encountered:
 - Read-model asset sync feeds. A sync surface for
   `iron-burrow-read-model` requires an accepted proposal, implementation,
   and CONTRACTS.md revision before it becomes part of this surface.
-- Aave V3 realized yield or any other DeFi-protocol-specific endpoint.
-  Mother API currently has no DeFi position capability. Archived
-  [`SPEC-001`](docs/archive/SPEC-001-dis-aave-v3-realized-yield.md) preserves
-  the abandoned DIS direction; draft SPEC-024 proposes a Mother-owned
-  replacement. A future public operation requires accepted scope,
+- A DeFi-protocol-specific `/v1` endpoint. The authenticated browser-only
+  realized-yield Lab study in accepted
+  [`SPEC-029`](docs/specs/SPEC-029-defi-protocol-realized-yield-lab-study.md)
+  is an evolving web-product transport and does not create a machine API
+  compatibility promise. A future public operation requires accepted scope,
   implementation, and a CONTRACTS.md revision before it becomes part of this
   surface.
 - Direct exposure of internal DIS or read-model service shapes. Price

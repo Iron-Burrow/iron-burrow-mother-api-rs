@@ -307,7 +307,7 @@ impl WorkspaceRepository {
         before: Option<&str>,
         limit: i64,
     ) -> Result<Vec<WorkspaceActivityEvent>, RepositoryError> {
-        sqlx::query_as::<_, ActivityRow>(r#"select public_id, event_type, actor_kind, payload_version, payload, occurred_at::text as occurred_at
+        sqlx::query_as::<_, ActivityRow>(r#"select public_id, event_type, actor_kind, payload_version, payload, to_char(occurred_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as occurred_at
             from mother_api.workspace_activity_event
             where workspace_id = $1 and ($2::text is null or (occurred_at, public_id) < (select occurred_at, public_id from mother_api.workspace_activity_event where workspace_id = $1 and public_id = $2))
             order by occurred_at desc, public_id desc limit $3"#)
@@ -319,7 +319,7 @@ impl WorkspaceRepository {
         workspace_id: Uuid,
     ) -> Result<Vec<WorkspaceTreasurySnapshot>, RepositoryError> {
         sqlx::query_as::<_, TreasurySnapshotRow>(
-            "select public_id, requested_as_of, quote_currency, asset_slugs, payload, captured_at::text as captured_at from mother_api.workspace_treasury_snapshot where workspace_id = $1 order by captured_at desc, public_id desc",
+            "select public_id, requested_as_of, quote_currency, asset_slugs, payload, to_char(captured_at at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') as captured_at from mother_api.workspace_treasury_snapshot where workspace_id = $1 order by captured_at desc, public_id desc",
         )
         .bind(workspace_id)
         .fetch_all(&self.0)
@@ -338,7 +338,7 @@ impl WorkspaceRepository {
     ) -> Result<WorkspaceTreasurySnapshot, RepositoryError> {
         let id = Uuid::new_v4();
         sqlx::query_as::<_, TreasurySnapshotRow>(
-            "insert into mother_api.workspace_treasury_snapshot (id, public_id, workspace_id, requested_as_of, quote_currency, asset_slugs, payload) values ($1, $2, $3, $4, $5, $6, $7) returning public_id, requested_as_of, quote_currency, asset_slugs, payload, captured_at::text as captured_at",
+            "insert into mother_api.workspace_treasury_snapshot (id, public_id, workspace_id, requested_as_of, quote_currency, asset_slugs, payload) values ($1, $2, $3, $4, $5, $6, $7) returning public_id, requested_as_of, quote_currency, asset_slugs, payload, to_char(captured_at at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') as captured_at",
         )
         .bind(id)
         .bind(format!("wts_{}", id.simple()))

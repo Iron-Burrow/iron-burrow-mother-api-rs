@@ -1059,6 +1059,7 @@ fn balance_app(bigwig_url: Option<&str>, price_url: Option<&str>) -> Router {
         workspace_repository: None,
         api_key_minute_limiter: crate::adapters::http::rate_limit::ApiKeyMinuteLimiter::default(),
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
+        defi_protocol_repository: None,
         price_indexer_client,
         dis_client: None,
         bigwig_client,

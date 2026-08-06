@@ -1,0 +1,26 @@
+{% extends "web/base.html" %}
+{% block title %}Realized yield · Iron Burrow{% endblock %}
+{% block content %}
+<h1>DeFi protocol realized yield</h1>
+{% match error %}{% when Some with (message) %}<p>{{ message }}</p>{% when None %}{% endmatch %}
+<form method="post" action="/lab/defi-protocols/realized-yield">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>Protocol <select name="protocol_slug" required><option value="aave-v3">Aave V3</option></select></label>
+  <label>Asset <select name="asset_slug" required><option value="usdc">USDC</option><option value="usdt">USDT</option><option value="dai">DAI</option><option value="gho">GHO</option></select></label>
+  <label>From block <input name="from_block" inputmode="numeric" required></label>
+  <label>To block <input name="to_block" inputmode="numeric" required></label>
+  <label><input type="checkbox" name="include_annualized_apy_estimate" checked> Include annualized APY estimate</label>
+  <button type="submit">Calculate</button>
+</form>
+{% match result %}{% when Some with (value) %}
+<h2>Result</h2>
+<dl>
+  <dt>Protocol</dt><dd>{{ value.protocol_slug }}</dd><dt>Network</dt><dd>{{ value.network_slug }}</dd>
+  <dt>Asset</dt><dd>{{ value.asset_symbol }} ({{ value.underlying_asset_address }})</dd>
+  <dt>From index</dt><dd>{{ value.from_index }}</dd><dt>To index</dt><dd>{{ value.to_index }}</dd>
+  <dt>From block timestamp</dt><dd>{{ value.from_timestamp }}</dd><dt>To block timestamp</dt><dd>{{ value.to_timestamp }}</dd>
+  <dt>Realized yield</dt><dd>{{ value.realized_yield }}</dd><dt>Annualized APY</dt><dd>{{ value.annualized_apy_estimate }}</dd>
+  <dt>Warnings</dt><dd>{{ value.warnings }}</dd>
+</dl>
+{% when None %}{% endmatch %}
+{% endblock %}

@@ -130,10 +130,88 @@ async fn apply_catalog(pool: &PgPool, catalog: &Catalog) -> Result<(), Reference
         upsert_asset_chain_map(&mut transaction, mapping).await?;
     }
 
+    seed_aave_v3_realized_yield_protocol(&mut transaction).await?;
+
     transaction
         .commit()
         .await
         .map_err(ReferenceDataError::Database)
+}
+
+async fn seed_aave_v3_realized_yield_protocol(
+    transaction: &mut Transaction<'_, Postgres>,
+) -> Result<(), ReferenceDataError> {
+    let protocol_id: String = sqlx::query_scalar(
+        r#"
+        insert into mother_api.defi_protocol (
+          slug, network_id, family, adapter_kind, adapter_version, enabled, verified, updated_at
+        )
+        select 'aave-v3', network.id, 'aave-v3', 'aave_v3_realized_yield', 'v1', true, true, now()
+        from mother_api.network network
+        where network.slug = 'eth-mainnet' and network.status = 'active'
+        on conflict (slug) do update set
+          network_id = excluded.network_id,
+          family = excluded.family,
+          adapter_kind = excluded.adapter_kind,
+          adapter_version = excluded.adapter_version,
+          enabled = excluded.enabled,
+          verified = excluded.verified,
+          updated_at = now()
+        returning id::text
+        "#,
+    )
+    .fetch_one(&mut **transaction)
+    .await
+    .map_err(ReferenceDataError::Database)?;
+
+    sqlx::query(
+        r#"
+        insert into mother_api.defi_protocol_target (
+          defi_protocol_id, target_key, target_kind, address, enabled, verified, updated_at
+        ) values ($1::uuid, 'pool', 'pool', '0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2', true, true, now())
+        on conflict (defi_protocol_id, target_key) do update set
+          target_kind = excluded.target_kind, address = excluded.address,
+          enabled = excluded.enabled, verified = excluded.verified, updated_at = now()
+        "#,
+    )
+    .bind(&protocol_id)
+    .execute(&mut **transaction)
+    .await
+    .map_err(ReferenceDataError::Database)?;
+
+    for (slug, address) in [
+        ("usdc", "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+        ("usdt", "0xdac17f958d2ee523a2206206994597c13d831ec7"),
+        ("dai", "0x6b175474e89094c44da98b954eedeac495271d0f"),
+        ("gho", "0x40d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f"),
+    ] {
+        sqlx::query(
+            r#"
+            insert into mother_api.defi_protocol_target (
+              defi_protocol_id, target_key, target_kind, address, asset_chain_map_id,
+              enabled, verified, updated_at
+            )
+            select $1::uuid, $2, 'reserve', $3, chain_map.id, true, true, now()
+            from mother_api.asset_chain_map chain_map
+            join mother_api.global_asset asset on asset.id = chain_map.asset_id
+            join mother_api.network network on network.id = chain_map.network_id
+            where asset.slug = $2 and network.slug = 'eth-mainnet'
+              and chain_map.status = 'active' and asset.status = 'active'
+              and lower(chain_map.deployment_address) = $3
+            on conflict (defi_protocol_id, target_key) do update set
+              target_kind = excluded.target_kind, address = excluded.address,
+              asset_chain_map_id = excluded.asset_chain_map_id,
+              enabled = excluded.enabled, verified = excluded.verified, updated_at = now()
+            "#,
+        )
+        .bind(&protocol_id)
+        .bind(slug)
+        .bind(address)
+        .execute(&mut **transaction)
+        .await
+        .map_err(ReferenceDataError::Database)?;
+    }
+    Ok(())
 }
 
 fn validate_catalog(catalog: &Catalog) -> Result<(), ReferenceDataError> {
@@ -955,7 +1033,7 @@ mod tests {
                 .into_iter()
                 .map(|capability| CapabilityDeclaration {
                     id: capability.id().to_string(),
-                    description: capability.id().to_string(),
+                    description: capability.description().to_string(),
                 })
                 .collect(),
             assets: vec![declared_asset],
