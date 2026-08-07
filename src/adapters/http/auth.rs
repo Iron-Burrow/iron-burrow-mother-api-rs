@@ -697,6 +697,7 @@ mod tests {
                 ..Config::default()
             },
             version: env!("CARGO_PKG_VERSION"),
+            canonical_registry: crate::state::embedded_canonical_registry(),
             database_pool: None,
             api_key_repository: Some(api_key_repository),
             account_repository: None,

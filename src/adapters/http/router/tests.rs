@@ -58,6 +58,7 @@ fn beta_app_with_api_key_repository(api_key_repository: Option<ApiKeyRepository>
     build_router(AppState {
         config: beta_config(),
         version: env!("CARGO_PKG_VERSION"),
+        canonical_registry: crate::state::embedded_canonical_registry(),
         database_pool: None,
         api_key_repository,
         account_repository: None,
@@ -87,6 +88,7 @@ fn test_app_with_price_indexer(price_indexer_url: &str, timeout_ms: u64) -> Rout
     build_router(AppState {
         config: Config::default(),
         version: env!("CARGO_PKG_VERSION"),
+        canonical_registry: crate::state::embedded_canonical_registry(),
         database_pool: None,
         api_key_repository: None,
         account_repository: None,
@@ -695,6 +697,7 @@ async fn beta_route_capabilities_preserve_balance_access_and_restrict_transfer_a
             ..Config::default()
         },
         version: env!("CARGO_PKG_VERSION"),
+        canonical_registry: crate::state::embedded_canonical_registry(),
         database_pool: None,
         api_key_repository: Some(repository),
         account_repository: None,
@@ -1034,6 +1037,7 @@ async fn assets_list_requests_batch_price_enrichment_by_slug() {
     let app = build_router(AppState {
         config: Config::default(),
         version: env!("CARGO_PKG_VERSION"),
+        canonical_registry: crate::state::embedded_canonical_registry(),
         database_pool: None,
         api_key_repository: None,
         account_repository: None,
@@ -1206,6 +1210,7 @@ async fn asset_detail_requests_price_enrichment_by_slug() {
     let app = build_router(AppState {
         config: Config::default(),
         version: env!("CARGO_PKG_VERSION"),
+        canonical_registry: crate::state::embedded_canonical_registry(),
         database_pool: None,
         api_key_repository: None,
         account_repository: None,

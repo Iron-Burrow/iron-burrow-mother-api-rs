@@ -1053,6 +1053,7 @@ fn balance_app(bigwig_url: Option<&str>, price_url: Option<&str>) -> Router {
     build_router(AppState {
         config: Config::default(),
         version: env!("CARGO_PKG_VERSION"),
+        canonical_registry: crate::state::embedded_canonical_registry(),
         database_pool: None,
         api_key_repository: None,
         account_repository: None,
