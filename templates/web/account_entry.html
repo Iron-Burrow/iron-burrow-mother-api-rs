@@ -13,7 +13,7 @@
     </label>
     <label>
       <span>Password</span>
-      <input name="password" type="password" required autocomplete="{% if action == " /signup" %}new-password{% else
+      <input name="password" type="password" required autocomplete="{% if action == "/signup" %}new-password{% else
         %}current-password{% endif %}">
     </label>
     <button type="submit">{% if action == "/signup" %}Create account{% else %}Sign in{% endif %}</button>

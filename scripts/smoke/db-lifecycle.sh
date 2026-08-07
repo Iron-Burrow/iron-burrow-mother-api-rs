@@ -78,13 +78,13 @@ docker run --rm \
 	"$SMOKE_IMAGE" \
 	-c 'if command -v sqlx >/dev/null 2>&1; then echo "sqlx must not be present" >&2; exit 1; fi; if command -v psql >/dev/null 2>&1; then echo "psql must not be present" >&2; exit 1; fi'
 
-echo "Running full database lifecycle through mother-api db apply..."
+echo "Running embedded migrations before applying reference data..."
 
 docker run --rm \
 	--network "$SMOKE_NETWORK" \
 	-e DATABASE_URL="$SMOKE_DATABASE_URL" \
 	"$SMOKE_IMAGE" \
-	mother-api db apply
+	mother-api db migrate
 
 snapshot_catalog_rows() {
 	docker run --rm \
@@ -117,15 +117,34 @@ snapshot_catalog_rows() {
 		"
 }
 
-before_snapshot="$(snapshot_catalog_rows)"
+migrated_snapshot="$(snapshot_catalog_rows)"
 
-if [ "$(printf '%s\n' "$before_snapshot" | sed '/^$/d' | wc -l | tr -d ' ')" != "3" ]; then
+if [ "$(printf '%s\n' "$migrated_snapshot" | sed '/^$/d' | wc -l | tr -d ' ')" != "3" ]; then
 	echo "Expected lifecycle smoke snapshot to include asset, network, and mapping rows." >&2
-	printf '%s\n' "$before_snapshot" >&2
+	printf '%s\n' "$migrated_snapshot" >&2
 	exit 1
 fi
 
-echo "Running mother-api db apply a second time to prove no-op behavior..."
+echo "Applying PostgreSQL-owned reference data without reconciling catalog rows..."
+
+docker run --rm \
+	--network "$SMOKE_NETWORK" \
+	-e DATABASE_URL="$SMOKE_DATABASE_URL" \
+	"$SMOKE_IMAGE" \
+	mother-api db apply-reference
+
+reference_snapshot="$(snapshot_catalog_rows)"
+
+if [ "$reference_snapshot" != "$migrated_snapshot" ]; then
+	echo "db apply-reference changed historical catalog audit rows." >&2
+	echo "Before:" >&2
+	printf '%s\n' "$migrated_snapshot" >&2
+	echo "After:" >&2
+	printf '%s\n' "$reference_snapshot" >&2
+	exit 1
+fi
+
+echo "Running mother-api db apply after reference application..."
 
 docker run --rm \
 	--network "$SMOKE_NETWORK" \
@@ -133,14 +152,14 @@ docker run --rm \
 	"$SMOKE_IMAGE" \
 	mother-api db apply
 
-after_snapshot="$(snapshot_catalog_rows)"
+apply_snapshot="$(snapshot_catalog_rows)"
 
-if [ "$after_snapshot" != "$before_snapshot" ]; then
-	echo "Second db apply changed reference-data audit rows." >&2
+if [ "$apply_snapshot" != "$migrated_snapshot" ]; then
+	echo "db apply changed historical catalog audit rows." >&2
 	echo "Before:" >&2
-	printf '%s\n' "$before_snapshot" >&2
+	printf '%s\n' "$migrated_snapshot" >&2
 	echo "After:" >&2
-	printf '%s\n' "$after_snapshot" >&2
+	printf '%s\n' "$apply_snapshot" >&2
 	exit 1
 fi
 
