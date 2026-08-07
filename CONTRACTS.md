@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-08-06
+last_reviewed: 2026-08-07
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -39,8 +39,7 @@ flows below are deliberate human-web contracts.
 | `GET` | `/access` | `text/html; charset=utf-8` | Private-Beta API access information. |
 | `POST` | `/access/demo` | `text/html; charset=utf-8` | Issues one scoped, short-lived anonymous demo key after a one-time form intent. |
 | `GET` | `/docs` | `text/html; charset=utf-8` | Human-readable current private-Beta API documentation. |
-| `GET`/`POST` | `/signup`, `/login` | `text/html; charset=utf-8` | Generic passwordless account-entry forms. |
-| `GET`/`POST` | `/verify-email` | `text/html; charset=utf-8` | Displays then consumes a one-time entry link. |
+| `GET`/`POST` | `/signup`, `/login` | `text/html; charset=utf-8` | CSRF-protected email/password account-entry forms. |
 | `POST` | `/logout` | `text/html; charset=utf-8` | Invalidates the current browser session. |
 | `GET`/`POST` | `/workspaces` | `text/html; charset=utf-8` | Signed-in account Workspace list and creation. |
 | `GET` | `/workspaces/{workspace_id}`, `/workspaces/{workspace_id}/activity` | `text/html; charset=utf-8` | Signed-in account-owned Workspace and append-only activity/evidence timeline. |
@@ -77,8 +76,11 @@ nosniff`, `X-Frame-Options: DENY`, and `Referrer-Policy:
 strict-origin-when-cross-origin`. The initial pages require no browser
 credentials, cookies, forms, inline scripts, inline styles, or third-party
 assets. Account and secret-display responses additionally use no-store and
-no-referrer policy. Account entry is passwordless, non-enumerating, and uses
-opaque hash-only sessions; it does not add an API authentication scheme.
+no-referrer policy. Account entry is non-enumerating email/password
+authentication using Argon2id hashes and opaque hash-only sessions; it does
+not add an API authentication scheme. Session cookies are host-only, Secure,
+HttpOnly, and SameSite=Lax; same-origin double-submit CSRF protection applies
+to account and authenticated mutations.
 
 ## Conventions
 

@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-31
+last_reviewed: 2026-08-07
 agent_edit_policy: update_when_relevant
 ---
 
@@ -90,9 +90,13 @@ The authenticated Lab also includes a bounded DeFi protocol realized-yield
 study. Its first adapter is Aave V3 on Ethereum; it remains a browser product
 transport and is not part of the Beta machine API.
 
+The private Portfolio Strategy Simulation Lab runs bounded, evidence-aware
+historical BTC, ETH, and Aave USDC studies for an authenticated account. It is
+also a browser-only research surface, not a `/v1` compatibility promise.
+
 `https://api.ironburrow.com/openapi.json` remains the machine-readable API
 contract. `app.ironburrow.com` is not configured. The web entry includes
-passwordless account entry, a constrained anonymous demo-key flow, and
+email/password account entry with server-side browser sessions, a constrained anonymous demo-key flow, and
 account-owned Workspaces at `/workspaces`. Workspaces hold watch-only Ethereum
 or Base addresses with labels, selected-address balance or transfer views, and
 an append-only activity/evidence timeline. Account-owned API keys can export

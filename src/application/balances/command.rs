@@ -166,6 +166,7 @@ mod tests {
             api_key_repository: None,
             account_repository: None,
             workspace_repository: None,
+            portfolio_simulation_repository: None,
             api_key_minute_limiter: crate::adapters::http::rate_limit::ApiKeyMinuteLimiter::default(
             ),
             asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),

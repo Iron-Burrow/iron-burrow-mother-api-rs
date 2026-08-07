@@ -1,6 +1,6 @@
 use askama::Template;
 use axum::{
-    extract::{Extension, Form, Query, Request, State},
+    extract::{Extension, Form, Request, State},
     http::{
         header::{
             CACHE_CONTROL, CONTENT_SECURITY_POLICY, CONTENT_TYPE, COOKIE, ORIGIN, REFERRER_POLICY,
@@ -18,7 +18,11 @@ use sha2::{Digest, Sha256};
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::{adapters::email, domain::api_keys::RawApiKey, state::AppState};
+use crate::{
+    adapters::postgres::accounts::SignupOutcome,
+    domain::{api_keys::RawApiKey, passwords},
+    state::AppState,
+};
 
 const HTML_CONTENT_TYPE: &str = "text/html; charset=utf-8";
 const CONTENT_SECURITY_POLICY_VALUE: &str = "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'";
@@ -49,9 +53,8 @@ fn html_routes(state: AppState) -> Router<AppState> {
         .route("/access", get(access))
         .route("/access/demo", post(issue_demo))
         .route("/docs", get(docs))
-        .route("/signup", get(signup).post(request_signup))
-        .route("/login", get(login).post(request_login))
-        .route("/verify-email", get(verify_email).post(confirm_email))
+        .route("/signup", get(signup).post(signup_submit))
+        .route("/login", get(login).post(login_submit))
         .route("/logout", post(logout))
         .route_layer(axum::middleware::from_fn_with_state(
             state,
@@ -121,132 +124,198 @@ async fn docs(State(state): State<AppState>) -> Response {
         ),
     })
 }
-async fn signup() -> Response {
-    html_response(AccountEntryTemplate {
-        action: "/signup",
-        heading: "Create your account",
-    })
+async fn signup(Extension(principal): Extension<BrowserPrincipal>) -> Response {
+    account_entry_response("/signup", "Create your account", None, principal)
 }
-async fn login() -> Response {
-    html_response(AccountEntryTemplate {
-        action: "/login",
-        heading: "Sign in",
-    })
+async fn login(Extension(principal): Extension<BrowserPrincipal>) -> Response {
+    account_entry_response("/login", "Sign in", None, principal)
 }
 
 #[derive(Deserialize)]
-struct EmailForm {
+struct AccountForm {
     email: String,
+    password: String,
+    csrf: String,
 }
-async fn request_signup(
+async fn signup_submit(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Form(form): Form<EmailForm>,
+    Extension(principal): Extension<BrowserPrincipal>,
+    Form(form): Form<AccountForm>,
 ) -> Response {
-    request_account_entry(state, headers, form.email, "signup").await
-}
-async fn request_login(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Form(form): Form<EmailForm>,
-) -> Response {
-    request_account_entry(state, headers, form.email, "login").await
-}
-
-async fn request_account_entry(
-    state: AppState,
-    headers: HeaderMap,
-    email: String,
-    purpose: &str,
-) -> Response {
-    if !same_origin(&headers, &state.config.public_web_base_url) {
+    if matches!(principal, BrowserPrincipal::Authenticated { .. }) {
+        return Redirect::to("/lab").into_response();
+    }
+    if !entry_csrf_valid(&state, &headers, &form.csrf) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let email = normalize_email(&email);
-    if let (Some(repository), Some(pepper), Some(token)) = (
+    let Some(email) = normalize_email(&form.email) else {
+        return account_entry_response(
+            "/signup",
+            "Create your account",
+            Some("Enter a valid email address."),
+            BrowserPrincipal::Anonymous,
+        );
+    };
+    let Ok(password_hash) = passwords::hash(&form.password) else {
+        return account_entry_response(
+            "/signup",
+            "Create your account",
+            Some("Use a password between 12 and 128 characters."),
+            BrowserPrincipal::Anonymous,
+        );
+    };
+    let (Some(repository), Some(pepper), Some(session), Some(csrf)) = (
         state.account_repository.as_ref(),
         state.config.account_email_lookup_pepper.as_deref(),
         create_token(),
-    ) {
-        if let Some(email) = email {
-            match repository
-                .request_entry(
-                    &email,
-                    &hash_with_pepper(&email, pepper),
-                    &hash(&token),
-                    purpose,
-                )
+        create_token(),
+    ) else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    match repository
+        .signup_and_create_session(
+            &email,
+            &hash_with_pepper(&email, pepper),
+            &password_hash,
+            &hash(&session),
+            &hash(&csrf),
+        )
+        .await
+    {
+        Ok(SignupOutcome::Created) => authenticated_redirect(&session, &csrf),
+        Ok(SignupOutcome::AlreadyRegistered) => account_entry_response(
+            "/signup",
+            "Create your account",
+            Some("We could not create an account with those credentials."),
+            BrowserPrincipal::Anonymous,
+        ),
+        Err(error) => {
+            warn!(%error, "account signup failed");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
+}
+async fn login_submit(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(principal): Extension<BrowserPrincipal>,
+    Form(form): Form<AccountForm>,
+) -> Response {
+    if matches!(principal, BrowserPrincipal::Authenticated { .. }) {
+        return Redirect::to("/lab").into_response();
+    }
+    if !entry_csrf_valid(&state, &headers, &form.csrf) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let Some(email) = normalize_email(&form.email) else {
+        passwords::verify_dummy(&form.password);
+        return invalid_credentials_response();
+    };
+    let Some(repository) = state.account_repository.as_ref() else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let Some(pepper) = state.config.account_email_lookup_pepper.as_deref() else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let identity = match repository
+        .find_password_login_identity(&hash_with_pepper(&email, pepper))
+        .await
+    {
+        Ok(value) => value,
+        Err(error) => {
+            warn!(%error, "password login lookup failed");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let Some(identity) = identity else {
+        passwords::verify_dummy(&form.password);
+        return invalid_credentials_response();
+    };
+    let usable = identity.account_status == "active" && identity.identity_status != "disabled";
+    if !usable || identity.password_hash.is_empty() {
+        passwords::verify_dummy(&form.password);
+        return invalid_credentials_response();
+    }
+    if !passwords::verify(&form.password, &identity.password_hash) {
+        return invalid_credentials_response();
+    }
+    let (Some(session), Some(csrf)) = (create_token(), create_token()) else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    if passwords::needs_rehash(&identity.password_hash) {
+        if let Ok(replacement) = passwords::hash(&form.password) {
+            if let Err(error) = repository
+                .update_password_hash(identity.account_identity_id, &replacement)
                 .await
             {
-                Ok(entry) => {
-                    let link = format!(
-                        "{}/verify-email?token={}",
-                        state.config.public_web_base_url.trim_end_matches('/'),
-                        token
-                    );
-                    if let Err(error) = email::send_resend_magic_link(
-                        state.config.resend_api_key.as_deref(),
-                        state.config.email_from.as_deref(),
-                        &entry.email_normalized,
-                        &link,
-                    )
-                    .await
-                    {
-                        warn!(%error, "account entry email was not delivered");
-                    }
-                }
-                Err(error) => warn!(%error, "account entry request failed"),
+                warn!(%error, "password hash upgrade failed");
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
             }
         }
     }
-    Redirect::to("/login?check-email=1").into_response()
-}
-
-#[derive(Deserialize)]
-struct TokenQuery {
-    token: String,
-}
-async fn verify_email(Query(query): Query<TokenQuery>) -> Response {
-    if !is_valid_token(&query.token) {
-        return generic_link_response();
-    }
-    secret_html_response(VerifyEmailTemplate { token: query.token })
-}
-#[derive(Deserialize)]
-struct TokenForm {
-    token: String,
-}
-async fn confirm_email(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Form(form): Form<TokenForm>,
-) -> Response {
-    if !same_origin(&headers, &state.config.public_web_base_url) {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    let (Some(repository), Some(session), Some(csrf)) = (
-        state.account_repository.as_ref(),
-        create_token(),
-        create_token(),
-    ) else {
-        return generic_link_response();
-    };
     match repository
-        .consume_entry_and_create_session(&hash(&form.token), &hash(&session), &hash(&csrf))
+        .create_password_login_session(identity.account_identity_id, &hash(&session), &hash(&csrf))
         .await
     {
-        Ok(Some(_)) => {
-            let mut response = Redirect::to("/workspaces").into_response();
-            response
-                .headers_mut()
-                .append(SET_COOKIE, cookie_header(SESSION_COOKIE, &session, true));
-            response
-                .headers_mut()
-                .append(SET_COOKIE, cookie_header(CSRF_COOKIE, &csrf, false));
-            response
+        Ok(true) => authenticated_redirect(&session, &csrf),
+        Ok(false) => invalid_credentials_response(),
+        Err(error) => {
+            warn!(%error, "password login session creation failed");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
-        Ok(None) | Err(_) => generic_link_response(),
     }
+}
+
+fn account_entry_response(
+    action: &'static str,
+    heading: &'static str,
+    error: Option<&'static str>,
+    principal: BrowserPrincipal,
+) -> Response {
+    if matches!(principal, BrowserPrincipal::Authenticated { .. }) {
+        return Redirect::to("/lab").into_response();
+    }
+    let Some(csrf) = create_token() else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let mut response = secret_html_response(AccountEntryTemplate {
+        action,
+        heading,
+        csrf: csrf.clone(),
+        error,
+    });
+    response
+        .headers_mut()
+        .append(SET_COOKIE, cookie_header(CSRF_COOKIE, &csrf, false));
+    response
+}
+
+fn invalid_credentials_response() -> Response {
+    let mut response = account_entry_response(
+        "/login",
+        "Sign in",
+        Some("Invalid email or password."),
+        BrowserPrincipal::Anonymous,
+    );
+    *response.status_mut() = StatusCode::UNAUTHORIZED;
+    response
+}
+
+fn entry_csrf_valid(state: &AppState, headers: &HeaderMap, submitted: &str) -> bool {
+    same_origin(headers, &state.config.public_web_base_url)
+        && cookie_value(headers, CSRF_COOKIE) == Some(submitted)
+}
+
+fn authenticated_redirect(session: &str, csrf: &str) -> Response {
+    let mut response = Redirect::to("/lab").into_response();
+    response
+        .headers_mut()
+        .append(SET_COOKIE, cookie_header(SESSION_COOKIE, session, true));
+    response
+        .headers_mut()
+        .append(SET_COOKIE, cookie_header(CSRF_COOKIE, csrf, false));
+    response
 }
 
 #[derive(Deserialize)]
@@ -390,19 +459,10 @@ fn response_with_template(template: impl Template, secret: bool) -> Response {
     }
     response
 }
-fn generic_link_response() -> Response {
-    secret_html_response(MessageTemplate {
-        heading: "Link unavailable",
-        message: "This link is invalid or has expired. Request a new link to continue.",
-    })
-}
 fn create_token() -> Option<String> {
     let mut bytes = [0_u8; 32];
     getrandom::fill(&mut bytes).ok()?;
     Some(hex::encode(bytes))
-}
-fn is_valid_token(value: &str) -> bool {
-    value.len() == 64 && value.chars().all(|character| character.is_ascii_hexdigit())
 }
 pub(crate) fn hash(value: &str) -> Vec<u8> {
     Sha256::digest(value.as_bytes()).to_vec()
@@ -470,11 +530,8 @@ struct DocsTemplate {
 struct AccountEntryTemplate<'a> {
     action: &'a str,
     heading: &'a str,
-}
-#[derive(Template)]
-#[template(path = "web/verify_email.html")]
-struct VerifyEmailTemplate {
-    token: String,
+    csrf: String,
+    error: Option<&'a str>,
 }
 #[derive(Template)]
 #[template(path = "web/demo_key.html")]
@@ -491,63 +548,9 @@ struct MessageTemplate<'a> {
 
 #[cfg(test)]
 mod tests {
-    use axum::{
-        body::to_bytes,
-        http::{header::CACHE_CONTROL, header::REFERRER_POLICY, HeaderName},
-        response::IntoResponse,
-    };
+    use axum::http::{header::CACHE_CONTROL, header::REFERRER_POLICY, HeaderName};
 
     use super::*;
-
-    #[tokio::test]
-    async fn verify_email_rejects_malformed_or_oversized_tokens_without_reflecting_them() {
-        for token in ["not-a-token".to_string(), "a".repeat(65)] {
-            let response = verify_email(Query(TokenQuery {
-                token: token.clone(),
-            }))
-            .await;
-
-            assert_eq!(response.headers().get(CACHE_CONTROL).unwrap(), "no-store");
-            assert_eq!(
-                response.headers().get(REFERRER_POLICY).unwrap(),
-                "no-referrer"
-            );
-            assert_eq!(
-                response
-                    .headers()
-                    .get(HeaderName::from_static("x-robots-tag"))
-                    .unwrap(),
-                "noindex, nofollow"
-            );
-            let body = String::from_utf8(
-                to_bytes(response.into_body(), usize::MAX)
-                    .await
-                    .unwrap()
-                    .to_vec(),
-            )
-            .unwrap();
-            assert!(body.contains("Link unavailable"));
-            assert!(!body.contains(&token));
-        }
-    }
-
-    #[tokio::test]
-    async fn verify_email_accepts_a_64_character_hex_token() {
-        let token = "a".repeat(64);
-        let response = verify_email(Query(TokenQuery {
-            token: token.clone(),
-        }))
-        .await;
-        let body = String::from_utf8(
-            to_bytes(response.into_response().into_body(), usize::MAX)
-                .await
-                .unwrap()
-                .to_vec(),
-        )
-        .unwrap();
-
-        assert!(body.contains(&token));
-    }
 
     #[tokio::test]
     async fn access_responses_with_demo_intents_are_not_cacheable() {

@@ -62,6 +62,7 @@ fn beta_app_with_api_key_repository(api_key_repository: Option<ApiKeyRepository>
         api_key_repository,
         account_repository: None,
         workspace_repository: None,
+        portfolio_simulation_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
         defi_protocol_repository: None,
@@ -90,6 +91,7 @@ fn test_app_with_price_indexer(price_indexer_url: &str, timeout_ms: u64) -> Rout
         api_key_repository: None,
         account_repository: None,
         workspace_repository: None,
+        portfolio_simulation_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
         defi_protocol_repository: None,
@@ -225,8 +227,9 @@ async fn homepage_and_docs_link_only_to_available_web_and_api_surfaces() {
     assert!(home.contains("href=\"/scan\""));
     assert!(home.contains("href=\"/access\""));
     assert!(home.contains("href=\"/docs\""));
+    assert!(home.contains("href=\"/login\""));
+    assert!(home.contains("href=\"/signup\""));
     assert!(!home.contains("/app"));
-    assert!(!home.contains("/login"));
     assert!(!home.contains("/get-api-key"));
 
     let docs_response = test_app()
@@ -266,12 +269,8 @@ async fn docs_link_to_the_configured_machine_api_origin() {
 }
 
 #[tokio::test]
-async fn account_entry_and_link_confirmation_routes_are_human_html_only() {
-    for uri in [
-        "/signup",
-        "/login",
-        "/verify-email?token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    ] {
+async fn password_account_entry_routes_are_human_html_only() {
+    for (uri, expected_link) in [("/signup", "/login"), ("/login", "/signup")] {
         let response = test_app()
             .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
             .await
@@ -284,14 +283,41 @@ async fn account_entry_and_link_confirmation_routes_are_human_html_only() {
             .to_str()
             .unwrap()
             .starts_with("text/html"));
-        if uri.starts_with("/verify-email") {
-            assert_eq!(response.headers().get(CACHE_CONTROL).unwrap(), "no-store");
-            assert_eq!(
-                response.headers().get(REFERRER_POLICY).unwrap(),
-                "no-referrer"
-            );
-        }
+        assert_eq!(response.headers().get(CACHE_CONTROL).unwrap(), "no-store");
+        assert_eq!(
+            response.headers().get(REFERRER_POLICY).unwrap(),
+            "no-referrer"
+        );
+        let cookie = response
+            .headers()
+            .get("set-cookie")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(cookie.contains("__Host-ib_csrf="));
+        assert!(cookie.contains("Path=/; Secure; SameSite=Lax"));
+        assert!(!cookie.contains("HttpOnly"));
+
+        let body = String::from_utf8(
+            axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap();
+        assert!(body.contains(&format!("href=\"{expected_link}\"")), "{uri}");
     }
+
+    let response = test_app()
+        .oneshot(
+            Request::builder()
+                .uri("/verify-email?token=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -673,6 +699,7 @@ async fn beta_route_capabilities_preserve_balance_access_and_restrict_transfer_a
         api_key_repository: Some(repository),
         account_repository: None,
         workspace_repository: None,
+        portfolio_simulation_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
         defi_protocol_repository: None,
@@ -834,6 +861,33 @@ async fn realized_yield_is_generic_browser_lab_route_and_legacy_aave_route_is_ab
     }
 }
 
+#[tokio::test]
+async fn portfolio_simulation_is_a_private_browser_lab_route() {
+    let app = test_app();
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/lab/portfolio-simulation")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(response.headers().get("location").unwrap(), "/login");
+
+    let response = test_app()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/portfolio-simulation")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
 #[test]
 fn production_caddy_separates_machine_and_human_route_surfaces() {
     let caddyfile = include_str!(concat!(
@@ -848,7 +902,7 @@ fn production_caddy_separates_machine_and_human_route_surfaces() {
         .expect("Caddy must declare a dedicated web site");
     assert!(api_site.contains("path /v1/* /health /openapi.json"));
     assert!(!api_site.contains("/scan"));
-    assert!(web_site.contains("path / /scan /scan/* /access /access/demo /docs /docs/* /assets/* /signup /login /verify-email /logout /workspaces /workspaces/* /catalog /catalog/* /prices /prices/* /lab /lab/* /lab.json"));
+    assert!(web_site.contains("path / /scan /scan/* /access /access/demo /docs /docs/* /assets/* /signup /login /logout /workspaces /workspaces/* /catalog /catalog/* /prices /prices/* /lab /lab/* /lab.json"));
     assert!(!web_site.contains("/v1/*"));
     assert!(caddyfile.contains("reverse_proxy mother-api:3000"));
     assert!(!caddyfile.contains("CADDY_DOMAIN"));
@@ -984,6 +1038,7 @@ async fn assets_list_requests_batch_price_enrichment_by_slug() {
         api_key_repository: None,
         account_repository: None,
         workspace_repository: None,
+        portfolio_simulation_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(repository),
         defi_protocol_repository: None,
@@ -1155,6 +1210,7 @@ async fn asset_detail_requests_price_enrichment_by_slug() {
         api_key_repository: None,
         account_repository: None,
         workspace_repository: None,
+        portfolio_simulation_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(repository),
         defi_protocol_repository: None,

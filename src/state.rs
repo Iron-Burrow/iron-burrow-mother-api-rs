@@ -5,7 +5,7 @@ use crate::adapters::dis::{client::create_dis_client, DisClient};
 use crate::adapters::http::rate_limit::ApiKeyMinuteLimiter;
 use crate::adapters::postgres::{
     AccountRepository, ApiKeyRepository, DefiProtocolRepository, GlobalAssetRepository,
-    WorkspaceRepository,
+    PortfolioSimulationRepository, WorkspaceRepository,
 };
 use crate::adapters::price_indexer::{client::create_price_indexer_client, PriceIndexerClient};
 use crate::config::Config;
@@ -19,6 +19,7 @@ pub(crate) struct AppState {
     pub(crate) api_key_repository: Option<ApiKeyRepository>,
     pub(crate) account_repository: Option<AccountRepository>,
     pub(crate) workspace_repository: Option<WorkspaceRepository>,
+    pub(crate) portfolio_simulation_repository: Option<PortfolioSimulationRepository>,
     pub(crate) api_key_minute_limiter: ApiKeyMinuteLimiter,
     pub(crate) asset_repository: Option<GlobalAssetRepository>,
     pub(crate) defi_protocol_repository: Option<DefiProtocolRepository>,
@@ -39,6 +40,9 @@ impl AppState {
         let api_key_repository = database_pool.clone().map(ApiKeyRepository::database);
         let account_repository = database_pool.clone().map(AccountRepository::database);
         let workspace_repository = database_pool.clone().map(WorkspaceRepository::database);
+        let portfolio_simulation_repository = database_pool
+            .clone()
+            .map(PortfolioSimulationRepository::database);
         let asset_repository = database_pool.clone().map(GlobalAssetRepository::database);
         let defi_protocol_repository = database_pool.clone().map(DefiProtocolRepository::database);
         let price_indexer_client = create_price_indexer_client(&config);
@@ -52,6 +56,7 @@ impl AppState {
             api_key_repository,
             account_repository,
             workspace_repository,
+            portfolio_simulation_repository,
             api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
             asset_repository,
             defi_protocol_repository,
@@ -73,6 +78,7 @@ impl AppState {
             api_key_repository: None,
             account_repository: None,
             workspace_repository: None,
+            portfolio_simulation_repository: None,
             api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
             asset_repository: Some(asset_repository),
             defi_protocol_repository: None,
@@ -95,6 +101,7 @@ impl AppState {
             api_key_repository: None,
             account_repository: None,
             workspace_repository: None,
+            portfolio_simulation_repository: None,
             api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
             asset_repository: Some(asset_repository),
             defi_protocol_repository: None,

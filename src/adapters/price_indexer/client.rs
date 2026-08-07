@@ -205,6 +205,25 @@ impl PriceIndexerClient {
         self.get_signal(url).await
     }
 
+    /// Reads a bounded, absolute historical series from Price Indexer. This is
+    /// deliberately separate from the existing relative-window signal API so
+    /// simulations cannot accidentally use a present-day lookback window.
+    pub async fn historical_price_series(
+        &self,
+        slug: &str,
+        quote_currency: &str,
+        from: &str,
+        to: &str,
+    ) -> Result<HistoricalPriceSeries, PriceSignalError> {
+        let slug = slug.trim();
+        let quote_currency = quote_currency.trim();
+        if slug.is_empty() || quote_currency.is_empty() || from.is_empty() || to.is_empty() {
+            return Err(PriceSignalError::InvalidRequest);
+        }
+        self.get_signal(self.historical_price_series_url(slug, quote_currency, from, to))
+            .await
+    }
+
     async fn latest_by_slug_chunk(
         &self,
         slugs: &[String],
@@ -271,6 +290,26 @@ impl PriceIndexerClient {
 
     fn price_series_url(&self, request: &PriceSignalRequest) -> Result<Url, PriceSignalError> {
         self.price_signal_url("/prices/series", request)
+    }
+
+    fn historical_price_series_url(
+        &self,
+        slug: &str,
+        quote_currency: &str,
+        from: &str,
+        to: &str,
+    ) -> Url {
+        let mut url = self.base_url.clone();
+        let base_path = url.path().trim_end_matches('/');
+        url.set_path(&format!("{base_path}/prices/series"));
+        url.set_query(None);
+        url.query_pairs_mut()
+            .append_pair("slug", slug)
+            .append_pair("quoteCurrency", quote_currency)
+            .append_pair("from", from)
+            .append_pair("to", to)
+            .append_pair("granularity", "1d");
+        url
     }
 
     fn price_signal_url(
@@ -592,7 +631,7 @@ pub struct PriceSeriesPoint {
     pub derivation_path: Option<Vec<String>>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PriceSeriesMeta {
     pub expected_bucket_count: u32,
@@ -600,6 +639,34 @@ pub struct PriceSeriesMeta {
     pub carry_forward_bucket_count: u32,
     pub missing_bucket_count: u32,
     pub latest_tick_published_at_used: Option<String>,
+}
+
+/// Versioned internal Price Indexer response used by historical simulations.
+/// It intentionally retains only normalized provenance, never raw provider
+/// payloads. The upstream endpoint is the bounded absolute-range form of
+/// `/prices/series`.
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoricalPriceSeries {
+    pub asset_id: String,
+    pub quote_currency: String,
+    pub from: String,
+    pub to: String,
+    pub granularity: String,
+    pub points: Vec<HistoricalPricePoint>,
+    pub meta: PriceSeriesMeta,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoricalPricePoint {
+    pub bucket_start: String,
+    pub price: Option<String>,
+    pub status: String,
+    pub source_published_at: Option<String>,
+    pub source_type: Option<String>,
+    pub is_derived: Option<bool>,
+    pub derivation_path: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1166,6 +1233,24 @@ mod tests {
         );
         assert!(!query_pairs.iter().any(|(key, _)| key == "granularity"));
         assert_no_legacy_signal_params(&url);
+    }
+
+    #[test]
+    fn historical_series_uses_absolute_boundaries_not_a_relative_window() {
+        let client = PriceIndexerClient::new("http://price-indexer:3010/api", "secret", 2_000)
+            .expect("price indexer client should initialize");
+        let url = client.historical_price_series_url(
+            "bitcoin",
+            "USD",
+            "2025-01-01T00:00:00Z",
+            "2025-01-03T00:00:00Z",
+        );
+        assert_eq!(url.path(), "/api/prices/series");
+        let query = url.query().unwrap();
+        assert!(query.contains("from=2025-01-01T00%3A00%3A00Z"));
+        assert!(query.contains("to=2025-01-03T00%3A00%3A00Z"));
+        assert!(query.contains("granularity=1d"));
+        assert!(!query.contains("window"));
     }
 
     #[test]

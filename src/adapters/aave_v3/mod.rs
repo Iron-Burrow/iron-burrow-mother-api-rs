@@ -28,6 +28,16 @@ pub(crate) struct Result {
     pub(crate) warnings: Vec<String>,
 }
 
+/// One verified Aave reserve normalized-income observation. It is the
+/// reusable primitive behind both the realized-yield study and portfolio
+/// simulations; callers supply the canonical block evidence they resolved.
+#[derive(Clone, Debug)]
+pub(crate) struct IncomeIndexObservation {
+    pub(crate) asset_symbol: String,
+    pub(crate) underlying_asset_address: String,
+    pub(crate) income_index: String,
+}
+
 #[derive(Clone, Debug, thiserror::Error)]
 pub(crate) enum Error {
     #[error("unsupported asset")]
@@ -50,6 +60,40 @@ pub(crate) enum Error {
 pub(crate) struct AaveV3RealizedYieldAdapter;
 
 impl AaveV3RealizedYieldAdapter {
+    pub(crate) async fn income_index_at(
+        &self,
+        protocol: &RealizedYieldProtocol,
+        asset_slug: &str,
+        block_number: u64,
+        bigwig: &BigwigClient,
+    ) -> std::result::Result<IncomeIndexObservation, Error> {
+        if block_number == 0 {
+            return Err(Error::InvalidBlockRange);
+        }
+        let reserve = protocol
+            .reserves
+            .iter()
+            .find(|reserve| reserve.asset_slug == asset_slug)
+            .ok_or(Error::UnsupportedAsset)?;
+        let calldata = encode_get_reserve_normalized_income(&reserve.underlying_asset_address)?;
+        let raw = bigwig
+            .archive_rpc(
+                "eth_call",
+                json!([{"to": protocol.pool_address, "data": calldata}, format!("0x{block_number:x}")]),
+            )
+            .await
+            .map_err(|_| Error::Provider)?;
+        let income_index = decode_uint256(raw)?;
+        if income_index == BigUint::from(0u8) {
+            return Err(Error::InvalidIncomeIndex);
+        }
+        Ok(IncomeIndexObservation {
+            asset_symbol: reserve.asset_symbol.clone(),
+            underlying_asset_address: reserve.underlying_asset_address.clone(),
+            income_index: income_index.to_string(),
+        })
+    }
+
     pub(crate) async fn resolve(
         &self,
         protocol: &RealizedYieldProtocol,
@@ -63,11 +107,6 @@ impl AaveV3RealizedYieldAdapter {
         {
             return Err(Error::InvalidBlockRange);
         }
-        let reserve = protocol
-            .reserves
-            .iter()
-            .find(|reserve| reserve.asset_slug == request.asset_slug)
-            .ok_or(Error::UnsupportedAsset)?;
         let head = parse_hex_u64(
             bigwig
                 .archive_rpc("eth_blockNumber", json!([]))
@@ -77,26 +116,19 @@ impl AaveV3RealizedYieldAdapter {
         if request.to_block > head.saturating_sub(min_confirmations) {
             return Err(Error::BlockNotFinal);
         }
-        let calldata = encode_get_reserve_normalized_income(&reserve.underlying_asset_address)?;
-        let from_call = bigwig.archive_rpc(
-            "eth_call",
-            json!([{"to": protocol.pool_address, "data": calldata}, format!("0x{:x}", request.from_block)]),
-        );
-        let to_call = bigwig.archive_rpc(
-            "eth_call",
-            json!([{"to": protocol.pool_address, "data": calldata}, format!("0x{:x}", request.to_block)]),
-        );
-        let (from_raw, to_raw) = tokio::join!(from_call, to_call);
-        let from = decode_uint256(from_raw.map_err(|_| Error::Provider)?)?;
-        let to = decode_uint256(to_raw.map_err(|_| Error::Provider)?)?;
-        if from == BigUint::from(0u8) || to == BigUint::from(0u8) {
-            return Err(Error::InvalidIncomeIndex);
-        }
+        let (from, to) = tokio::try_join!(
+            self.income_index_at(protocol, &request.asset_slug, request.from_block, bigwig),
+            self.income_index_at(protocol, &request.asset_slug, request.to_block, bigwig),
+        )?;
+        let from_index = BigUint::parse_bytes(from.income_index.as_bytes(), 10)
+            .ok_or(Error::InvalidIncomeIndex)?;
+        let to_index = BigUint::parse_bytes(to.income_index.as_bytes(), 10)
+            .ok_or(Error::InvalidIncomeIndex)?;
         let mut warnings = Vec::new();
-        if to < from {
+        if to_index < from_index {
             warnings.push("decreasing_income_index".to_string());
         }
-        let realized_yield = ratio_minus_one(&to, &from)?;
+        let realized_yield = ratio_minus_one(&to_index, &from_index)?;
         let (from_timestamp, to_timestamp, annualized_apy_estimate) =
             if request.include_annualized_apy_estimate {
                 let from_block = bigwig.archive_rpc(
@@ -115,7 +147,8 @@ impl AaveV3RealizedYieldAdapter {
                     to_block.ok().and_then(|value| block_timestamp(value).ok()),
                 ) {
                     (Some(from_timestamp), Some(to_timestamp)) if to_timestamp > from_timestamp => {
-                        let apy = annualized_apy(&to, &from, to_timestamp - from_timestamp)?;
+                        let apy =
+                            annualized_apy(&to_index, &from_index, to_timestamp - from_timestamp)?;
                         (Some(from_timestamp), Some(to_timestamp), Some(apy))
                     }
                     _ => {
@@ -127,10 +160,10 @@ impl AaveV3RealizedYieldAdapter {
                 (None, None, None)
             };
         Ok(Result {
-            asset_symbol: reserve.asset_symbol.clone(),
-            underlying_asset_address: reserve.underlying_asset_address.clone(),
-            from_index: from.to_string(),
-            to_index: to.to_string(),
+            asset_symbol: from.asset_symbol,
+            underlying_asset_address: from.underlying_asset_address,
+            from_index: from_index.to_string(),
+            to_index: to_index.to_string(),
             realized_yield,
             from_timestamp,
             to_timestamp,
