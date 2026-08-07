@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-08-06
+last_reviewed: 2026-08-07
 agent_edit_policy: append_only
 ---
 
@@ -428,3 +428,18 @@ implementation, and documentation changes.
   No runtime route, OpenAPI operation, migration, or public API contract was
   added; exact integrations, Bigwig primitives, limits, and registry details
   remain acceptance blockers.
+
+## 2026-08-07
+
+- Replaced passwordless email-link account entry with Mother-owned Argon2id
+  email/password authentication and secure opaque browser sessions.
+- Removed `/verify-email` and Resend account-entry configuration while keeping
+  `/v1` bearer API keys, anonymous demo keys, existing account grants, and
+  Data Lab capability checks separate from browser authentication.
+- Added the additive `account_identity.password_hash` migration, CSRF-protected
+  no-store signup/login forms, and the SPEC-031 implementation record;
+  SPEC-016 is retained as superseded history.
+
+- Added the private Portfolio Strategy Simulation Lab with compiled BTC, ETH,
+  and Aave USDC studies, normalized historical evidence, append-only
+  account-owned `psr_*` records, and no `/v1` or OpenAPI surface.

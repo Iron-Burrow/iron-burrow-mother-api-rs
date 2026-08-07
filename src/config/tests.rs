@@ -339,13 +339,9 @@ fn production_account_entry_requires_a_non_default_public_web_url() {
     let _snapshots = capture_env_vars(&[
         "APP_ENV",
         "PUBLIC_WEB_BASE_URL",
-        "RESEND_API_KEY",
-        "EMAIL_FROM",
         "ACCOUNT_EMAIL_LOOKUP_PEPPER",
     ]);
     std::env::set_var("APP_ENV", "production");
-    std::env::set_var("RESEND_API_KEY", "resend-test-key");
-    std::env::set_var("EMAIL_FROM", "Mother API <noreply@example.test>");
     std::env::set_var("ACCOUNT_EMAIL_LOOKUP_PEPPER", "test-pepper");
 
     std::env::remove_var("PUBLIC_WEB_BASE_URL");

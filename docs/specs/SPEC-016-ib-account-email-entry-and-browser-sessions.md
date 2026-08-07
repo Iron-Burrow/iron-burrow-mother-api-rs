@@ -1,11 +1,15 @@
 ---
-status: accepted
+status: superseded
 owner: iron-burrow
-last_reviewed: 2026-07-31
+last_reviewed: 2026-08-07
 agent_edit_policy: update_when_relevant
+superseded_by: docs/specs/SPEC-031-ib-account-password-authentication.md
 ---
 
 # SPEC-016 - IBAccount Email Entry and Browser Sessions
+
+> Superseded by [SPEC-031](SPEC-031-ib-account-password-authentication.md).
+> This document records the former passwordless email-link implementation.
 
 ## Purpose
 

@@ -4,7 +4,6 @@ use uuid::Uuid;
 use super::errors::RepositoryError;
 use crate::domain::capabilities::Capability;
 
-const EMAIL_TOKEN_TTL_SECONDS: i64 = 15 * 60;
 const SESSION_ABSOLUTE_TTL_SECONDS: i64 = 8 * 60 * 60;
 const SESSION_IDLE_TTL_SECONDS: i64 = 30 * 60;
 const DEMO_INTENT_TTL_SECONDS: i64 = 10 * 60;
@@ -13,10 +12,18 @@ const DEMO_KEY_TTL_SECONDS: i64 = 24 * 60 * 60;
 #[derive(Clone, Debug)]
 pub(crate) struct AccountRepository(pub(crate) PgPool);
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SignupOutcome {
+    Created,
+    AlreadyRegistered,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct AccountEntry {
-    pub(crate) email_normalized: String,
-    pub(crate) public_id: String,
+pub(crate) struct PasswordLoginIdentity {
+    pub(crate) account_identity_id: Uuid,
+    pub(crate) password_hash: String,
+    pub(crate) account_status: String,
+    pub(crate) identity_status: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -37,100 +44,96 @@ impl AccountRepository {
         Self(pool)
     }
 
-    pub(crate) async fn request_entry(
+    pub(crate) async fn signup_and_create_session(
         &self,
         email_normalized: &str,
         email_lookup_hash: &[u8],
-        token_hash: &[u8],
-        purpose: &str,
-    ) -> Result<AccountEntry, RepositoryError> {
+        password_hash: &str,
+        session_hash: &[u8],
+        csrf_hash: &[u8],
+    ) -> Result<SignupOutcome, RepositoryError> {
         let mut tx = self.0.begin().await.map_err(RepositoryError::new)?;
-        let existing = sqlx::query_as::<_, IdentityRow>(
-            "select identity.id as identity_id, identity.email_normalized, account.public_id, identity.status as identity_status from mother_api.account_identity identity join mother_api.ib_account account on account.id = identity.ib_account_id where identity.email_lookup_hash = $1 for update",
+        let existing = sqlx::query_scalar::<_, Uuid>(
+            "select id from mother_api.account_identity where email_lookup_hash = $1 for update",
         )
         .bind(email_lookup_hash)
         .fetch_optional(&mut *tx)
         .await
         .map_err(RepositoryError::new)?;
 
-        let (identity_id, entry) = match existing {
-            Some(row) => (
-                row.identity_id,
-                AccountEntry {
-                    email_normalized: row.email_normalized,
-                    public_id: row.public_id,
-                },
-            ),
-            None => {
-                let account_id = Uuid::new_v4();
-                let public_id = format!("iba_{}", account_id.simple());
-                sqlx::query("insert into mother_api.ib_account (id, public_id) values ($1, $2)")
-                    .bind(account_id)
-                    .bind(&public_id)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(RepositoryError::new)?;
-                let identity_id = Uuid::new_v4();
-                sqlx::query("insert into mother_api.account_identity (id, ib_account_id, email_normalized, email_lookup_hash) values ($1, $2, $3, $4)")
-                    .bind(identity_id).bind(account_id).bind(email_normalized).bind(email_lookup_hash).execute(&mut *tx).await.map_err(RepositoryError::new)?;
-                (
-                    identity_id,
-                    AccountEntry {
-                        email_normalized: email_normalized.to_string(),
-                        public_id,
-                    },
-                )
-            }
-        };
+        if existing.is_some() {
+            tx.rollback().await.map_err(RepositoryError::new)?;
+            return Ok(SignupOutcome::AlreadyRegistered);
+        }
 
-        sqlx::query("update mother_api.email_verification set revoked_at = now() where account_identity_id = $1 and consumed_at is null and revoked_at is null")
-            .bind(identity_id).execute(&mut *tx).await.map_err(RepositoryError::new)?;
-        sqlx::query("insert into mother_api.email_verification (account_identity_id, purpose, secret_hash, expires_at) values ($1, $2, $3, now() + make_interval(secs => $4))")
-            .bind(identity_id).bind(purpose).bind(token_hash).bind(EMAIL_TOKEN_TTL_SECONDS).execute(&mut *tx).await.map_err(RepositoryError::new)?;
+        let account_id = Uuid::new_v4();
+        let public_id = format!("iba_{}", account_id.simple());
+        sqlx::query(
+            "insert into mother_api.ib_account (id, public_id, status) values ($1, $2, 'active')",
+        )
+        .bind(account_id)
+        .bind(&public_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(RepositoryError::new)?;
+        let identity_id = Uuid::new_v4();
+        sqlx::query("insert into mother_api.account_identity (id, ib_account_id, email_normalized, email_lookup_hash, password_hash) values ($1, $2, $3, $4, $5)")
+            .bind(identity_id).bind(account_id).bind(email_normalized).bind(email_lookup_hash).bind(password_hash).execute(&mut *tx).await.map_err(RepositoryError::new)?;
+        grant_baseline_capabilities(&mut tx, account_id).await?;
+        create_session(&mut tx, account_id, identity_id, session_hash, csrf_hash).await?;
         tx.commit().await.map_err(RepositoryError::new)?;
-        Ok(entry)
+        Ok(SignupOutcome::Created)
     }
 
-    pub(crate) async fn consume_entry_and_create_session(
+    pub(crate) async fn find_password_login_identity(
         &self,
-        token_hash: &[u8],
+        email_lookup_hash: &[u8],
+    ) -> Result<Option<PasswordLoginIdentity>, RepositoryError> {
+        sqlx::query_as::<_, PasswordLoginIdentityRow>(
+            "select identity.id as account_identity_id, identity.password_hash, account.status as account_status, identity.status as identity_status from mother_api.account_identity identity join mother_api.ib_account account on account.id = identity.ib_account_id where identity.email_lookup_hash = $1",
+        )
+        .bind(email_lookup_hash)
+        .fetch_optional(&self.0)
+        .await
+        .map_err(RepositoryError::new)
+        .map(|row| row.map(Into::into))
+    }
+
+    pub(crate) async fn create_password_login_session(
+        &self,
+        identity_id: Uuid,
         session_hash: &[u8],
         csrf_hash: &[u8],
-    ) -> Result<Option<String>, RepositoryError> {
+    ) -> Result<bool, RepositoryError> {
         let mut tx = self.0.begin().await.map_err(RepositoryError::new)?;
-        let row = sqlx::query_as::<_, EntryTokenRow>(
-            "select verification.id as verification_id, verification.purpose, identity.id as identity_id, account.id as account_id, account.public_id, identity.status as identity_status, account.status as account_status from mother_api.email_verification verification join mother_api.account_identity identity on identity.id = verification.account_identity_id join mother_api.ib_account account on account.id = identity.ib_account_id where verification.secret_hash = $1 and verification.consumed_at is null and verification.revoked_at is null and verification.expires_at > now() for update of verification, identity, account",
-        ).bind(token_hash).fetch_optional(&mut *tx).await.map_err(RepositoryError::new)?;
-        let Some(row) = row else {
-            return Ok(None);
+        let account_id = sqlx::query_scalar::<_, Uuid>(
+            "select account.id from mother_api.account_identity identity join mother_api.ib_account account on account.id = identity.ib_account_id where identity.id = $1 and identity.status <> 'disabled' and identity.password_hash is not null and account.status = 'active' for update of identity, account",
+        )
+        .bind(identity_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(RepositoryError::new)?;
+        let Some(account_id) = account_id else {
+            tx.rollback().await.map_err(RepositoryError::new)?;
+            return Ok(false);
         };
-        if row.account_status == "suspended"
-            || row.account_status == "closed"
-            || (row.purpose == "login" && row.identity_status != "verified")
-        {
-            return Ok(None);
-        }
-        sqlx::query("update mother_api.email_verification set consumed_at = now() where id = $1")
-            .bind(row.verification_id)
-            .execute(&mut *tx)
+        create_session(&mut tx, account_id, identity_id, session_hash, csrf_hash).await?;
+        tx.commit().await.map_err(RepositoryError::new)?;
+        Ok(true)
+    }
+
+    pub(crate) async fn update_password_hash(
+        &self,
+        identity_id: Uuid,
+        password_hash: &str,
+    ) -> Result<(), RepositoryError> {
+        sqlx::query("update mother_api.account_identity set password_hash = $2, updated_at = now() where id = $1")
+            .bind(identity_id)
+            .bind(password_hash)
+            .execute(&self.0)
             .await
             .map_err(RepositoryError::new)?;
-        sqlx::query("update mother_api.account_identity set status = 'verified', verified_at = coalesce(verified_at, now()), updated_at = now() where id = $1").bind(row.identity_id).execute(&mut *tx).await.map_err(RepositoryError::new)?;
-        sqlx::query("update mother_api.ib_account set status = 'active', updated_at = now() where id = $1 and status = 'pending_verification'").bind(row.account_id).execute(&mut *tx).await.map_err(RepositoryError::new)?;
-        for capability in Capability::ACCOUNT_BASELINE {
-            sqlx::query("insert into mother_api.ib_account_capability_grant (ib_account_id, capability_id, network_scope) values ($1, $2, '*') on conflict do nothing")
-                .bind(row.account_id).bind(capability.id()).execute(&mut *tx).await.map_err(RepositoryError::new)?;
-        }
-        for capability in Capability::DATALAB_BROWSER_BASELINE {
-            sqlx::query("insert into mother_api.ib_account_capability_grant (ib_account_id, capability_id, network_scope) values ($1, $2, '*') on conflict do nothing")
-                .bind(row.account_id).bind(capability.id()).execute(&mut *tx).await.map_err(RepositoryError::new)?;
-        }
-        sqlx::query("update mother_api.browser_session set revoked_at = now() where ib_account_id = $1 and revoked_at is null")
-            .bind(row.account_id).execute(&mut *tx).await.map_err(RepositoryError::new)?;
-        sqlx::query("insert into mother_api.browser_session (ib_account_id, account_identity_id, session_hash, csrf_hash, expires_at, idle_expires_at) values ($1, $2, $3, $4, now() + make_interval(secs => $5), now() + make_interval(secs => $6))")
-            .bind(row.account_id).bind(row.identity_id).bind(session_hash).bind(csrf_hash).bind(SESSION_ABSOLUTE_TTL_SECONDS).bind(SESSION_IDLE_TTL_SECONDS).execute(&mut *tx).await.map_err(RepositoryError::new)?;
-        tx.commit().await.map_err(RepositoryError::new)?;
-        Ok(Some(row.public_id))
+        Ok(())
     }
 
     pub(crate) async fn find_session(
@@ -138,7 +141,7 @@ impl AccountRepository {
         session_hash: &[u8],
     ) -> Result<Option<BrowserSessionLookup>, RepositoryError> {
         let row = sqlx::query_as::<_, SessionRow>(
-            "update mother_api.browser_session session set last_seen_at = now(), idle_expires_at = least(session.expires_at, now() + make_interval(secs => $2)) from mother_api.ib_account account where session.ib_account_id = account.id and session.session_hash = $1 and session.revoked_at is null and session.expires_at > now() and session.idle_expires_at > now() and account.status = 'active' returning session.ib_account_id, account.public_id, session.csrf_hash",
+            "update mother_api.browser_session session set last_seen_at = now(), idle_expires_at = least(session.expires_at, now() + make_interval(secs => $2)) from mother_api.ib_account account join mother_api.account_identity identity on identity.id = session.account_identity_id where session.ib_account_id = account.id and session.session_hash = $1 and session.revoked_at is null and session.expires_at > now() and session.idle_expires_at > now() and account.status = 'active' and identity.status <> 'disabled' returning session.ib_account_id, account.public_id, session.csrf_hash",
         ).bind(session_hash).bind(SESSION_IDLE_TTL_SECONDS).fetch_optional(&self.0).await.map_err(RepositoryError::new)?;
         Ok(row.map(Into::into))
     }
@@ -203,23 +206,50 @@ impl AccountRepository {
     }
 }
 
-#[derive(FromRow)]
-struct IdentityRow {
+async fn grant_baseline_capabilities(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    account_id: Uuid,
+) -> Result<(), RepositoryError> {
+    for capability in Capability::ACCOUNT_BASELINE
+        .into_iter()
+        .chain(Capability::DATALAB_BROWSER_BASELINE)
+    {
+        sqlx::query("insert into mother_api.ib_account_capability_grant (ib_account_id, capability_id, network_scope) values ($1, $2, '*') on conflict do nothing")
+            .bind(account_id).bind(capability.id()).execute(&mut **tx).await.map_err(RepositoryError::new)?;
+    }
+    Ok(())
+}
+
+async fn create_session(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    account_id: Uuid,
     identity_id: Uuid,
-    email_normalized: String,
-    public_id: String,
-    #[allow(dead_code)]
+    session_hash: &[u8],
+    csrf_hash: &[u8],
+) -> Result<(), RepositoryError> {
+    sqlx::query("update mother_api.browser_session set revoked_at = now() where ib_account_id = $1 and revoked_at is null")
+        .bind(account_id).execute(&mut **tx).await.map_err(RepositoryError::new)?;
+    sqlx::query("insert into mother_api.browser_session (ib_account_id, account_identity_id, session_hash, csrf_hash, expires_at, idle_expires_at) values ($1, $2, $3, $4, now() + make_interval(secs => $5), now() + make_interval(secs => $6))")
+        .bind(account_id).bind(identity_id).bind(session_hash).bind(csrf_hash).bind(SESSION_ABSOLUTE_TTL_SECONDS).bind(SESSION_IDLE_TTL_SECONDS).execute(&mut **tx).await.map_err(RepositoryError::new)?;
+    Ok(())
+}
+
+#[derive(FromRow)]
+struct PasswordLoginIdentityRow {
+    account_identity_id: Uuid,
+    password_hash: Option<String>,
+    account_status: String,
     identity_status: String,
 }
-#[derive(FromRow)]
-struct EntryTokenRow {
-    verification_id: Uuid,
-    purpose: String,
-    identity_id: Uuid,
-    account_id: Uuid,
-    public_id: String,
-    identity_status: String,
-    account_status: String,
+impl From<PasswordLoginIdentityRow> for PasswordLoginIdentity {
+    fn from(row: PasswordLoginIdentityRow) -> Self {
+        Self {
+            account_identity_id: row.account_identity_id,
+            password_hash: row.password_hash.unwrap_or_default(),
+            account_status: row.account_status,
+            identity_status: row.identity_status,
+        }
+    }
 }
 #[derive(FromRow)]
 struct SessionRow {
@@ -240,4 +270,111 @@ impl From<SessionRow> for BrowserSessionLookup {
 struct DemoKeyRow {
     api_key_id: Uuid,
     expires_at: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{domain::passwords, test_utils::postgres::migrated_pool};
+
+    async fn remove_identity(pool: &PgPool, lookup_hash: &[u8]) {
+        sqlx::query(
+            "delete from mother_api.ib_account where id in (select ib_account_id from mother_api.account_identity where email_lookup_hash = $1)",
+        )
+        .bind(lookup_hash)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn password_signup_creates_an_active_account_grants_and_rotating_session() {
+        let Some(pool) = migrated_pool().await else {
+            return;
+        };
+        let lookup_hash = [42_u8; 32];
+        remove_identity(&pool, &lookup_hash).await;
+        let repository = AccountRepository::database(pool.clone());
+        let password_hash = passwords::hash("correct horse battery staple").unwrap();
+
+        assert_eq!(
+            repository
+                .signup_and_create_session(
+                    "password-signup@example.test",
+                    &lookup_hash,
+                    &password_hash,
+                    &[1_u8; 32],
+                    &[2_u8; 32],
+                )
+                .await
+                .unwrap(),
+            SignupOutcome::Created
+        );
+        assert_eq!(
+            repository
+                .signup_and_create_session(
+                    "password-signup@example.test",
+                    &lookup_hash,
+                    &password_hash,
+                    &[3_u8; 32],
+                    &[4_u8; 32],
+                )
+                .await
+                .unwrap(),
+            SignupOutcome::AlreadyRegistered
+        );
+
+        let row = sqlx::query_as::<_, (Uuid, String, Option<String>, Option<String>, i64)>(
+            "select account.id, account.status, identity.password_hash, identity.verified_at::text, (select count(*) from mother_api.ib_account_capability_grant grant where grant.ib_account_id = account.id) from mother_api.ib_account account join mother_api.account_identity identity on identity.ib_account_id = account.id where identity.email_lookup_hash = $1",
+        )
+        .bind(lookup_hash.as_slice())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.1, "active");
+        assert_eq!(row.2.as_deref(), Some(password_hash.as_str()));
+        assert_eq!(row.3, None);
+        assert_eq!(row.4, 9);
+        assert!(repository
+            .find_session(&[1_u8; 32])
+            .await
+            .unwrap()
+            .is_some());
+
+        let identity = repository
+            .find_password_login_identity(&lookup_hash)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(passwords::verify(
+            "correct horse battery staple",
+            &identity.password_hash
+        ));
+        assert!(repository
+            .create_password_login_session(identity.account_identity_id, &[5_u8; 32], &[6_u8; 32])
+            .await
+            .unwrap());
+        assert!(repository
+            .find_session(&[1_u8; 32])
+            .await
+            .unwrap()
+            .is_none());
+        assert!(repository
+            .find_session(&[5_u8; 32])
+            .await
+            .unwrap()
+            .is_some());
+
+        sqlx::query("update mother_api.account_identity set status = 'disabled' where email_lookup_hash = $1")
+            .bind(lookup_hash.as_slice())
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(repository
+            .find_session(&[5_u8; 32])
+            .await
+            .unwrap()
+            .is_none());
+        remove_identity(&pool, &lookup_hash).await;
+    }
 }

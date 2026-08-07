@@ -1,19 +1,14 @@
-use std::collections::HashSet;
-
-use serde::Deserialize;
-use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
 
 use crate::domain::{
+    canonical_registry::{
+        embedded_catalog_json, parse_catalog_json as parse_canonical_catalog_json,
+        validate_catalog as validate_canonical_catalog, CanonicalAsset as AssetDeclaration,
+        CanonicalAssetChainMap as AssetChainMapDeclaration, CanonicalNetwork as NetworkDeclaration,
+        CanonicalRegistryError, CapabilityDeclaration, Catalog,
+    },
     capabilities::Capability,
-    validation::{is_asset_slug, is_evm_address},
 };
-
-const EMBEDDED_CATALOG_JSON: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/reference-data/catalog.json"
-));
-const CATALOG_VERSION: u32 = 2;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ReferenceDataError {
@@ -25,75 +20,13 @@ pub(crate) enum ReferenceDataError {
     Database(sqlx::Error),
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Catalog {
-    version: u32,
-    capabilities: Vec<CapabilityDeclaration>,
-    assets: Vec<AssetDeclaration>,
-    networks: Vec<NetworkDeclaration>,
-    asset_chain_maps: Vec<AssetChainMapDeclaration>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CapabilityDeclaration {
-    id: String,
-    description: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct AssetDeclaration {
-    slug: String,
-    symbol: String,
-    name: String,
-    asset_kind: String,
-    category: Option<String>,
-    canonical_path: String,
-    aliases: Vec<String>,
-    metadata: Value,
-    status: String,
-    sort_order: i32,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct NetworkDeclaration {
-    slug: String,
-    name: String,
-    family: String,
-    chain_id: Option<i64>,
-    caip2: Option<String>,
-    metadata: Value,
-    status: String,
-    sort_order: i32,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct AssetChainMapDeclaration {
-    asset_slug: String,
-    network_slug: String,
-    is_native: bool,
-    deployment_address: Option<String>,
-    deployment_block: Option<i64>,
-    decimals: Option<i32>,
-    token_standard: String,
-    metadata: Value,
-    status: String,
-    sort_order: i32,
-}
-
 pub(crate) async fn apply_embedded_catalog(pool: &PgPool) -> Result<(), ReferenceDataError> {
-    let catalog = parse_catalog_json(EMBEDDED_CATALOG_JSON)?;
+    let catalog = parse_catalog_json(embedded_catalog_json())?;
     apply_catalog(pool, &catalog).await
 }
 
 fn parse_catalog_json(json: &str) -> Result<Catalog, ReferenceDataError> {
-    let catalog = serde_json::from_str::<Catalog>(json).map_err(ReferenceDataError::Parse)?;
-    validate_catalog(&catalog)?;
-    Ok(catalog)
+    parse_canonical_catalog_json(json).map_err(map_registry_error)
 }
 
 async fn apply_catalog(pool: &PgPool, catalog: &Catalog) -> Result<(), ReferenceDataError> {
@@ -215,281 +148,13 @@ async fn seed_aave_v3_realized_yield_protocol(
 }
 
 fn validate_catalog(catalog: &Catalog) -> Result<(), ReferenceDataError> {
-    if catalog.version != CATALOG_VERSION {
-        return invalid(format!(
-            "unsupported catalog version {}, expected {CATALOG_VERSION}",
-            catalog.version
-        ));
-    }
-
-    let mut asset_slugs = HashSet::new();
-    for asset in &catalog.assets {
-        validate_asset(asset)?;
-        if !asset_slugs.insert(asset.slug.as_str()) {
-            return invalid(format!("duplicate asset slug {:?}", asset.slug));
-        }
-    }
-
-    let mut declared_capabilities = HashSet::new();
-    for capability in &catalog.capabilities {
-        validate_non_empty("capability id", &capability.id)?;
-        validate_non_empty("capability description", &capability.description)?;
-        if Capability::parse(&capability.id).is_none() {
-            return invalid(format!("unknown capability id {:?}", capability.id));
-        }
-        if !declared_capabilities.insert(capability.id.as_str()) {
-            return invalid(format!("duplicate capability id {:?}", capability.id));
-        }
-    }
-
-    let required_capabilities = Capability::ALL
-        .into_iter()
-        .map(Capability::id)
-        .collect::<HashSet<_>>();
-    if declared_capabilities != required_capabilities {
-        return invalid("capability declarations must match the application registry".to_string());
-    }
-
-    let mut network_slugs = HashSet::new();
-    for network in &catalog.networks {
-        validate_network(network)?;
-        if !network_slugs.insert(network.slug.as_str()) {
-            return invalid(format!("duplicate network slug {:?}", network.slug));
-        }
-    }
-
-    let mut mapping_keys = HashSet::new();
-    let mut active_native_networks = HashSet::new();
-    let mut active_network_addresses = HashSet::new();
-
-    for mapping in &catalog.asset_chain_maps {
-        validate_mapping(mapping)?;
-
-        if !asset_slugs.contains(mapping.asset_slug.as_str()) {
-            return invalid(format!(
-                "asset_chain_map references undeclared asset {:?}",
-                mapping.asset_slug
-            ));
-        }
-        if !network_slugs.contains(mapping.network_slug.as_str()) {
-            return invalid(format!(
-                "asset_chain_map references undeclared network {:?}",
-                mapping.network_slug
-            ));
-        }
-
-        let mapping_key = (mapping.asset_slug.as_str(), mapping.network_slug.as_str());
-        if !mapping_keys.insert(mapping_key) {
-            return invalid(format!(
-                "duplicate asset_chain_map identity ({:?}, {:?})",
-                mapping.asset_slug, mapping.network_slug
-            ));
-        }
-
-        if mapping.status == "active"
-            && mapping.is_native
-            && !active_native_networks.insert(mapping.network_slug.as_str())
-        {
-            return invalid(format!(
-                "duplicate active native mapping for network {:?}",
-                mapping.network_slug
-            ));
-        }
-
-        if mapping.status == "active" {
-            if let Some(address) = mapping.deployment_address.as_deref() {
-                let address_key = (mapping.network_slug.as_str(), address);
-                if !active_network_addresses.insert(address_key) {
-                    return invalid(format!(
-                        "duplicate active deployment address {:?} on network {:?}",
-                        address, mapping.network_slug
-                    ));
-                }
-            }
-        }
-    }
-
-    Ok(())
+    validate_canonical_catalog(catalog).map_err(map_registry_error)
 }
 
-fn validate_asset(asset: &AssetDeclaration) -> Result<(), ReferenceDataError> {
-    validate_slug("asset slug", &asset.slug)?;
-    validate_non_empty("asset symbol", &asset.symbol)?;
-    validate_non_empty("asset name", &asset.name)?;
-    validate_non_empty("asset kind", &asset.asset_kind)?;
-    if let Some(category) = asset.category.as_deref() {
-        validate_non_empty("asset category", category)?;
-    }
-    if asset.canonical_path != format!("/assets/{}", asset.slug) {
-        return invalid(format!(
-            "asset {:?} has invalid canonical_path {:?}",
-            asset.slug, asset.canonical_path
-        ));
-    }
-    validate_status("asset", &asset.status)?;
-    validate_sort_order("asset", asset.sort_order)?;
-    validate_aliases(&asset.slug, &asset.aliases)?;
-    validate_metadata("asset", &asset.slug, &asset.metadata)
-}
-
-fn validate_network(network: &NetworkDeclaration) -> Result<(), ReferenceDataError> {
-    validate_slug("network slug", &network.slug)?;
-    validate_non_empty("network name", &network.name)?;
-    validate_non_empty("network family", &network.family)?;
-    validate_status("network", &network.status)?;
-    validate_sort_order("network", network.sort_order)?;
-    validate_metadata("network", &network.slug, &network.metadata)?;
-
-    if network.family == "evm" {
-        let chain_id = network
-            .chain_id
-            .filter(|chain_id| *chain_id > 0)
-            .ok_or_else(|| {
-                ReferenceDataError::Invalid(format!(
-                    "evm network {:?} requires positive chain_id",
-                    network.slug
-                ))
-            })?;
-        let expected_caip2 = format!("eip155:{chain_id}");
-        if network.caip2.as_deref() != Some(expected_caip2.as_str()) {
-            return invalid(format!(
-                "evm network {:?} requires caip2 {:?}",
-                network.slug, expected_caip2
-            ));
-        }
-    }
-
-    Ok(())
-}
-
-fn validate_mapping(mapping: &AssetChainMapDeclaration) -> Result<(), ReferenceDataError> {
-    validate_slug("mapping asset_slug", &mapping.asset_slug)?;
-    validate_slug("mapping network_slug", &mapping.network_slug)?;
-    validate_status("mapping", &mapping.status)?;
-    validate_sort_order("mapping", mapping.sort_order)?;
-    validate_metadata("mapping", &mapping.asset_slug, &mapping.metadata)?;
-
-    let decimals = mapping.decimals.ok_or_else(|| {
-        ReferenceDataError::Invalid(format!(
-            "mapping ({:?}, {:?}) requires decimals",
-            mapping.asset_slug, mapping.network_slug
-        ))
-    })?;
-    if !(0..=255).contains(&decimals) {
-        return invalid(format!(
-            "mapping ({:?}, {:?}) has invalid decimals {}",
-            mapping.asset_slug, mapping.network_slug, decimals
-        ));
-    }
-
-    if mapping.is_native {
-        if mapping.deployment_address.is_some() {
-            return invalid(format!(
-                "native mapping ({:?}, {:?}) must not declare deployment_address",
-                mapping.asset_slug, mapping.network_slug
-            ));
-        }
-        if mapping.token_standard != "native" {
-            return invalid(format!(
-                "native mapping ({:?}, {:?}) requires token_standard \"native\"",
-                mapping.asset_slug, mapping.network_slug
-            ));
-        }
-        return Ok(());
-    }
-
-    validate_non_empty("mapping token_standard", &mapping.token_standard)?;
-    if mapping.token_standard == "native" {
-        return invalid(format!(
-            "non-native mapping ({:?}, {:?}) must not use token_standard \"native\"",
-            mapping.asset_slug, mapping.network_slug
-        ));
-    }
-
-    let Some(address) = mapping.deployment_address.as_deref() else {
-        return invalid(format!(
-            "non-native mapping ({:?}, {:?}) requires deployment_address",
-            mapping.asset_slug, mapping.network_slug
-        ));
-    };
-
-    if address != address.to_ascii_lowercase() {
-        return invalid(format!(
-            "mapping ({:?}, {:?}) requires lowercase deployment_address",
-            mapping.asset_slug, mapping.network_slug
-        ));
-    }
-
-    if mapping.token_standard == "erc20" && !is_evm_address(address) {
-        return invalid(format!(
-            "erc20 mapping ({:?}, {:?}) has invalid deployment_address {:?}",
-            mapping.asset_slug, mapping.network_slug, address
-        ));
-    }
-
-    Ok(())
-}
-
-fn validate_slug(label: &str, slug: &str) -> Result<(), ReferenceDataError> {
-    if is_asset_slug(slug) {
-        Ok(())
-    } else {
-        invalid(format!("{label} {slug:?} is not normalized"))
-    }
-}
-
-fn validate_non_empty(label: &str, value: &str) -> Result<(), ReferenceDataError> {
-    if value.trim().is_empty() {
-        invalid(format!("{label} must not be empty"))
-    } else {
-        Ok(())
-    }
-}
-
-fn validate_aliases(asset_slug: &str, aliases: &[String]) -> Result<(), ReferenceDataError> {
-    let mut seen = HashSet::new();
-    for alias in aliases {
-        if alias.is_empty() || alias.trim() != alias || alias != &alias.to_ascii_lowercase() {
-            return invalid(format!(
-                "asset {asset_slug:?} has non-normalized alias {alias:?}"
-            ));
-        }
-        if !seen.insert(alias.as_str()) {
-            return invalid(format!(
-                "asset {asset_slug:?} has duplicate alias {alias:?}"
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn validate_status(owner: &str, status: &str) -> Result<(), ReferenceDataError> {
-    match status {
-        "active" | "inactive" | "deprecated" | "hidden" | "pending" | "unsupported"
-        | "archived" => Ok(()),
-        _ => invalid(format!("{owner} has invalid status {status:?}")),
-    }
-}
-
-fn validate_sort_order(owner: &str, sort_order: i32) -> Result<(), ReferenceDataError> {
-    if sort_order < 0 {
-        invalid(format!("{owner} has negative sort_order {sort_order}"))
-    } else {
-        Ok(())
-    }
-}
-
-fn validate_metadata(
-    owner: &str,
-    identity: &str,
-    metadata: &Value,
-) -> Result<(), ReferenceDataError> {
-    if metadata.is_object() {
-        Ok(())
-    } else {
-        invalid(format!(
-            "{owner} {identity:?} metadata must be a JSON object"
-        ))
+fn map_registry_error(error: CanonicalRegistryError) -> ReferenceDataError {
+    match error {
+        CanonicalRegistryError::Parse(error) => ReferenceDataError::Parse(error),
+        CanonicalRegistryError::Invalid(message) => ReferenceDataError::Invalid(message),
     }
 }
 
@@ -765,10 +430,6 @@ async fn upsert_asset_chain_map(
     Ok(())
 }
 
-fn invalid<T>(message: String) -> Result<T, ReferenceDataError> {
-    Err(ReferenceDataError::Invalid(message))
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -778,7 +439,7 @@ mod tests {
 
     #[test]
     fn embedded_catalog_parses_and_validates() {
-        parse_catalog_json(EMBEDDED_CATALOG_JSON).unwrap();
+        parse_catalog_json(embedded_catalog_json()).unwrap();
     }
 
     #[test]
@@ -1028,7 +689,7 @@ mod tests {
         let chain_id = unique_chain_id(suffix);
 
         Catalog {
-            version: CATALOG_VERSION,
+            version: crate::domain::canonical_registry::CATALOG_VERSION,
             capabilities: Capability::ALL
                 .into_iter()
                 .map(|capability| CapabilityDeclaration {

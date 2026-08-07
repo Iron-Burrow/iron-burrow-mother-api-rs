@@ -27,6 +27,6 @@ pub(crate) enum ConfigError {
     },
     #[error("HTTP_HOST and HTTP_PORT must form a valid socket address, got {host}:{port}")]
     InvalidSocketAddress { host: String, port: u16 },
-    #[error("production account entry requires a non-default PUBLIC_WEB_BASE_URL, RESEND_API_KEY, EMAIL_FROM, and ACCOUNT_EMAIL_LOOKUP_PEPPER")]
+    #[error("production account entry requires a non-default PUBLIC_WEB_BASE_URL and ACCOUNT_EMAIL_LOOKUP_PEPPER")]
     MissingProductionAccountEntryConfig,
 }

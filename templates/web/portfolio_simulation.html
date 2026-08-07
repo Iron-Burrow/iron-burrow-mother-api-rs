@@ -1,0 +1,54 @@
+{% extends "web/base.html" %}
+{% block title %}Portfolio simulation · Iron Burrow{% endblock %}
+{% block content %}
+<h1>Portfolio strategy simulation</h1>
+<p>Run a deterministic historical study over verified price and protocol evidence. This is research, not execution or investment advice.</p>
+{% match error %}{% when Some with (message) %}<p class="alert">{{ message }}</p>{% when None %}{% endmatch %}
+<form class="entry-form" method="post" action="/lab/portfolio-simulation/runs">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>Initial capital <input name="initial_capital" inputmode="decimal" value="10000" required></label>
+  <label>Quote currency <select name="quote_currency"><option value="USD">USD</option></select></label>
+  <label>Start date <input name="start_date" type="date" required></label>
+  <label>End date <input name="end_date" type="date" required></label>
+  <label>Strategy <select name="strategy_slug" required>
+    <option value="btc-hold">BTC Hold</option>
+    <option value="eth-hold">ETH Hold</option>
+    <option value="aave-usdc-supply">Aave USDC Supply</option>
+  </select></label>
+  <button type="submit">Run simulation</button>
+</form>
+{% match run %}{% when Some with (value) %}
+<section class="simulation-result">
+  <h2>Simulation result</h2>
+  <dl>
+    <dt>Run</dt><dd><code>{{ value.public_id }}</code> · {{ value.created_at }}</dd>
+    <dt>Status</dt><dd>{{ value.outcome }}</dd>
+    <dt>Strategy</dt><dd>{{ value.strategy_slug }}@{{ value.strategy_version }} · engine {{ value.engine_version }}</dd>
+    <dt>Period</dt><dd>{{ value.period }}</dd>
+    <dt>Initial value</dt><dd>{{ value.initial_value }} USD</dd>
+    <dt>Final value</dt><dd>{{ value.final_value }} USD</dd>
+    <dt>Absolute return</dt><dd>{{ value.absolute_return }} USD</dd>
+    <dt>Percentage return</dt><dd>{{ value.percentage_return }}</dd>
+    <dt>Annualized return</dt><dd>{{ value.annualized_return }}</dd>
+    <dt>Maximum drawdown</dt><dd>{{ value.maximum_drawdown }}</dd>
+    <dt>Evidence digest</dt><dd><code>{{ value.evidence_digest }}</code></dd>
+    <dt>Evidence</dt><dd>schema {{ value.request_schema_version }} · {{ value.price_evidence_points }} normalized price points · {{ value.aave_evidence_points }} Aave index points</dd>
+  </dl>
+  {% if !value.chart_points.is_empty() %}
+  <h3>Portfolio value over time</h3>
+  <svg class="simulation-chart" viewBox="0 0 100 100" role="img" aria-label="Portfolio value timeline">
+    <polyline fill="none" stroke="currentColor" stroke-width="2" points="{{ value.chart_points }}" />
+  </svg>
+  {% endif %}
+  <h3>Operations</h3>
+  <table><thead><tr><th>Time</th><th>Operation</th><th>From</th><th>To</th><th>Amount</th><th>Fees</th><th>Reason</th></tr></thead><tbody>
+  {% for operation in value.operations %}<tr><td>{{ operation.timestamp }}</td><td>{{ operation.operation_type }}</td><td>{{ operation.from_position }}</td><td>{{ operation.to_position }}</td><td>{{ operation.amount }}</td><td>{{ operation.fees }}</td><td>{{ operation.reason }}</td></tr>{% endfor %}
+  </tbody></table>
+  <h3>Value timeline</h3>
+  <table><thead><tr><th>Time</th><th>Value (USD)</th><th>Price evidence</th></tr></thead><tbody>
+  {% for snapshot in value.snapshots %}<tr><td>{{ snapshot.timestamp }}</td><td>{{ snapshot.value }}</td><td>{{ snapshot.price_status }}</td></tr>{% endfor %}
+  </tbody></table>
+  <h3>Limitations</h3><ul>{% for limitation in value.limitations %}<li>{{ limitation }}</li>{% endfor %}</ul>
+</section>
+{% when None %}{% endmatch %}
+{% endblock %}
