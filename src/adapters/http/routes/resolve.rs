@@ -23,15 +23,8 @@ pub async fn assets_resolve(
     Query(params): Query<ResolveQuery>,
 ) -> Result<Json<ResolveResponse>, ApiError> {
     let query = parse_query(params.q.as_deref()).map_err(query_error_to_api_error)?;
-    let repository = state
-        .asset_repository
-        .clone()
-        .ok_or_else(ApiError::database_unavailable)?;
-    let service = ResolveService::new(repository);
-    let response = service
-        .resolve(query)
-        .await
-        .map_err(|_| ApiError::database_unavailable())?;
+    let service = ResolveService::new(state.canonical_registry.clone());
+    let response = service.resolve(query);
 
     Ok(Json(response))
 }

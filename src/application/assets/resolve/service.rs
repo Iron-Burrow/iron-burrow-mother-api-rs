@@ -1,9 +1,8 @@
+use std::sync::Arc;
+
 use serde::Serialize;
 
-use crate::adapters::postgres::errors::RepositoryError;
-use crate::adapters::postgres::global_assets::GlobalAssetRepository;
-use crate::domain::assets::asset_match::AssetMatch;
-use crate::domain::assets::global_assets::GlobalAsset;
+use crate::domain::canonical_registry::{CanonicalAsset, CanonicalAssetMatch, CanonicalRegistry};
 
 use super::query::NormalizedQuery;
 
@@ -12,35 +11,27 @@ const UNKNOWN_MESSAGE: &str =
 
 #[derive(Clone, Debug)]
 pub struct ResolveService {
-    repository: GlobalAssetRepository,
+    registry: Arc<CanonicalRegistry>,
 }
 
 impl ResolveService {
-    pub fn new(repository: GlobalAssetRepository) -> Self {
-        Self { repository }
+    pub fn new(registry: Arc<CanonicalRegistry>) -> Self {
+        Self { registry }
     }
 
-    pub async fn resolve(
-        &self,
-        query: NormalizedQuery,
-    ) -> Result<ResolveResponse, RepositoryError> {
-        if let Some(asset_match) = self
-            .repository
-            .find_confident_match(&query.normalized)
-            .await?
-        {
-            return Ok(ResolveResponse::resolved(query, asset_match));
+    pub fn resolve(&self, query: NormalizedQuery) -> ResolveResponse {
+        if let Some(asset_match) = self.registry.find_confident_asset(&query.normalized) {
+            return ResolveResponse::resolved(query, asset_match);
         }
 
         let recommendations = self
-            .repository
-            .list_recommendations(&query.normalized, 3)
-            .await?
+            .registry
+            .recommendations(&query.normalized, 3)
             .into_iter()
             .map(Recommendation::from)
             .collect();
 
-        Ok(ResolveResponse::unknown(query, recommendations))
+        ResolveResponse::unknown(query, recommendations)
     }
 }
 
@@ -55,7 +46,7 @@ pub struct ResolveResponse {
 }
 
 impl ResolveResponse {
-    fn resolved(query: NormalizedQuery, asset_match: AssetMatch) -> Self {
+    fn resolved(query: NormalizedQuery, asset_match: CanonicalAssetMatch<'_>) -> Self {
         Self {
             ok: true,
             response_type: "resolve",
@@ -114,7 +105,7 @@ enum ResolveResult {
     },
 }
 
-fn asset_resource_url(asset: &GlobalAsset) -> String {
+fn asset_resource_url(asset: &CanonicalAsset) -> String {
     format!("/v1/assets/{}", asset.slug)
 }
 
@@ -126,13 +117,16 @@ struct AssetPayload {
     category: String,
 }
 
-impl From<GlobalAsset> for AssetPayload {
-    fn from(asset: GlobalAsset) -> Self {
+impl From<&CanonicalAsset> for AssetPayload {
+    fn from(asset: &CanonicalAsset) -> Self {
         Self {
-            asset_id: asset.slug,
-            symbol: asset.symbol,
-            name: asset.name,
-            category: asset.category,
+            asset_id: asset.slug.clone(),
+            symbol: asset.symbol.clone(),
+            name: asset.name.clone(),
+            category: asset
+                .category
+                .clone()
+                .unwrap_or_else(|| asset.asset_kind.clone()),
         }
     }
 }
@@ -145,8 +139,8 @@ struct Recommendation {
     reason: &'static str,
 }
 
-impl From<GlobalAsset> for Recommendation {
-    fn from(asset: GlobalAsset) -> Self {
+impl From<&CanonicalAsset> for Recommendation {
+    fn from(asset: &CanonicalAsset) -> Self {
         Self {
             kind: "asset",
             canonical_path: asset.canonical_path.clone(),
@@ -159,20 +153,16 @@ impl From<GlobalAsset> for Recommendation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::postgres::global_assets::GlobalAssetRepository;
     use crate::application::assets::resolve::query::parse_query;
-    use crate::test_utils::fixtures::global_assets::sample_assets;
+    use crate::state::embedded_canonical_registry;
 
     fn service() -> ResolveService {
-        ResolveService::new(GlobalAssetRepository::in_memory(sample_assets()))
+        ResolveService::new(embedded_canonical_registry())
     }
 
-    #[tokio::test]
-    async fn resolves_usdc_alias() {
-        let response = service()
-            .resolve(parse_query(Some("usdc coin usd")).unwrap())
-            .await
-            .unwrap();
+    #[test]
+    fn resolves_usdc_alias() {
+        let response = service().resolve(parse_query(Some("usdc coin usd")).unwrap());
         let json = serde_json::to_value(response).unwrap();
 
         assert_eq!(json["resolved"], true);
@@ -181,13 +171,10 @@ mod tests {
         assert_eq!(json["result"]["confidence"], "alias_exact");
     }
 
-    #[tokio::test]
-    async fn resolves_gold_aliases() {
+    #[test]
+    fn resolves_gold_aliases() {
         for query in ["oro de ley", "oro", "gold", "xau"] {
-            let response = service()
-                .resolve(parse_query(Some(query)).unwrap())
-                .await
-                .unwrap();
+            let response = service().resolve(parse_query(Some(query)).unwrap());
             let json = serde_json::to_value(response).unwrap();
 
             assert_eq!(json["resolved"], true);
@@ -195,13 +182,10 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn resolves_wrapped_bitcoin_aliases() {
+    #[test]
+    fn resolves_wrapped_bitcoin_aliases() {
         for query in ["wbtc", "wrapped bitcoin", "wrapped btc"] {
-            let response = service()
-                .resolve(parse_query(Some(query)).unwrap())
-                .await
-                .unwrap();
+            let response = service().resolve(parse_query(Some(query)).unwrap());
             let json = serde_json::to_value(response).unwrap();
 
             assert_eq!(json["resolved"], true);
@@ -209,13 +193,10 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn leaves_network_only_aliases_unresolved() {
+    #[test]
+    fn leaves_network_only_aliases_unresolved() {
         for query in ["base", "base mainnet", "coinbase base"] {
-            let response = service()
-                .resolve(parse_query(Some(query)).unwrap())
-                .await
-                .unwrap();
+            let response = service().resolve(parse_query(Some(query)).unwrap());
             let json = serde_json::to_value(response).unwrap();
 
             assert_eq!(json["resolved"], false);
@@ -223,12 +204,9 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn returns_unknown_with_recommendations() {
-        let response = service()
-            .resolve(parse_query(Some("some unknown thing")).unwrap())
-            .await
-            .unwrap();
+    #[test]
+    fn returns_unknown_with_recommendations() {
+        let response = service().resolve(parse_query(Some("some unknown thing")).unwrap());
         let json = serde_json::to_value(response).unwrap();
 
         assert_eq!(json["resolved"], false);

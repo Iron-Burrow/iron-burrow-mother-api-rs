@@ -1,3 +1,5 @@
+#![allow(dead_code)] // Legacy PostgreSQL resolution mapper; PR5 removes this reader.
+
 use sqlx::FromRow;
 
 use crate::domain::assets::asset_match::{AssetMatch, ExactMatchConfidence};

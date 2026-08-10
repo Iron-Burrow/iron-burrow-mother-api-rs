@@ -64,6 +64,7 @@ impl GlobalAssetRepository {
         Self::InMemory(Arc::new(InMemoryGlobalAssets { assets, chain_maps }))
     }
 
+    #[allow(dead_code)] // Legacy PostgreSQL resolution reader; PR5 removes it.
     pub async fn find_confident_match(
         &self,
         normalized_query: &str,
@@ -77,6 +78,7 @@ impl GlobalAssetRepository {
         }
     }
 
+    #[allow(dead_code)] // Legacy PostgreSQL resolution reader; PR5 removes it.
     pub async fn list_recommendations(
         &self,
         normalized_query: &str,
@@ -180,6 +182,7 @@ fn map_row(row: GlobalAssetRow) -> GlobalAsset {
     }
 }
 
+#[allow(dead_code)] // Legacy PostgreSQL resolution reader; PR5 removes it.
 async fn find_confident_match_db(
     pool: &PgPool,
     normalized_query: &str,
@@ -233,6 +236,7 @@ async fn find_confident_match_db(
     Ok(row.map(map_match_row))
 }
 
+#[allow(dead_code)] // Legacy PostgreSQL resolution reader; PR5 removes it.
 async fn list_recommendations_db(
     pool: &PgPool,
     normalized_query: &str,
@@ -519,6 +523,7 @@ async fn load_erc20_token_catalog_rows_db(
     .map_err(RepositoryError::new)
 }
 
+#[allow(dead_code)] // Legacy PostgreSQL resolution reader; PR5 removes it.
 fn find_confident_match_in_memory(
     assets: &[GlobalAsset],
     normalized_query: &str,
@@ -753,6 +758,7 @@ fn load_erc20_token_catalog_rows_in_memory(
     rows.into_iter().map(|(_, _, row)| row).collect()
 }
 
+#[allow(dead_code)] // Legacy PostgreSQL resolution reader; PR5 removes it.
 fn list_recommendations_in_memory(
     assets: &[GlobalAsset],
     normalized_query: &str,
@@ -788,6 +794,7 @@ fn list_assets_in_memory(assets: &[GlobalAsset], limit: usize) -> Vec<GlobalAsse
     assets
 }
 
+#[allow(dead_code)] // Legacy PostgreSQL resolution reader; PR5 removes it.
 fn asset_contains(asset: &GlobalAsset, normalized_query: &str) -> bool {
     let query = normalized_query.to_ascii_lowercase();
     asset.slug.to_ascii_lowercase().contains(&query)
@@ -799,6 +806,7 @@ fn asset_contains(asset: &GlobalAsset, normalized_query: &str) -> bool {
             .any(|alias| alias.to_ascii_lowercase().contains(&query))
 }
 
+#[allow(dead_code)] // Legacy PostgreSQL resolution reader; PR5 removes it.
 fn escape_like_pattern(value: &str) -> String {
     value
         .replace('\\', "\\\\")

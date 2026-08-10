@@ -19,6 +19,7 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 use super::*;
+use crate::state::AppState;
 use crate::test_utils::fixtures::global_assets::sample_assets;
 use crate::{
     adapters::http::rate_limit::ApiKeyMinuteLimiter,
@@ -34,7 +35,6 @@ use crate::{
         capabilities::{Capability, CapabilityGrant, NetworkScope},
     },
 };
-use crate::{domain::assets::global_assets::GlobalAsset, state::AppState};
 
 const TEST_API_KEY: &str =
     "ib_live_0123456789abcdef.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -985,7 +985,7 @@ async fn assets_returns_default_limited_list() {
     assert_eq!(json["ok"], true);
     assert_eq!(json["type"], "assets");
     assert_eq!(json["limit"], 100);
-    assert_eq!(json["count"], 21);
+    assert_eq!(json["count"], 22);
     assert_eq!(json["assets"][0]["asset_id"], "bitcoin");
     assert_eq!(json["assets"][0]["canonical_path"], "/assets/bitcoin");
     assert_eq!(json["assets"][0]["price"]["status"], "unavailable");
@@ -1010,46 +1010,7 @@ async fn assets_list_requests_batch_price_enrichment_by_slug() {
     let Some((price_indexer_url, request_handle)) = spawn_batch_price_indexer() else {
         return;
     };
-    let price_indexer_client =
-        PriceIndexerClient::new(&price_indexer_url, "test-token", 2000).unwrap();
-    let repository = GlobalAssetRepository::in_memory(vec![
-        GlobalAsset {
-            id: "test-bitcoin".to_string(),
-            slug: "bitcoin".to_string(),
-            symbol: "BTC".to_string(),
-            name: "Bitcoin".to_string(),
-            category: "crypto".to_string(),
-            canonical_path: "/assets/bitcoin".to_string(),
-            aliases: vec!["btc".to_string()],
-            sort_order: 1,
-        },
-        GlobalAsset {
-            id: "test-ethereum".to_string(),
-            slug: "ethereum".to_string(),
-            symbol: "ETH".to_string(),
-            name: "Ethereum".to_string(),
-            category: "crypto".to_string(),
-            canonical_path: "/assets/ethereum".to_string(),
-            aliases: vec!["eth".to_string()],
-            sort_order: 2,
-        },
-    ]);
-    let app = build_router(AppState {
-        config: Config::default(),
-        version: env!("CARGO_PKG_VERSION"),
-        canonical_registry: crate::state::embedded_canonical_registry(),
-        database_pool: None,
-        api_key_repository: None,
-        account_repository: None,
-        workspace_repository: None,
-        portfolio_simulation_repository: None,
-        api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
-        asset_repository: Some(repository),
-        defi_protocol_repository: None,
-        price_indexer_client: Some(price_indexer_client),
-        dis_client: None,
-        bigwig_client: None,
-    });
+    let app = test_app_with_price_indexer(&price_indexer_url, 2000);
 
     let response = app
         .oneshot(
@@ -1089,7 +1050,7 @@ async fn assets_clamps_limit_above_maximum() {
     let json = assets_json("/v1/assets?limit=9999").await;
 
     assert_eq!(json["limit"], 1000);
-    assert_eq!(json["count"], 21);
+    assert_eq!(json["count"], 22);
 }
 
 #[tokio::test]
@@ -1117,7 +1078,7 @@ async fn assets_rejects_invalid_limit() {
 }
 
 #[tokio::test]
-async fn assets_reports_database_unavailable_when_repository_is_missing() {
+async fn assets_resolve_without_a_database_or_asset_repository() {
     let response = build_router(AppState::new(Config::default()))
         .oneshot(
             Request::builder()
@@ -1128,15 +1089,16 @@ async fn assets_reports_database_unavailable_when_repository_is_missing() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.status(), StatusCode::OK);
 
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(json["ok"], false);
-    assert_eq!(json["error"]["code"], "database_unavailable");
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["type"], "assets");
+    assert_eq!(json["assets"][0]["asset_id"], "bitcoin");
 }
 
 #[tokio::test]
@@ -1195,39 +1157,12 @@ async fn asset_detail_requests_price_enrichment_by_slug() {
     let Some((price_indexer_url, request_handle)) = spawn_price_indexer() else {
         return;
     };
-    let price_indexer_client =
-        PriceIndexerClient::new(&price_indexer_url, "test-token", 2000).unwrap();
-    let repository = GlobalAssetRepository::in_memory(vec![GlobalAsset {
-        id: "test-usd-coin".to_string(),
-        slug: "usd-coin".to_string(),
-        symbol: "USDC".to_string(),
-        name: "USD Coin".to_string(),
-        category: "crypto".to_string(),
-        canonical_path: "/assets/usd-coin".to_string(),
-        aliases: vec!["usdc".to_string()],
-        sort_order: 10,
-    }]);
-    let app = build_router(AppState {
-        config: Config::default(),
-        version: env!("CARGO_PKG_VERSION"),
-        canonical_registry: crate::state::embedded_canonical_registry(),
-        database_pool: None,
-        api_key_repository: None,
-        account_repository: None,
-        workspace_repository: None,
-        portfolio_simulation_repository: None,
-        api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
-        asset_repository: Some(repository),
-        defi_protocol_repository: None,
-        price_indexer_client: Some(price_indexer_client),
-        dis_client: None,
-        bigwig_client: None,
-    });
+    let app = test_app_with_price_indexer(&price_indexer_url, 2000);
 
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/v1/assets/usd-coin")
+                .uri("/v1/assets/usdc")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -1241,12 +1176,12 @@ async fn asset_detail_requests_price_enrichment_by_slug() {
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(json["asset"]["asset_id"], "usd-coin");
+    assert_eq!(json["asset"]["asset_id"], "usdc");
     assert_eq!(json["asset"]["symbol"], "USDC");
     assert_eq!(json["price"]["status"], "available");
 
     let request = request_handle.await.unwrap();
-    assert!(request.starts_with("GET /prices/latest?slug=usd-coin&quoteCurrency=USD "));
+    assert!(request.starts_with("GET /prices/latest?slug=usdc&quoteCurrency=USD "));
     assert!(!request.contains("symbol="));
 }
 
@@ -1592,7 +1527,7 @@ async fn asset_detail_reports_not_found_for_unknown_slug() {
 }
 
 #[tokio::test]
-async fn asset_detail_reports_database_unavailable_when_repository_is_missing() {
+async fn asset_detail_resolves_without_a_database_or_asset_repository() {
     let response = build_router(AppState::new(Config::default()))
         .oneshot(
             Request::builder()
@@ -1603,15 +1538,15 @@ async fn asset_detail_reports_database_unavailable_when_repository_is_missing() 
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.status(), StatusCode::OK);
 
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(json["ok"], false);
-    assert_eq!(json["error"]["code"], "database_unavailable");
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["asset"]["asset_id"], "bitcoin");
 }
 
 #[tokio::test]
@@ -1893,27 +1828,26 @@ async fn resolve_returns_gold_for_spanish_and_symbol_aliases() {
 async fn resolve_returns_core_crypto_assets() {
     for (query, path) in [
         ("aave", "/assets/aave"),
-        ("ausd", "/assets/ausd"),
+        ("ausd", "/assets/agora-usd"),
         ("bitcoin", "/assets/bitcoin"),
         ("btc", "/assets/bitcoin"),
         ("usds", "/assets/usds"),
         ("ethereum", "/assets/ethereum"),
         ("eth", "/assets/ethereum"),
-        ("fbtc", "/assets/fbtc"),
         ("gho", "/assets/gho"),
         ("wbtc", "/assets/wrapped-bitcoin"),
         ("wrapped%20bitcoin", "/assets/wrapped-bitcoin"),
         ("mantle", "/assets/mantle"),
         ("mnt", "/assets/mantle"),
-        ("mpdao", "/assets/mpdao"),
+        ("mpdao", "/assets/metapool-dao"),
         ("near%20protocol", "/assets/near"),
-        ("stnear", "/assets/stnear"),
+        ("stnear", "/assets/staked-near"),
         ("usdt", "/assets/usdt"),
         ("usdt0", "/assets/usdt0"),
         ("usde", "/assets/usde"),
         ("weth", "/assets/wrapped-ether"),
-        ("cmeth", "/assets/cmeth"),
-        ("meth", "/assets/meth"),
+        ("cmeth", "/assets/mantle-cmeth"),
+        ("meth", "/assets/mantle-staked-ether"),
         ("susde", "/assets/susde"),
     ] {
         let json = resolve_json(&format!("/v1/assets/resolve?q={query}")).await;
@@ -1990,7 +1924,7 @@ async fn resolve_requires_query() {
 }
 
 #[tokio::test]
-async fn resolve_reports_database_unavailable_when_repository_is_missing() {
+async fn resolve_resolves_without_a_database_or_asset_repository() {
     let response = build_router(AppState::new(Config::default()))
         .oneshot(
             Request::builder()
@@ -2001,15 +1935,16 @@ async fn resolve_reports_database_unavailable_when_repository_is_missing() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.status(), StatusCode::OK);
 
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
     let json: Value = serde_json::from_slice(&body).unwrap();
 
-    assert_eq!(json["ok"], false);
-    assert_eq!(json["error"]["code"], "database_unavailable");
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["resolved"], true);
+    assert_eq!(json["result"]["asset"]["asset_id"], "usdc");
 }
 
 #[tokio::test]
