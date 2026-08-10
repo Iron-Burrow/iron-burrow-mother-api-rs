@@ -326,11 +326,17 @@ impl AssetResponse {
             asset_network_maps: detail
                 .mappings
                 .into_iter()
-                .map(|mapping| {
-                    let network = registry
-                        .network_by_slug(&mapping.network_slug)
-                        .expect("validated canonical mapping has a declared network");
-                    AssetNetworkMapPayload::from((mapping, network))
+                .filter_map(|mapping| {
+                    let Some(network) = registry.network_by_slug(&mapping.network_slug) else {
+                        warn!(
+                            asset_slug = detail.asset.slug.as_str(),
+                            network_slug = mapping.network_slug.as_str(),
+                            "Skipping asset network mapping with unknown network"
+                        );
+                        return None;
+                    };
+
+                    Some(AssetNetworkMapPayload::from((mapping, network)))
                 })
                 .collect(),
             signals,

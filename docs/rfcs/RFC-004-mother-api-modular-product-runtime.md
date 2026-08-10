@@ -15,7 +15,7 @@ follow-up specifications.
 
 ## Summary
 
-Here you have to discuss the fact of having a local deployment that works without the need to work with postgres or bigwig.
+The runtime should support a self-contained local deployment that does not require PostgreSQL, Bigwig, or other external services.
 
 Mother API should remain one Rust binary and one repository. The Axum HTTP
 adapters, Askama browser presentation, application services, persistence, and
