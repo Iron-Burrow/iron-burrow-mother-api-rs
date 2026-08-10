@@ -4,3 +4,4 @@ pub mod erc20_transfers;
 pub mod health;
 pub mod resolve;
 pub mod status;
+pub mod reports;

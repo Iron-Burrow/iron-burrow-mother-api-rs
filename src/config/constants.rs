@@ -10,5 +10,7 @@ pub(super) const DEFAULT_BIGWIG_REQUEST_TIMEOUT_MS: u64 = 30000;
 pub(super) const DEFAULT_BIGWIG_ARCHIVE_ROUTE: &str = "/v1/rpc/eth/mainnet/archive";
 pub(super) const DEFAULT_AAVE_V3_MIN_BLOCK_CONFIRMATIONS: u64 = 12;
 pub(super) const DEFAULT_ERC20_TRANSFERS_ENABLED: bool = false;
+pub(super) const DEFAULT_ASYNC_REPORTS_ENABLED: bool = false;
+pub(super) const DEFAULT_BIGWIG_REPORT_START_TIMEOUT_MS: u64 = 5_000;
 pub(super) const DEFAULT_ERC20_TRANSFERS_MAX_TOKEN_FILTERS: u64 = 20;
 pub(super) const DEFAULT_BIGWIG_MAX_CONTRACT_ADDRESSES: u64 = 20;

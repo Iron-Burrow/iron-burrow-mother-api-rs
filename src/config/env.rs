@@ -31,6 +31,8 @@ pub(crate) struct Config {
     pub(crate) bigwig_archive_route: String,
     pub(crate) aave_v3_min_block_confirmations: u64,
     pub(crate) erc20_transfers_enabled: bool,
+    pub(crate) async_reports_enabled: bool,
+    pub(crate) bigwig_report_start_timeout_ms: u64,
     pub(crate) erc20_transfers_max_token_filters: u64,
     pub(crate) bigwig_max_contract_addresses: u64,
 }
@@ -94,6 +96,16 @@ impl Config {
                 DEFAULT_ERC20_TRANSFERS_ENABLED,
             )
             .map_err(ConfigError::InvalidErc20TransfersEnabled)?,
+            async_reports_enabled: parse_optional_bool_env(
+                "ASYNC_REPORTS_ENABLED",
+                DEFAULT_ASYNC_REPORTS_ENABLED,
+            )
+            .map_err(ConfigError::InvalidAsyncReportsEnabled)?,
+            bigwig_report_start_timeout_ms: parse_positive_optional_u64_env(
+                "BIGWIG_REPORT_START_TIMEOUT_MS",
+                DEFAULT_BIGWIG_REPORT_START_TIMEOUT_MS,
+            )
+            .map_err(ConfigError::InvalidBigwigReportStartTimeout)?,
             erc20_transfers_max_token_filters: parse_positive_optional_u64_env(
                 "ERC20_TRANSFERS_MAX_TOKEN_FILTERS",
                 DEFAULT_ERC20_TRANSFERS_MAX_TOKEN_FILTERS,
@@ -163,6 +175,8 @@ impl Default for Config {
             bigwig_archive_route: DEFAULT_BIGWIG_ARCHIVE_ROUTE.to_string(),
             aave_v3_min_block_confirmations: DEFAULT_AAVE_V3_MIN_BLOCK_CONFIRMATIONS,
             erc20_transfers_enabled: DEFAULT_ERC20_TRANSFERS_ENABLED,
+            async_reports_enabled: DEFAULT_ASYNC_REPORTS_ENABLED,
+            bigwig_report_start_timeout_ms: DEFAULT_BIGWIG_REPORT_START_TIMEOUT_MS,
             erc20_transfers_max_token_filters: DEFAULT_ERC20_TRANSFERS_MAX_TOKEN_FILTERS,
             bigwig_max_contract_addresses: DEFAULT_BIGWIG_MAX_CONTRACT_ADDRESSES,
         }
@@ -208,6 +222,11 @@ impl std::fmt::Debug for Config {
                 &self.aave_v3_min_block_confirmations,
             )
             .field("erc20_transfers_enabled", &self.erc20_transfers_enabled)
+            .field("async_reports_enabled", &self.async_reports_enabled)
+            .field(
+                "bigwig_report_start_timeout_ms",
+                &self.bigwig_report_start_timeout_ms,
+            )
             .field(
                 "erc20_transfers_max_token_filters",
                 &self.erc20_transfers_max_token_filters,

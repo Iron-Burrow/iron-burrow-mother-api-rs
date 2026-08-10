@@ -11,12 +11,13 @@ use tracing::{debug, warn};
 
 use crate::{
     adapters::http::{
-        auth::{require_api_key, require_transfer_api_key},
+        auth::{require_api_key, require_reports_delivery_api_key, require_reports_read_api_key, require_reports_write_api_key, require_transfer_api_key},
         error::ApiError,
         routes::{
             assets::{get_asset, get_price_stats_signal, get_price_trend_signal, list_assets},
             balances::{resolve_bulk_balances, resolve_single_balance},
             erc20_transfers::search_erc20_transfers,
+            reports::{complete_report, create_report, fail_report, get_report},
             health::health,
             resolve::assets_resolve,
             status::status,
@@ -59,6 +60,14 @@ pub fn build_router(state: AppState) -> Router {
         v1_routes = v1_routes.route("/erc20-transfers/search", transfer_search_route);
     }
 
+    if beta_auth_enabled && state.config.async_reports_enabled {
+        let create = post(create_report).route_layer(middleware::from_fn_with_state(state.clone(), require_reports_write_api_key));
+        let get = get(get_report).route_layer(middleware::from_fn_with_state(state.clone(), require_reports_read_api_key));
+        v1_routes = v1_routes
+            .route("/reports/{report_type}", create)
+            .route("/reports/{report_id}", get);
+    }
+
     if state.config.public_api_surface == PublicApiSurface::Alpha {
         v1_routes = v1_routes.merge(alpha_v1_routes());
     }
@@ -71,13 +80,23 @@ pub fn build_router(state: AppState) -> Router {
         axum::http::HeaderValue::from_static("public, max-age=3600"),
     ));
 
-    Router::new()
+    let mut router = Router::new()
         .merge(web::routes(state.clone()))
         .nest_service("/assets", static_assets)
         .route("/health", get(health))
         .route("/openapi.json", get(web::openapi_document))
         .nest("/v1", v1_routes)
-        .fallback(unmatched_route)
+        .fallback(unmatched_route);
+
+    if state.config.async_reports_enabled {
+        let internal = Router::new()
+            .route("/reports/{report_id}/complete", post(complete_report))
+            .route("/reports/{report_id}/fail", post(fail_report))
+            .route_layer(middleware::from_fn_with_state(state.clone(), require_reports_delivery_api_key));
+        router = router.nest("/internal/v1", internal);
+    }
+
+    router
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -153,6 +172,9 @@ fn unmatched_status(state: &AppState, method: &Method, path: &str) -> StatusCode
 }
 
 fn is_known_disabled_beta_route(method: &Method, path: &str) -> bool {
+    if matches!(*method, Method::POST | Method::GET) && path.starts_with("/v1/reports/") {
+        return true;
+    }
     if !matches!(*method, Method::GET | Method::HEAD) {
         return false;
     }

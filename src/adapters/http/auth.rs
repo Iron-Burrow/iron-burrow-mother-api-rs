@@ -28,6 +28,7 @@ use crate::{
 pub(crate) struct ApiKeyPrincipal {
     pub(crate) api_key_id: Uuid,
     pub(crate) ib_account_id: Option<Uuid>,
+    pub(crate) client_id: Option<Uuid>,
     pub(crate) key_kind: String,
     pub(crate) consumer_id: Uuid,
     pub(crate) consumer_slug: String,
@@ -85,6 +86,21 @@ pub(crate) async fn require_lab_api_key(
     next: Next,
 ) -> Response {
     require_api_key_for(Capability::LabRead, state, request, next).await
+}
+pub(crate) async fn require_reports_read_api_key(
+    State(state): State<AppState>, request: Request, next: Next,
+) -> Response {
+    require_api_key_for(Capability::ReportsRead, state, request, next).await
+}
+pub(crate) async fn require_reports_write_api_key(
+    State(state): State<AppState>, request: Request, next: Next,
+) -> Response {
+    require_api_key_for(Capability::ReportsWrite, state, request, next).await
+}
+pub(crate) async fn require_reports_delivery_api_key(
+    State(state): State<AppState>, request: Request, next: Next,
+) -> Response {
+    require_api_key_for(Capability::ReportsDeliveryWrite, state, request, next).await
 }
 
 pub(crate) async fn require_network_scopes(
@@ -351,6 +367,7 @@ fn principal_from_lookup(lookup: ApiKeyLookup) -> Result<ApiKeyPrincipal, AuthEr
     Ok(ApiKeyPrincipal {
         api_key_id: lookup.api_key_id,
         ib_account_id: lookup.ib_account_id,
+        client_id: lookup.client_id,
         key_kind: lookup.key_kind,
         consumer_id: lookup.consumer_id,
         consumer_slug: lookup.consumer_slug,
