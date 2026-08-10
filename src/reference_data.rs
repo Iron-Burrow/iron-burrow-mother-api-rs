@@ -3,9 +3,8 @@ use sqlx::{PgPool, Postgres, Transaction};
 use crate::domain::{
     canonical_registry::{
         embedded_catalog_json, parse_catalog_json as parse_canonical_catalog_json,
-        validate_catalog as validate_canonical_catalog, CanonicalAsset as AssetDeclaration,
-        CanonicalAssetChainMap as AssetChainMapDeclaration, CanonicalNetwork as NetworkDeclaration,
-        CanonicalRegistryError, CapabilityDeclaration, Catalog,
+        validate_catalog as validate_canonical_catalog, CanonicalRegistryError,
+        CapabilityDeclaration, Catalog,
     },
     capabilities::Capability,
 };
@@ -50,18 +49,6 @@ async fn apply_catalog(pool: &PgPool, catalog: &Catalog) -> Result<(), Reference
     }
 
     reconcile_legacy_capability_grants(&mut transaction).await?;
-
-    for asset in &catalog.assets {
-        upsert_asset(&mut transaction, asset).await?;
-    }
-
-    for network in &catalog.networks {
-        upsert_network(&mut transaction, network).await?;
-    }
-
-    for mapping in &catalog.asset_chain_maps {
-        upsert_asset_chain_map(&mut transaction, mapping).await?;
-    }
 
     seed_aave_v3_realized_yield_protocol(&mut transaction).await?;
 
@@ -158,77 +145,6 @@ fn map_registry_error(error: CanonicalRegistryError) -> ReferenceDataError {
     }
 }
 
-async fn upsert_asset(
-    transaction: &mut Transaction<'_, Postgres>,
-    asset: &AssetDeclaration,
-) -> Result<(), ReferenceDataError> {
-    sqlx::query(
-        r#"
-        insert into mother_api.global_asset as existing (
-            slug,
-            symbol,
-            name,
-            asset_kind,
-            category,
-            canonical_path,
-            aliases,
-            metadata,
-            status,
-            sort_order
-        )
-        values (
-            $1,
-            $2,
-            $3,
-            $4,
-            $5,
-            $6,
-            $7,
-            $8::jsonb,
-            $9::mother_api.global_asset_status,
-            $10
-        )
-        on conflict (slug) do update
-        set
-            symbol = excluded.symbol,
-            name = excluded.name,
-            asset_kind = excluded.asset_kind,
-            category = excluded.category,
-            canonical_path = excluded.canonical_path,
-            aliases = excluded.aliases,
-            metadata = excluded.metadata,
-            status = excluded.status,
-            sort_order = excluded.sort_order,
-            updated_at = now()
-        where
-            existing.symbol is distinct from excluded.symbol
-            or existing.name is distinct from excluded.name
-            or existing.asset_kind is distinct from excluded.asset_kind
-            or existing.category is distinct from excluded.category
-            or existing.canonical_path is distinct from excluded.canonical_path
-            or existing.aliases is distinct from excluded.aliases
-            or existing.metadata is distinct from excluded.metadata
-            or existing.status is distinct from excluded.status
-            or existing.sort_order is distinct from excluded.sort_order
-        "#,
-    )
-    .bind(&asset.slug)
-    .bind(&asset.symbol)
-    .bind(&asset.name)
-    .bind(&asset.asset_kind)
-    .bind(&asset.category)
-    .bind(&asset.canonical_path)
-    .bind(&asset.aliases)
-    .bind(asset.metadata.to_string())
-    .bind(&asset.status)
-    .bind(asset.sort_order)
-    .execute(&mut **transaction)
-    .await
-    .map_err(ReferenceDataError::Database)?;
-
-    Ok(())
-}
-
 async fn upsert_capability(
     transaction: &mut Transaction<'_, Postgres>,
     capability: &CapabilityDeclaration,
@@ -291,150 +207,15 @@ async fn reconcile_legacy_capability_grants(
     Ok(())
 }
 
-async fn upsert_network(
-    transaction: &mut Transaction<'_, Postgres>,
-    network: &NetworkDeclaration,
-) -> Result<(), ReferenceDataError> {
-    sqlx::query(
-        r#"
-        insert into mother_api.network as existing (
-            slug,
-            name,
-            family,
-            chain_id,
-            caip2,
-            metadata,
-            status,
-            sort_order
-        )
-        values (
-            $1,
-            $2,
-            $3,
-            $4,
-            $5,
-            $6::jsonb,
-            $7,
-            $8
-        )
-        on conflict (slug) do update
-        set
-            name = excluded.name,
-            family = excluded.family,
-            chain_id = excluded.chain_id,
-            caip2 = excluded.caip2,
-            metadata = excluded.metadata,
-            status = excluded.status,
-            sort_order = excluded.sort_order,
-            updated_at = now()
-        where
-            existing.name is distinct from excluded.name
-            or existing.family is distinct from excluded.family
-            or existing.chain_id is distinct from excluded.chain_id
-            or existing.caip2 is distinct from excluded.caip2
-            or existing.metadata is distinct from excluded.metadata
-            or existing.status is distinct from excluded.status
-            or existing.sort_order is distinct from excluded.sort_order
-        "#,
-    )
-    .bind(&network.slug)
-    .bind(&network.name)
-    .bind(&network.family)
-    .bind(network.chain_id)
-    .bind(&network.caip2)
-    .bind(network.metadata.to_string())
-    .bind(&network.status)
-    .bind(network.sort_order)
-    .execute(&mut **transaction)
-    .await
-    .map_err(ReferenceDataError::Database)?;
-
-    Ok(())
-}
-
-async fn upsert_asset_chain_map(
-    transaction: &mut Transaction<'_, Postgres>,
-    mapping: &AssetChainMapDeclaration,
-) -> Result<(), ReferenceDataError> {
-    sqlx::query(
-        r#"
-        with resolved as (
-            select
-                asset.id as asset_id,
-                network.id as network_id
-            from mother_api.global_asset asset
-            join mother_api.network network
-                on network.slug = $2
-            where asset.slug = $1
-        )
-        insert into mother_api.asset_chain_map as existing (
-            asset_id,
-            network_id,
-            is_native,
-            deployment_address,
-            deployment_block,
-            decimals,
-            token_standard,
-            metadata,
-            status,
-            sort_order
-        )
-        select
-            resolved.asset_id,
-            resolved.network_id,
-            $3,
-            $4,
-            $5,
-            $6,
-            $7,
-            $8::jsonb,
-            $9,
-            $10
-        from resolved
-        on conflict (asset_id, network_id) do update
-        set
-            is_native = excluded.is_native,
-            deployment_address = excluded.deployment_address,
-            deployment_block = excluded.deployment_block,
-            decimals = excluded.decimals,
-            token_standard = excluded.token_standard,
-            metadata = excluded.metadata,
-            status = excluded.status,
-            sort_order = excluded.sort_order,
-            updated_at = now()
-        where
-            existing.is_native is distinct from excluded.is_native
-            or existing.deployment_address is distinct from excluded.deployment_address
-            or existing.deployment_block is distinct from excluded.deployment_block
-            or existing.decimals is distinct from excluded.decimals
-            or existing.token_standard is distinct from excluded.token_standard
-            or existing.metadata is distinct from excluded.metadata
-            or existing.status is distinct from excluded.status
-            or existing.sort_order is distinct from excluded.sort_order
-        "#,
-    )
-    .bind(&mapping.asset_slug)
-    .bind(&mapping.network_slug)
-    .bind(mapping.is_native)
-    .bind(&mapping.deployment_address)
-    .bind(mapping.deployment_block)
-    .bind(mapping.decimals)
-    .bind(&mapping.token_standard)
-    .bind(mapping.metadata.to_string())
-    .bind(&mapping.status)
-    .bind(mapping.sort_order)
-    .execute(&mut **transaction)
-    .await
-    .map_err(ReferenceDataError::Database)?;
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::domain::canonical_registry::{
+        CanonicalAsset as AssetDeclaration, CanonicalAssetChainMap as AssetChainMapDeclaration,
+        CanonicalNetwork as NetworkDeclaration,
+    };
     use crate::test_utils::postgres::migrated_pool;
 
     #[test]
@@ -582,72 +363,72 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn apply_reference_succeeds_after_migrations() {
+    async fn apply_reference_reconciles_capabilities_without_touching_catalog_rows() {
         let Some(pool) = migrated_pool().await else {
             return;
         };
 
+        let before = catalog_audit_rows(&pool).await;
         apply_embedded_catalog(&pool).await.unwrap();
+        let after = catalog_audit_rows(&pool).await;
 
-        let bitso_mxn_arbitrum = sqlx::query_scalar::<_, i64>(
-            r#"
-            select count(*)
-            from mother_api.asset_chain_map mapping
-            join mother_api.global_asset asset
-                on asset.id = mapping.asset_id
-            join mother_api.network network
-                on network.id = mapping.network_id
-            where asset.slug = 'bitso-mxn'
-                and network.slug = 'arbitrum-mainnet'
-                and mapping.deployment_address = '0xf197ffc28c23e0309b5559e7a166f2c6164c80aa'
-            "#,
+        assert_eq!(after, before);
+        let capability_count =
+            sqlx::query_scalar::<_, i64>("select count(*) from mother_api.capability")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(capability_count, Capability::ALL.len() as i64);
+    }
+
+    #[tokio::test]
+    async fn apply_reference_leaves_existing_catalog_overrides_unchanged() {
+        let Some(pool) = migrated_pool().await else {
+            return;
+        };
+        sqlx::query("update mother_api.global_asset set name = 'Historical override' where slug = 'bitso-mxn'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let before = catalog_audit_rows(&pool).await;
+        apply_embedded_catalog(&pool).await.unwrap();
+        let after = catalog_audit_rows(&pool).await;
+        let name = sqlx::query_scalar::<_, String>(
+            "select name from mother_api.global_asset where slug = 'bitso-mxn'",
         )
         .fetch_one(&pool)
         .await
         .unwrap();
 
-        assert_eq!(bitso_mxn_arbitrum, 1);
-    }
-
-    #[tokio::test]
-    async fn apply_reference_preserves_ids_and_created_at_without_noop_updated_at_churn() {
-        let Some(pool) = migrated_pool().await else {
-            return;
-        };
-        let suffix = unique_suffix();
-        let catalog = minimal_catalog(&suffix);
-
-        apply_catalog(&pool, &catalog).await.unwrap();
-        let before = asset_audit_row(&pool, &catalog.assets[0].slug).await;
-
-        apply_catalog(&pool, &catalog).await.unwrap();
-        let after = asset_audit_row(&pool, &catalog.assets[0].slug).await;
-
         assert_eq!(after, before);
+        assert_eq!(name, "Historical override");
     }
 
     #[tokio::test]
-    async fn changed_declared_value_updates_only_affected_row() {
+    async fn apply_reference_restores_changed_capability_descriptions() {
         let Some(pool) = migrated_pool().await else {
             return;
         };
-        let suffix = unique_suffix();
-        let mut catalog = minimal_catalog(&suffix);
+        sqlx::query(
+            "update mother_api.capability set description = 'stale' where id = 'balances.read'",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
 
-        apply_catalog(&pool, &catalog).await.unwrap();
-        let asset_before = asset_audit_row(&pool, &catalog.assets[0].slug).await;
-        let network_before = network_audit_row(&pool, &catalog.networks[0].slug).await;
+        apply_embedded_catalog(&pool).await.unwrap();
+        let description = sqlx::query_scalar::<_, String>(
+            "select description from mother_api.capability where id = 'balances.read'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
 
-        catalog.assets[0].name = format!("{} Updated", catalog.assets[0].name);
-        apply_catalog(&pool, &catalog).await.unwrap();
-
-        let asset_after = asset_audit_row(&pool, &catalog.assets[0].slug).await;
-        let network_after = network_audit_row(&pool, &catalog.networks[0].slug).await;
-
-        assert_eq!(asset_after.0, asset_before.0);
-        assert_eq!(asset_after.1, asset_before.1);
-        assert_ne!(asset_after.2, asset_before.2);
-        assert_eq!(network_after, network_before);
+        assert_eq!(
+            description,
+            "Read supported latest and historical balance snapshots."
+        );
     }
 
     #[tokio::test]
@@ -655,22 +436,26 @@ mod tests {
         let Some(pool) = migrated_pool().await else {
             return;
         };
-        let suffix = unique_suffix();
-        let mut catalog = minimal_catalog(&suffix);
-        catalog.asset_chain_maps[0].asset_slug = "missing-rollback-asset".to_string();
+        let mut catalog = parse_catalog_json(embedded_catalog_json()).unwrap();
+        catalog.capabilities[0].id = "unknown.capability".to_string();
+        let before = catalog_audit_rows(&pool).await;
+        let capability_count_before =
+            sqlx::query_scalar::<_, i64>("select count(*) from mother_api.capability")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
 
         let error = apply_catalog(&pool, &catalog).await.unwrap_err();
-        assert!(error.to_string().contains("references undeclared asset"));
+        assert!(error.to_string().contains("unknown capability id"));
+        let after = catalog_audit_rows(&pool).await;
+        let capability_count_after =
+            sqlx::query_scalar::<_, i64>("select count(*) from mother_api.capability")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
 
-        let asset_count = sqlx::query_scalar::<_, i64>(
-            "select count(*) from mother_api.global_asset where slug = $1",
-        )
-        .bind(&catalog.assets[0].slug)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-
-        assert_eq!(asset_count, 0);
+        assert_eq!(after, before);
+        assert_eq!(capability_count_after, capability_count_before);
     }
 
     fn assert_invalid(catalog: Catalog, expected: &str) {
@@ -738,36 +523,28 @@ mod tests {
         }
     }
 
-    async fn asset_audit_row(pool: &PgPool, slug: &str) -> (String, String, String) {
-        sqlx::query_as::<_, (String, String, String)>(
+    async fn catalog_audit_rows(pool: &PgPool) -> Vec<(String, String, String, String)> {
+        sqlx::query_as::<_, (String, String, String, String)>(
             r#"
-            select id::text, created_at::text, updated_at::text
+            select 'asset', id::text, created_at::text, updated_at::text
             from mother_api.global_asset
-            where slug = $1
-            "#,
-        )
-        .bind(slug)
-        .fetch_one(pool)
-        .await
-        .unwrap()
-    }
-
-    async fn network_audit_row(pool: &PgPool, slug: &str) -> (String, String, String) {
-        sqlx::query_as::<_, (String, String, String)>(
-            r#"
-            select id::text, created_at::text, updated_at::text
+            where slug = 'bitso-mxn'
+            union all
+            select 'network', id::text, created_at::text, updated_at::text
             from mother_api.network
-            where slug = $1
+            where slug = 'arbitrum-mainnet'
+            union all
+            select 'mapping', mapping.id::text, mapping.created_at::text, mapping.updated_at::text
+            from mother_api.asset_chain_map mapping
+            join mother_api.global_asset asset on asset.id = mapping.asset_id
+            join mother_api.network network on network.id = mapping.network_id
+            where asset.slug = 'bitso-mxn' and network.slug = 'arbitrum-mainnet'
+            order by 1
             "#,
         )
-        .bind(slug)
-        .fetch_one(pool)
+        .fetch_all(pool)
         .await
         .unwrap()
-    }
-
-    fn unique_suffix() -> String {
-        uuid::Uuid::new_v4().simple().to_string()
     }
 
     fn unique_chain_id(suffix: &str) -> i64 {

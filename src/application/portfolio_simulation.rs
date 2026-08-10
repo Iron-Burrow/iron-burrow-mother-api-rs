@@ -680,7 +680,9 @@ fn timestamp_for_day(days: i64) -> String {
 
 struct BlockResolver<'a> {
     bigwig: &'a BigwigClient,
-    head: Option<u64>,
+    head: Option<BlockEvidence>,
+    genesis: Option<BlockEvidence>,
+    last_resolved: Option<BlockEvidence>,
     cache: HashMap<u64, BlockEvidence>,
 }
 #[derive(Clone, Debug)]
@@ -695,12 +697,14 @@ impl<'a> BlockResolver<'a> {
         Self {
             bigwig,
             head: None,
+            genesis: None,
+            last_resolved: None,
             cache: HashMap::new(),
         }
     }
     async fn at_or_before(&mut self, timestamp: &str) -> Result<BlockEvidence, Error> {
         let target = parse_rfc3339_epoch(timestamp).ok_or(Error::AaveEvidenceUnavailable)?;
-        let head = match self.head {
+        let head = match self.head.clone() {
             Some(head) => head,
             None => {
                 let value = self
@@ -709,27 +713,60 @@ impl<'a> BlockResolver<'a> {
                     .await
                     .map_err(|_| Error::AaveEvidenceUnavailable)?;
                 let head = parse_hex(value.as_str()).ok_or(Error::AaveEvidenceUnavailable)?;
-                self.head = Some(head);
+                let head = self.block(head).await?;
+                self.head = Some(head.clone());
                 head
             }
         };
-        let mut low = 0;
+
+        if target >= head.epoch_seconds {
+            self.last_resolved = Some(head.clone());
+            return Ok(head);
+        }
+
+        let genesis = match self.genesis.clone() {
+            Some(genesis) => genesis,
+            None => {
+                let genesis = self.block(0).await?;
+                self.genesis = Some(genesis.clone());
+                genesis
+            }
+        };
+        if target < genesis.epoch_seconds {
+            return Err(Error::AaveEvidenceUnavailable);
+        }
+
+        // Simulation boundaries are chronological. Reuse all previously probed
+        // blocks and interpolate within the tightest known time bracket before
+        // falling back to an exact binary refinement. This avoids restarting a
+        // whole-chain binary search for every daily boundary.
+        let mut low = self
+            .last_resolved
+            .as_ref()
+            .filter(|block| block.epoch_seconds <= target)
+            .cloned()
+            .unwrap_or(genesis);
         let mut high = head;
-        let mut found = None;
-        while low <= high {
-            let middle = low + (high - low) / 2;
-            let block = self.block(middle).await?;
-            if block.epoch_seconds <= target {
-                found = Some(block);
-                low = middle.saturating_add(1);
-            } else {
-                if middle == 0 {
-                    break;
-                }
-                high = middle - 1;
+        for block in self.cache.values() {
+            if block.epoch_seconds <= target && block.number > low.number {
+                low = block.clone();
+            }
+            if block.epoch_seconds > target && block.number < high.number {
+                high = block.clone();
             }
         }
-        found.ok_or(Error::AaveEvidenceUnavailable)
+
+        while low.number.saturating_add(1) < high.number {
+            let middle = interpolated_block_number(target, &low, &high);
+            let block = self.block(middle).await?;
+            if block.epoch_seconds <= target {
+                low = block;
+            } else {
+                high = block;
+            }
+        }
+        self.last_resolved = Some(low.clone());
+        Ok(low)
     }
     async fn block(&mut self, number: u64) -> Result<BlockEvidence, Error> {
         if let Some(block) = self.cache.get(&number) {
@@ -763,6 +800,17 @@ impl<'a> BlockResolver<'a> {
         self.cache.insert(number, block.clone());
         Ok(block)
     }
+}
+
+fn interpolated_block_number(target: i64, low: &BlockEvidence, high: &BlockEvidence) -> u64 {
+    let block_span = high.number - low.number;
+    let time_span = high.epoch_seconds - low.epoch_seconds;
+    if time_span <= 0 {
+        return low.number + block_span / 2;
+    }
+    let target_offset = (target - low.epoch_seconds).clamp(0, time_span) as u128;
+    let estimated_offset = (target_offset * u128::from(block_span) / time_span as u128) as u64;
+    (low.number + estimated_offset).clamp(low.number + 1, high.number - 1)
 }
 fn parse_hex(value: Option<&str>) -> Option<u64> {
     u64::from_str_radix(value?.strip_prefix("0x")?, 16).ok()
@@ -824,6 +872,25 @@ mod tests {
         assert_eq!(result["status"], "partial");
         assert_eq!(result["metrics"]["final_value"], "11000");
         assert!(result["metrics"]["maximum_drawdown"].is_null());
+    }
+    #[test]
+    fn block_interpolation_stays_strictly_inside_its_known_bracket() {
+        let low = BlockEvidence {
+            number: 1_000,
+            hash: "0xlow".to_string(),
+            timestamp: "2025-01-01T00:00:00Z".to_string(),
+            epoch_seconds: 1_000,
+        };
+        let high = BlockEvidence {
+            number: 2_000,
+            hash: "0xhigh".to_string(),
+            timestamp: "2025-01-01T00:16:40Z".to_string(),
+            epoch_seconds: 2_000,
+        };
+
+        assert_eq!(interpolated_block_number(1_500, &low, &high), 1_500);
+        assert_eq!(interpolated_block_number(1_000, &low, &high), 1_001);
+        assert_eq!(interpolated_block_number(2_000, &low, &high), 1_999);
     }
     fn point(price: &str) -> HistoricalPricePoint {
         HistoricalPricePoint {

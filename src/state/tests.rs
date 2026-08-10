@@ -2,6 +2,31 @@ use super::*;
 use crate::test_utils::constants::{DIS_BASE_URL, INFRA_GATEWAY_URL};
 
 #[test]
+fn registry_constructs_without_a_database_pool() {
+    let state = AppState::try_new(Config::default()).unwrap();
+
+    assert!(state.database_pool.is_none());
+    assert!(state.canonical_registry.asset_by_slug("usdc").is_some());
+}
+
+#[test]
+fn registry_startup_error_is_sanitized_and_retains_its_source() {
+    let error = AppState::try_new_with_registry(Config::default(), || {
+        Err(CanonicalRegistryError::Invalid(
+            "fixture must not reach startup output".to_string(),
+        ))
+    })
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "canonical registry initialization failed"
+    );
+    assert!(!error.to_string().contains("fixture"));
+    assert!(std::error::Error::source(&error).is_some());
+}
+
+#[test]
 fn missing_dis_base_url_disables_client() {
     let state = AppState::new(Config::default());
 
