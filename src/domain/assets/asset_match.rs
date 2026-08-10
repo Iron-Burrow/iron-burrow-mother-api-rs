@@ -1,3 +1,5 @@
+#![allow(dead_code)] // Legacy PostgreSQL resolution model; PR5 removes this reader.
+
 use crate::domain::assets::global_assets::GlobalAsset;
 
 #[derive(Clone, Debug, Eq, PartialEq)]

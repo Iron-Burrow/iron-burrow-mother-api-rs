@@ -1,5 +1,3 @@
-#![allow(dead_code)] // PR1 establishes the interface; runtime consumers arrive in later SPEC-033 PRs.
-
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};

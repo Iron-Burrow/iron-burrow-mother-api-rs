@@ -1,16 +1,23 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use serde::Serialize;
 use tracing::{info, warn};
 
-use crate::adapters::postgres::errors::RepositoryError;
-use crate::domain::assets::asset_chain_map::AssetChainMap;
-use crate::domain::assets::global_assets::{GlobalAsset, GlobalAssetDetail};
 use crate::{
-    adapters::postgres::global_assets::GlobalAssetRepository,
-    adapters::price_indexer::{
-        LatestAssetPrice, PriceIndexerClient, PriceLookupError, PriceSignalError,
-        PriceSignalRequest, PriceStatus,
+    adapters::{
+        postgres::{errors::RepositoryError, global_assets::GlobalAssetRepository},
+        price_indexer::{
+            LatestAssetPrice, PriceIndexerClient, PriceLookupError, PriceSignalError,
+            PriceSignalRequest, PriceStatus,
+        },
+    },
+    domain::assets::{
+        asset_chain_map::AssetChainMap,
+        global_assets::{GlobalAsset, GlobalAssetDetail},
+    },
+    domain::canonical_registry::{
+        CanonicalAsset, CanonicalAssetChainMap, CanonicalAssetDetail, CanonicalNetwork,
+        CanonicalRegistry,
     },
 };
 
@@ -61,17 +68,33 @@ impl From<AssetEnrichmentParams> for PriceSignalRequest {
 
 #[derive(Clone, Debug)]
 pub struct AssetsService {
-    repository: GlobalAssetRepository,
+    catalog: CatalogReader,
     price_indexer_client: Option<PriceIndexerClient>,
+}
+
+#[derive(Clone, Debug)]
+enum CatalogReader {
+    Registry(Arc<CanonicalRegistry>),
+    Database(GlobalAssetRepository),
 }
 
 impl AssetsService {
     pub fn new(
+        registry: Arc<CanonicalRegistry>,
+        price_indexer_client: Option<PriceIndexerClient>,
+    ) -> Self {
+        Self {
+            catalog: CatalogReader::Registry(registry),
+            price_indexer_client,
+        }
+    }
+
+    pub(crate) fn from_database(
         repository: GlobalAssetRepository,
         price_indexer_client: Option<PriceIndexerClient>,
     ) -> Self {
         Self {
-            repository,
+            catalog: CatalogReader::Database(repository),
             price_indexer_client,
         }
     }
@@ -81,10 +104,26 @@ impl AssetsService {
         raw_limit: Option<&str>,
     ) -> Result<AssetsResponse, AssetsServiceError> {
         let limit = parse_limit(raw_limit)?;
-        let assets = self.repository.list_assets(limit).await?;
-        let prices = self.lookup_list_prices(&assets).await;
-
-        Ok(AssetsResponse::new(limit, assets, prices))
+        match &self.catalog {
+            CatalogReader::Registry(registry) => {
+                let assets = registry.active_assets(limit as usize);
+                let slugs = assets
+                    .iter()
+                    .map(|asset| asset.slug.as_str())
+                    .collect::<Vec<_>>();
+                let prices = self.lookup_list_prices(&slugs).await;
+                Ok(AssetsResponse::from_canonical(limit, assets, prices))
+            }
+            CatalogReader::Database(repository) => {
+                let assets = repository.list_assets(limit).await?;
+                let slugs = assets
+                    .iter()
+                    .map(|asset| asset.slug.as_str())
+                    .collect::<Vec<_>>();
+                let prices = self.lookup_list_prices(&slugs).await;
+                Ok(AssetsResponse::from_database(limit, assets, prices))
+            }
+        }
     }
 
     pub async fn get_asset(
@@ -94,17 +133,34 @@ impl AssetsService {
         enrichment_query: Option<AssetEnrichmentQuery>,
     ) -> Result<AssetResponse, AssetsServiceError> {
         let slug = raw_slug.trim().to_ascii_lowercase();
-        let detail = self
-            .repository
-            .get_asset_detail_by_slug(&slug)
-            .await?
-            .ok_or(AssetsServiceError::AssetNotFound)?;
-        let price = self
-            .lookup_price(&slug, &detail.asset.symbol, quote_currency)
-            .await;
-        let enrichments = self.lookup_enrichments(enrichment_query, &slug).await;
-
-        Ok(AssetResponse::new(detail, price, enrichments))
+        match &self.catalog {
+            CatalogReader::Registry(registry) => {
+                let detail = registry
+                    .asset_detail(&slug)
+                    .ok_or(AssetsServiceError::AssetNotFound)?;
+                let price = self
+                    .lookup_price(&slug, &detail.asset.symbol, quote_currency)
+                    .await;
+                let enrichments = self.lookup_enrichments(enrichment_query, &slug).await;
+                Ok(AssetResponse::from_canonical(
+                    registry,
+                    detail,
+                    price,
+                    enrichments,
+                ))
+            }
+            CatalogReader::Database(repository) => {
+                let detail = repository
+                    .get_asset_detail_by_slug(&slug)
+                    .await?
+                    .ok_or(AssetsServiceError::AssetNotFound)?;
+                let price = self
+                    .lookup_price(&slug, &detail.asset.symbol, quote_currency)
+                    .await;
+                let enrichments = self.lookup_enrichments(enrichment_query, &slug).await;
+                Ok(AssetResponse::from_database(detail, price, enrichments))
+            }
+        }
     }
 
     async fn lookup_price(
@@ -143,17 +199,14 @@ impl AssetsService {
         }
     }
 
-    async fn lookup_list_prices(
-        &self,
-        assets: &[GlobalAsset],
-    ) -> HashMap<String, LatestAssetPrice> {
+    async fn lookup_list_prices(&self, slugs: &[&str]) -> HashMap<String, LatestAssetPrice> {
         let Some(client) = &self.price_indexer_client else {
             return HashMap::new();
         };
 
-        let slugs = assets
+        let slugs = slugs
             .iter()
-            .map(|asset| asset.slug.clone())
+            .map(|slug| (*slug).to_string())
             .collect::<Vec<_>>();
 
         if slugs.is_empty() {
@@ -250,7 +303,42 @@ pub struct AssetResponse {
 }
 
 impl AssetResponse {
-    fn new(
+    fn from_canonical(
+        registry: &CanonicalRegistry,
+        detail: CanonicalAssetDetail<'_>,
+        price: LatestAssetPrice,
+        enrichments: Option<AssetEnrichments>,
+    ) -> Self {
+        let (signals, enrichment_errors) = enrichments
+            .map(|enrichments| {
+                (
+                    Some(enrichments.signals),
+                    Some(enrichments.enrichment_errors),
+                )
+            })
+            .unwrap_or((None, None));
+
+        Self {
+            ok: true,
+            response_type: "asset",
+            asset: AssetPayload::from(detail.asset),
+            price,
+            asset_network_maps: detail
+                .mappings
+                .into_iter()
+                .map(|mapping| {
+                    let network = registry
+                        .network_by_slug(&mapping.network_slug)
+                        .expect("validated canonical mapping has a declared network");
+                    AssetNetworkMapPayload::from((mapping, network))
+                })
+                .collect(),
+            signals,
+            enrichment_errors,
+        }
+    }
+
+    fn from_database(
         detail: GlobalAssetDetail,
         price: LatestAssetPrice,
         enrichments: Option<AssetEnrichments>,
@@ -475,7 +563,33 @@ pub struct AssetsResponse {
 }
 
 impl AssetsResponse {
-    fn new(
+    fn from_canonical(
+        limit: u64,
+        assets: Vec<&CanonicalAsset>,
+        prices: HashMap<String, LatestAssetPrice>,
+    ) -> Self {
+        let assets = assets
+            .into_iter()
+            .map(|asset| {
+                let normalized_slug = asset.slug.trim().to_ascii_lowercase();
+                let price = prices
+                    .get(&normalized_slug)
+                    .cloned()
+                    .unwrap_or_else(LatestAssetPrice::unavailable);
+                AssetListItemPayload::from_canonical(asset, price)
+            })
+            .collect::<Vec<_>>();
+
+        Self {
+            ok: true,
+            response_type: "assets",
+            limit,
+            count: assets.len(),
+            assets,
+        }
+    }
+
+    fn from_database(
         limit: u64,
         assets: Vec<GlobalAsset>,
         prices: HashMap<String, LatestAssetPrice>,
@@ -488,7 +602,7 @@ impl AssetsResponse {
                     .get(&normalized_slug)
                     .cloned()
                     .unwrap_or_else(LatestAssetPrice::unavailable);
-                AssetListItemPayload::new(asset, price)
+                AssetListItemPayload::from_database(asset, price)
             })
             .collect::<Vec<_>>();
 
@@ -513,7 +627,21 @@ struct AssetListItemPayload {
 }
 
 impl AssetListItemPayload {
-    fn new(asset: GlobalAsset, price: LatestAssetPrice) -> Self {
+    fn from_canonical(asset: &CanonicalAsset, price: LatestAssetPrice) -> Self {
+        Self {
+            asset_id: asset.slug.clone(),
+            symbol: asset.symbol.clone(),
+            name: asset.name.clone(),
+            category: asset
+                .category
+                .clone()
+                .unwrap_or_else(|| asset.asset_kind.clone()),
+            canonical_path: asset.canonical_path.clone(),
+            price,
+        }
+    }
+
+    fn from_database(asset: GlobalAsset, price: LatestAssetPrice) -> Self {
         Self {
             asset_id: asset.slug,
             symbol: asset.symbol,
@@ -532,6 +660,21 @@ struct AssetPayload {
     name: String,
     category: String,
     canonical_path: String,
+}
+
+impl From<&CanonicalAsset> for AssetPayload {
+    fn from(asset: &CanonicalAsset) -> Self {
+        Self {
+            asset_id: asset.slug.clone(),
+            symbol: asset.symbol.clone(),
+            name: asset.name.clone(),
+            category: asset
+                .category
+                .clone()
+                .unwrap_or_else(|| asset.asset_kind.clone()),
+            canonical_path: asset.canonical_path.clone(),
+        }
+    }
 }
 
 impl From<GlobalAsset> for AssetPayload {
@@ -553,6 +696,18 @@ struct AssetNetworkMapPayload {
     caip2: Option<String>,
     is_native: bool,
     address: Option<String>,
+}
+
+impl From<(&CanonicalAssetChainMap, &CanonicalNetwork)> for AssetNetworkMapPayload {
+    fn from((mapping, network): (&CanonicalAssetChainMap, &CanonicalNetwork)) -> Self {
+        Self {
+            network_slug: network.slug.clone(),
+            network_name: network.name.clone(),
+            caip2: network.caip2.clone(),
+            is_native: mapping.is_native,
+            address: mapping.deployment_address.clone(),
+        }
+    }
 }
 
 impl From<AssetChainMap> for AssetNetworkMapPayload {
@@ -693,11 +848,10 @@ fn enrichment_sources(include: &[PriceEnrichmentInclude]) -> Vec<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::postgres::global_assets::GlobalAssetRepository;
-    use crate::test_utils::fixtures::global_assets::sample_assets;
+    use crate::state::embedded_canonical_registry;
 
     fn service() -> AssetsService {
-        AssetsService::new(GlobalAssetRepository::in_memory(sample_assets()), None)
+        AssetsService::new(embedded_canonical_registry(), None)
     }
 
     #[tokio::test]
@@ -708,7 +862,7 @@ mod tests {
         assert_eq!(json["ok"], true);
         assert_eq!(json["type"], "assets");
         assert_eq!(json["limit"], 100);
-        assert_eq!(json["count"], 21);
+        assert_eq!(json["count"], 22);
         assert_eq!(json["assets"][0]["price"]["status"], "unavailable");
         assert!(json["assets"][0]["price"]["price"].is_null());
     }
@@ -738,14 +892,11 @@ mod tests {
         };
         let prices = HashMap::from([("ethereum".to_string(), price)]);
 
-        let response = AssetsResponse::new(
-            2,
-            vec![
-                test_asset(" Ethereum ", "ETH", 10),
-                test_asset("ethereum", "ETH2", 20),
-            ],
-            prices,
-        );
+        let assets = vec![
+            test_asset(" Ethereum ", "ETH", 10),
+            test_asset("ethereum", "ETH2", 20),
+        ];
+        let response = AssetsResponse::from_canonical(2, assets.iter().collect(), prices);
         let json = serde_json::to_value(response).unwrap();
 
         assert_eq!(json["assets"][0]["asset_id"], " Ethereum ");
@@ -803,15 +954,17 @@ mod tests {
         assert!(matches!(error, AssetsServiceError::AssetNotFound));
     }
 
-    fn test_asset(slug: &str, symbol: &str, sort_order: i32) -> GlobalAsset {
-        GlobalAsset {
-            id: format!("test-{slug}"),
+    fn test_asset(slug: &str, symbol: &str, sort_order: i32) -> CanonicalAsset {
+        CanonicalAsset {
             slug: slug.to_string(),
             symbol: symbol.to_string(),
             name: symbol.to_string(),
-            category: "crypto".to_string(),
+            asset_kind: "crypto".to_string(),
+            category: Some("crypto".to_string()),
             canonical_path: format!("/assets/{}", slug.trim().to_ascii_lowercase()),
             aliases: Vec::new(),
+            metadata: serde_json::json!({}),
+            status: "active".to_string(),
             sort_order,
         }
     }

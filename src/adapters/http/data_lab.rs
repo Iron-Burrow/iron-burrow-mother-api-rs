@@ -146,7 +146,7 @@ fn assets(state: &AppState) -> Option<AssetsService> {
     state
         .asset_repository
         .clone()
-        .map(|repo| AssetsService::new(repo, state.price_indexer_client.clone()))
+        .map(|repo| AssetsService::from_database(repo, state.price_indexer_client.clone()))
 }
 async fn assets_view(
     State(state): State<AppState>,

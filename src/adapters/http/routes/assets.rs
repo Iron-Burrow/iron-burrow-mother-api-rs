@@ -70,11 +70,10 @@ pub async fn list_assets(
     State(state): State<AppState>,
     Query(params): Query<AssetsQuery>,
 ) -> Result<Json<AssetsResponse>, ApiError> {
-    let repository = state
-        .asset_repository
-        .clone()
-        .ok_or_else(ApiError::database_unavailable)?;
-    let service = AssetsService::new(repository, state.price_indexer_client.clone());
+    let service = AssetsService::new(
+        state.canonical_registry.clone(),
+        state.price_indexer_client.clone(),
+    );
     let response = service
         .list_assets(params.limit.as_deref())
         .await
@@ -89,11 +88,10 @@ pub async fn get_asset(
     Query(params): Query<AssetDetailQuery>,
 ) -> Result<Json<AssetResponse>, ApiError> {
     let quote_currency = parse_quote_currency(params.quote_currency.as_deref())?;
-    let repository = state
-        .asset_repository
-        .clone()
-        .ok_or_else(ApiError::database_unavailable)?;
-    let service = AssetsService::new(repository, state.price_indexer_client.clone());
+    let service = AssetsService::new(
+        state.canonical_registry.clone(),
+        state.price_indexer_client.clone(),
+    );
     let enrichment_query = parse_asset_enrichment_query(&slug, params);
     let response = service
         .get_asset(&slug, &quote_currency, enrichment_query)
@@ -197,7 +195,7 @@ fn assets_error_to_api_error(error: AssetsServiceError) -> ApiError {
         AssetsServiceError::AssetNotFound => ApiError::asset_not_found(),
         AssetsServiceError::Repository(error) => {
             let _ = error;
-            ApiError::database_unavailable()
+            ApiError::internal_error()
         }
     }
 }

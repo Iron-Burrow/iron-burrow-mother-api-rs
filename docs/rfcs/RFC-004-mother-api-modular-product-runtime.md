@@ -15,6 +15,8 @@ follow-up specifications.
 
 ## Summary
 
+Here you have to discuss the fact of having a local deployment that works without the need to work with postgres or bigwig.
+
 Mother API should remain one Rust binary and one repository. The Axum HTTP
 adapters, Askama browser presentation, application services, persistence, and
 bounded infrastructure adapters belong to that one modular runtime; they do

@@ -288,6 +288,7 @@ impl ApiError {
         }
     }
 
+    #[allow(dead_code)] // Retained for documented mutable-state dependency failures.
     pub fn database_unavailable() -> Self {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,
