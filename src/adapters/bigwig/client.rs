@@ -14,6 +14,7 @@ use crate::config::Config;
 const CLIENT_SERVICE: &str = "mother-api";
 const BALANCES_PATH: &str = "/internal/v1/primitives/evm/balances";
 const ERC20_TRANSFERS_PATH: &str = "/internal/v1/extractions/erc20-transfers";
+const ASYNC_REPORT_EXECUTE_PATH: &str = "/internal/v1/reports";
 const DEFAULT_ARCHIVE_ROUTE: &str = "/v1/rpc/eth/mainnet/archive";
 
 #[derive(Clone)]
@@ -137,6 +138,32 @@ impl BigwigClient {
         Err(map_error_response(status, &body, retry_after_seconds))
     }
 
+    pub(crate) async fn execute_async_report(
+        &self,
+        report_id: &str,
+        report_type: &str,
+        report_version: i32,
+        input: &Value,
+        timeout_ms: u64,
+    ) -> Result<(), BigwigError> {
+        let response = self
+            .client
+            .post(self.async_report_execute_url(report_id))
+            .bearer_auth(&self.token)
+            .header("X-Client-Service", CLIENT_SERVICE)
+            .timeout(Duration::from_millis(timeout_ms))
+            .json(&json!({"report_type":report_type,"report_version":report_version,"input":input}))
+            .send()
+            .await
+            .map_err(map_reqwest_error)?;
+        let status = response.status();
+        if status == StatusCode::ACCEPTED || status == StatusCode::OK {
+            return Ok(());
+        }
+        let body = response.bytes().await.map_err(map_reqwest_error)?;
+        Err(map_error_response(status, &body, None))
+    }
+
     pub(crate) async fn archive_rpc(
         &self,
         method: &str,
@@ -184,6 +211,9 @@ impl BigwigClient {
 
     fn archive_url(&self) -> Url {
         self.url_for_path(&self.archive_route)
+    }
+    fn async_report_execute_url(&self, report_id: &str) -> Url {
+        self.url_for_path(&format!("{ASYNC_REPORT_EXECUTE_PATH}/{report_id}/execute"))
     }
 
     fn url_for_path(&self, path: &str) -> Url {

@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-31
+last_reviewed: 2026-08-17
 agent_edit_policy: update_when_relevant
 ---
 
@@ -50,11 +50,12 @@ docker compose \
   'printf "%s\n" \
     "PUBLIC_API_SURFACE=$PUBLIC_API_SURFACE" \
     "ERC20_TRANSFERS_ENABLED=$ERC20_TRANSFERS_ENABLED" \
+    "ASYNC_REPORTS_ENABLED=$ASYNC_REPORTS_ENABLED" \
     "BIGWIG_REQUEST_TIMEOUT_MS=$BIGWIG_REQUEST_TIMEOUT_MS" \
     "INFRA_GATEWAY_URL=$INFRA_GATEWAY_URL"'
 ```
 
-Do not print `INFRA_GATEWAY_TOKEN`, raw API keys, key hashes, or full
+Do not print `INFRA_GATEWAY_TOKEN`, `BIGWIG_REPORT_OUTCOME_TOKEN`, raw API keys, key hashes, or full
 `Authorization` headers.
 
 ## Issue First Internal API Key

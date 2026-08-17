@@ -51,6 +51,10 @@ pub(crate) fn document(config: &Config) -> utoipa::openapi::OpenApi {
         add_erc20_transfer_examples(&mut document);
     }
 
+    if config.async_reports_enabled {
+        document.merge(ReportsApiDoc::openapi());
+    }
+
     add_beta_api_key_security(&mut document);
 
     document
@@ -159,6 +163,48 @@ struct BaseApiDoc;
     ))
 )]
 struct Erc20TransfersApiDoc;
+
+#[derive(OpenApi)]
+#[openapi(
+    info(title = "Iron Burrow Mother API", version = env!("CARGO_PKG_VERSION")),
+    paths(create_report_operation, get_report_operation),
+    components(schemas(ErrorBody, ErrorResponse))
+)]
+struct ReportsApiDoc;
+
+#[utoipa::path(
+    post,
+    path = "/v1/reports/{report_type}",
+    tag = "reports",
+    params(("report_type" = String, Path, description = "A documented closed report type")),
+    responses(
+        (status = 202, description = "Bigwig accepted the report for asynchronous execution"),
+        (status = 400, description = "Invalid request or missing Idempotency-Key", body = ErrorResponse),
+        (status = 401, description = "The request lacks a valid active API key", body = ErrorResponse),
+        (status = 403, description = "The key cannot request reports", body = ErrorResponse),
+        (status = 404, description = "Report type or version is unsupported", body = ErrorResponse),
+        (status = 409, description = "Idempotency-Key conflicts with an earlier request", body = ErrorResponse),
+        (status = 503, description = "Report execution or persistence is unavailable", body = ErrorResponse)
+    )
+)]
+#[allow(dead_code)]
+async fn create_report_operation() {}
+
+#[utoipa::path(
+    get,
+    path = "/v1/reports/{report_id}",
+    tag = "reports",
+    params(("report_id" = String, Path, description = "Mother-owned report identifier")),
+    responses(
+        (status = 200, description = "Account-owned report status and terminal result when available"),
+        (status = 401, description = "The request lacks a valid active API key", body = ErrorResponse),
+        (status = 403, description = "The key cannot read reports", body = ErrorResponse),
+        (status = 404, description = "Report is unknown or not owned by the caller", body = ErrorResponse),
+        (status = 503, description = "Report persistence is unavailable", body = ErrorResponse)
+    )
+)]
+#[allow(dead_code)]
+async fn get_report_operation() {}
 
 #[utoipa::path(
     post,

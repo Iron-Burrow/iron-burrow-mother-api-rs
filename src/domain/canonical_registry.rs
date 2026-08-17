@@ -836,6 +836,22 @@ mod tests {
     }
 
     #[test]
+    fn embedded_catalog_capabilities_match_the_runtime_registry() {
+        let catalog = parse_catalog_json(embedded_catalog_json()).unwrap();
+        let declared = catalog
+            .capabilities
+            .iter()
+            .map(|capability| (capability.id.as_str(), capability.description.as_str()))
+            .collect::<Vec<_>>();
+        let runtime = Capability::ALL
+            .into_iter()
+            .map(|capability| (capability.id(), capability.description()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(declared, runtime);
+    }
+
+    #[test]
     fn malformed_unknown_and_unsupported_catalogs_fail() {
         assert!(matches!(
             CanonicalRegistry::from_json("{").unwrap_err(),
@@ -979,6 +995,46 @@ mod tests {
         assert_eq!(erc20.asset.slug, "usdc");
         assert_eq!(erc20.network.slug, "eth-mainnet");
         assert_eq!(erc20.mapping.decimals, Some(6));
+    }
+
+    #[test]
+    fn production_catalog_readers_do_not_reference_postgres_catalog_adapters() {
+        for source in [
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/application/assets/service.rs"
+            )),
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/application/balances/catalog.rs"
+            )),
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/application/erc20_transfers/service.rs"
+            )),
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/adapters/http/routes/balances.rs"
+            )),
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/adapters/http/routes/erc20_transfers.rs"
+            )),
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/adapters/http/data_lab.rs"
+            )),
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/adapters/http/workspaces.rs"
+            )),
+        ] {
+            assert!(!source.contains("GlobalAssetRepository"));
+            assert!(!source.contains("asset_repository"));
+            assert!(!source.contains("mother_api.global_asset"));
+            assert!(!source.contains("mother_api.asset_chain_map"));
+            assert!(!source.contains("mother_api.network"));
+        }
     }
 
     fn assert_invalid(catalog: Catalog, expected: &str) {

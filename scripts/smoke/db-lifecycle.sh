@@ -169,6 +169,8 @@ docker run --rm -d \
 	--name "$SMOKE_API_CONTAINER" \
 	--network "$SMOKE_NETWORK" \
 	-e DATABASE_URL="$SMOKE_DATABASE_URL" \
+	-e PUBLIC_WEB_BASE_URL="https://smoke.example.test" \
+	-e ACCOUNT_EMAIL_LOOKUP_PEPPER="smoke-test-account-email-lookup-pepper" \
 	"$SMOKE_IMAGE" \
 	mother-api serve >/dev/null
 

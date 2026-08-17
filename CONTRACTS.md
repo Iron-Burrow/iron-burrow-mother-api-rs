@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-08-07
+last_reviewed: 2026-08-17
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -119,9 +119,10 @@ Mother API supports an explicit runtime route-surface mode through
 
 - `alpha` exposes the Production Alpha 1 surface listed below. This is the
   default for compatibility.
-- `beta` exposes only `GET /health`, `POST /v1/balances`,
+- `beta` exposes `GET /health`, `POST /v1/balances`,
   `POST /v1/balances/bulk`, and `POST /v1/erc20-transfers/search` when
-  `ERC20_TRANSFERS_ENABLED=true`.
+  `ERC20_TRANSFERS_ENABLED=true`. It additionally exposes the protected Async
+  Reports operations when `ASYNC_REPORTS_ENABLED=true`.
 
 The production private Beta deployment must set
 `ERC20_TRANSFERS_ENABLED=true`. A production Beta deployment with the transfer
@@ -237,6 +238,65 @@ unmatched-route `404 Not Found` responses.
   }
 }
 ```
+
+## Private-Beta Async Reports
+
+Async Reports infrastructure is disabled in the standard deployment
+(`ASYNC_REPORTS_ENABLED=false`), and Mother currently registers no report
+type. When a future accepted specification registers a type and operators
+enable both `PUBLIC_API_SURFACE=beta` and `ASYNC_REPORTS_ENABLED=true`, Mother
+exposes an account-owned polling API for that closed compiled set.
+Account and delegated-agent bearer keys require `reports.write` to create a
+report and `reports.read` to retrieve one. Legacy and anonymous-demo keys do
+not receive these capabilities. The authenticated account owns every report;
+unknown and non-owned IDs both return `404 report_not_found`.
+
+### `POST /v1/reports/{report_type}`
+
+Requires `Authorization: Bearer <api_key>`, a non-empty `Idempotency-Key`
+header (maximum 255 bytes), and this exact JSON object shape:
+
+```json
+{
+  "report_version": 1,
+  "input": {}
+}
+```
+
+`report_type`, version, and `input` are validated by Mother's closed compiled
+catalog. Mother creates `rpt_<uuid-simple>`, asks Bigwig to durably accept the
+report, then returns `202 Accepted`:
+
+```json
+{
+  "ok": true,
+  "report_id": "rpt_0123456789abcdef0123456789abcdef",
+  "status": "accepted"
+}
+```
+
+The same idempotency key with the same canonical request returns the original
+receipt. Reuse with a different request returns `409 idempotency_conflict`.
+If Bigwig handoff cannot be confirmed, Mother returns
+`503 report_execution_unavailable`; retrying the same key resumes the same
+report resource and never creates another report.
+
+### `GET /v1/reports/{report_id}`
+
+Returns `200 OK` while a report is `accepted` or `running`; `running` means
+Bigwig accepted responsibility, not that a particular worker is active. A
+completed report includes its persisted inline JSON `report`. A failed report
+includes only `failure.code: "execution_failed"`; Bigwig scheduler, retry,
+process, worker, provider, and diagnostic details are never exposed.
+
+Final report objects are limited to 1 MiB at Mother's private completion
+boundary. Reports are immutable after `completed` or `failed`; requesting a
+new run requires a new idempotency key and report resource.
+
+The following additional public errors use the standard error envelope:
+`idempotency_key_required`, `invalid_idempotency_key`,
+`idempotency_conflict`, `unsupported_report_type`, `report_not_found`, and
+`report_execution_unavailable`.
 
 ## Stable Alpha endpoints
 
@@ -2127,7 +2187,7 @@ Fields:
 
 | HTTP | `error.code`            | Trigger                                                                |
 | ---- | ----------------------- | ---------------------------------------------------------------------- |
-| 401  | `unauthorized`          | A Beta protected route request lacks a valid active API key.            |
+| 401  | `unauthorized`          | A protected request lacks valid credentials; public Beta routes use active API keys and private report callbacks use their dedicated service token. |
 | 403  | `capability_not_granted` | A valid Beta API key lacks the capability required by the requested operation. |
 | 429  | `rate_limited`          | A valid Beta API key exceeded a configured request limit.               |
 | 403  | `endpoint_disabled`     | A known Alpha-only endpoint is intentionally disabled by the Beta route surface. |
@@ -2144,6 +2204,9 @@ Fields:
 | 400  | `request_too_large`     | A balance request exceeds a public or grouped provider limit. |
 | 400  | `invalid_limit`         | `limit` query parameter is not a positive integer.                     |
 | 400  | `invalid_json`          | A strict JSON endpoint receives malformed JSON, a non-object body, or missing/non-JSON content type and exposes that specific code; balance endpoints map these failures to `invalid_request`. |
+| 400  | `idempotency_key_required` | An Async Reports creation request omitted `Idempotency-Key`. |
+| 400  | `invalid_idempotency_key` | An Async Reports idempotency key was empty, malformed, or too long. |
+| 413  | `report_too_large` | A Bigwig Async Reports completion body exceeds Mother’s 1 MiB private boundary. |
 | 400  | `unknown_field`         | A strict JSON request object, including balance request objects, contains an unsupported field. |
 | 400  | `missing_network_slug`  | A transfer search request omits `account.network_slug` or sends it empty. |
 | 400  | `invalid_address`       | A transfer search `account.address` is not an EVM address.             |
@@ -2154,6 +2217,8 @@ Fields:
 | 400  | `missing_query`         | `q` query parameter is missing or empty after trimming.                |
 | 400  | `query_too_long`        | Trimmed `q` exceeds 128 characters.                                    |
 | 404  | `asset_not_found`       | Asset detail lookup failed, price-indexer has no requested signal, or a transfer asset slug is unknown. |
+| 404  | `unsupported_report_type` | An Async Reports type or version is not in Mother's closed catalog. |
+| 404  | `report_not_found` | An Async Report is unknown or is not owned by the authenticated account. |
 | 404  | `unsupported_network`   | A transfer search request uses a network unsupported by that endpoint. |
 | 422  | `asset_not_available_on_network` | A transfer asset filter exists but is unavailable on the requested network. |
 | 422  | `asset_not_erc20_on_network` | A transfer asset filter is native or not ERC-20 on the requested network. |
@@ -2167,10 +2232,12 @@ Fields:
 | 503  | `asset_network_map_unavailable` | The balance catalog is unconfigured or temporarily unavailable. |
 | 503  | `asset_contract_mapping_unavailable` | Transfer asset contract mapping is unconfigured or temporarily unavailable. |
 | 503  | `extraction_unavailable` | Bigwig ERC-20 transfer extraction is disabled, unconfigured, unreachable, or unavailable after the Mother route gate is enabled. |
+| 503  | `report_execution_unavailable` | Mother cannot confirm Bigwig's fast asynchronous report acceptance. |
 | 503  | `price_indexer_unavailable` | Price-indexer is unconfigured, unreachable, or timed out.          |
 | 504  | `extraction_timeout`   | Bigwig exceeded the overall synchronous extraction deadline.            |
 | 504  | `upstream_provider_timeout` | Bigwig's upstream RPC provider timed out during transfer extraction. |
 | 500  | `internal_error`        | Mother API encountered an unexpected or internally inconsistent state. |
+| 409  | `idempotency_conflict` | An idempotency key or terminal Bigwig delivery conflicts with an earlier report request. |
 
 `error.code` values listed above are stable. New codes may be added in
 future contract revisions. Clients must tolerate unknown codes by

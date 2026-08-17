@@ -88,12 +88,8 @@ async fn resolve_balances(
     state: &AppState,
     command: GetBalancesCommand,
 ) -> Result<GetBalancesResult, ApiError> {
-    let repository = state
-        .asset_repository
-        .clone()
-        .ok_or_else(ApiError::asset_network_map_unavailable)?;
     let service = BalanceSnapshotService::new(
-        CatalogBalanceTargetResolver::new(repository),
+        CatalogBalanceTargetResolver::new(state.canonical_registry.clone()),
         state.bigwig_client.clone(),
         state
             .price_indexer_client

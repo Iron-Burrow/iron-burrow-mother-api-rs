@@ -1,9 +1,23 @@
 ---
-status: accepted
+status: superseded
 owner: iron-burrow
-last_reviewed: 2026-08-07
-agent_edit_policy: update_when_relevant
+last_reviewed: 2026-08-17
+agent_edit_policy: do_not_update
+superseded_by: docs/rfcs/RFC-006-in-memory-canonical-registry.md
 ---
+
+> Archived: 2026-08-17
+>
+> Lifecycle: Superseded
+>
+> Reason: Accepted [RFC-006](../rfcs/RFC-006-in-memory-canonical-registry.md) replaces this SQLite registry direction with an in-memory `CanonicalRegistry`.
+>
+> Evidence:
+> - RFC-006 explicitly states that it supersedes RFC-005 and does not authorize SQLite work.
+> - The current repository constructs `CanonicalRegistry` from the embedded catalog and has no Mother-owned SQLite lifecycle, configuration, or runtime store.
+>
+> Notes:
+> - Historical context is preserved; no public API contract changes.
 
 # RFC-005 - Incremental Mother-Owned SQLite Persistence
 

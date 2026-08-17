@@ -1,4 +1,5 @@
 pub mod assets;
+pub(crate) mod async_reports;
 pub mod balances;
 pub(crate) mod defi_realized_yield;
 pub mod erc20_transfers;

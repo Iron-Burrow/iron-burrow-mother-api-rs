@@ -420,7 +420,7 @@ async fn request_without_asset_slugs_does_not_require_catalog_or_bigwig_to_exist
 }
 
 #[tokio::test]
-async fn request_with_asset_slugs_requires_catalog() {
+async fn request_with_asset_slugs_resolves_from_embedded_catalog() {
     let (status, response) = post_json(
         transfers_router_without_repository(erc20_transfers_enabled_config()),
         "/v1/erc20-transfers/search",
@@ -432,9 +432,8 @@ async fn request_with_asset_slugs_requires_catalog() {
         status,
         &response,
         StatusCode::SERVICE_UNAVAILABLE,
-        "asset_contract_mapping_unavailable",
+        "extraction_unavailable",
     );
-    assert_ne!(response["error"]["code"], "extraction_unavailable");
 }
 
 #[tokio::test]
@@ -475,7 +474,7 @@ async fn globally_known_asset_unavailable_on_network_rejects_whole_request() {
     let (status, response) = post_json(
         transfers_router(erc20_transfers_enabled_config()),
         "/v1/erc20-transfers/search",
-        erc20_transfers_request_with_tokens_body(json!({"asset_slugs": ["mantle"]})),
+        erc20_transfers_request_with_tokens_body(json!({"asset_slugs": ["bitcoin"]})),
     )
     .await;
 

@@ -16,6 +16,12 @@ pub(crate) enum ConfigError {
     InvalidAaveV3MinBlockConfirmations(String),
     #[error("ERC20_TRANSFERS_ENABLED must be a boolean, got {0:?}")]
     InvalidErc20TransfersEnabled(String),
+    #[error("ASYNC_REPORTS_ENABLED must be a boolean, got {0:?}")]
+    InvalidAsyncReportsEnabled(String),
+    #[error("ASYNC_REPORTS_ENABLED requires BIGWIG_REPORT_OUTCOME_TOKEN")]
+    MissingBigwigReportOutcomeToken,
+    #[error("BIGWIG_REPORT_START_TIMEOUT_MS must be a positive u64, got {0:?}")]
+    InvalidBigwigReportStartTimeout(String),
     #[error("ERC20_TRANSFERS_MAX_TOKEN_FILTERS must be a positive u64, got {0:?}")]
     InvalidErc20TransfersMaxTokenFilters(String),
     #[error("BIGWIG_MAX_CONTRACT_ADDRESSES must be a positive u64, got {0:?}")]

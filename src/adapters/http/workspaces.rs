@@ -432,11 +432,8 @@ async fn capture_treasury_snapshot(
     if !csrf_valid(&state, &headers, &csrf_hash, &form.csrf) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let (Some(service), Some(accounts), Some(asset_repository)) = (
-        service(&state),
-        state.account_repository.as_ref(),
-        state.asset_repository.clone(),
-    ) else {
+    let (Some(service), Some(accounts)) = (service(&state), state.account_repository.as_ref())
+    else {
         return unavailable();
     };
     let workspace = match service.find(account_id, &workspace_id).await {
@@ -501,7 +498,7 @@ async fn capture_treasury_snapshot(
         Err(_) => return invalid(),
     };
     let result = match BalanceSnapshotService::new(
-        CatalogBalanceTargetResolver::new(asset_repository),
+        CatalogBalanceTargetResolver::new(state.canonical_registry.clone()),
         state.bigwig_client.clone(),
         state
             .price_indexer_client
@@ -876,11 +873,8 @@ async fn balance_view(
         Ok(command) => command,
         Err(_) => return invalid(),
     };
-    let Some(repository) = state.asset_repository.clone() else {
-        return unavailable();
-    };
     let result = BalanceSnapshotService::new(
-        CatalogBalanceTargetResolver::new(repository),
+        CatalogBalanceTargetResolver::new(state.canonical_registry.clone()),
         state.bigwig_client.clone(),
         state
             .price_indexer_client
@@ -999,7 +993,7 @@ async fn transfer_view(
     };
     let plan = match build_search_plan(
         input,
-        state.asset_repository.clone(),
+        state.canonical_registry.clone(),
         state.config.erc20_transfers_max_token_filters,
     )
     .await
@@ -1017,7 +1011,7 @@ async fn transfer_view(
     let Some(client) = state.bigwig_client.as_ref() else {
         return unavailable();
     };
-    let detail = match execute_search_plan(plan, state.asset_repository.clone(), client).await {
+    let detail = match execute_search_plan(plan, state.canonical_registry.clone(), client).await {
         Ok(value) => {
             let Some(repository) = state.workspace_repository.as_ref() else {
                 return unavailable();

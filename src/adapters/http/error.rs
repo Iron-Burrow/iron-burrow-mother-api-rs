@@ -56,6 +56,14 @@ impl ApiError {
         }
     }
 
+    pub fn internal_unauthorized() -> Self {
+        Self {
+            status: StatusCode::UNAUTHORIZED,
+            code: "unauthorized",
+            message: "The request lacks valid internal credentials.".to_string(),
+        }
+    }
+
     pub fn rate_limited() -> Self {
         Self {
             status: StatusCode::TOO_MANY_REQUESTS,
@@ -69,6 +77,55 @@ impl ApiError {
             status: StatusCode::FORBIDDEN,
             code: "capability_not_granted",
             message: "The API key is not authorized for this operation.".to_string(),
+        }
+    }
+    pub fn idempotency_key_required() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "idempotency_key_required",
+            message: "Idempotency-Key is required.".to_string(),
+        }
+    }
+    pub fn invalid_idempotency_key() -> Self {
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            code: "invalid_idempotency_key",
+            message: "Idempotency-Key is invalid.".to_string(),
+        }
+    }
+    pub fn idempotency_conflict() -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            code: "idempotency_conflict",
+            message: "Idempotency-Key was already used for a different report request.".to_string(),
+        }
+    }
+    pub fn unsupported_report_type() -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            code: "unsupported_report_type",
+            message: "Report type or version is not supported.".to_string(),
+        }
+    }
+    pub fn report_not_found() -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
+            code: "report_not_found",
+            message: "Report was not found.".to_string(),
+        }
+    }
+    pub fn report_execution_unavailable() -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: "report_execution_unavailable",
+            message: "Report execution is temporarily unavailable.".to_string(),
+        }
+    }
+    pub fn report_too_large() -> Self {
+        Self {
+            status: StatusCode::PAYLOAD_TOO_LARGE,
+            code: "report_too_large",
+            message: "Report exceeds the maximum accepted size.".to_string(),
         }
     }
 

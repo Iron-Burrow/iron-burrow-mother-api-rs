@@ -25,7 +25,7 @@ async fn search_resolves_tokens_before_calling_extractor() {
 
     let result = search_erc20_transfers(
         input,
-        Some(global_assets_repository()),
+        crate::state::embedded_canonical_registry(),
         TEST_MAX_TOKEN_FILTERS,
         &extractor,
     )
@@ -61,7 +61,7 @@ async fn resolution_failure_does_not_call_extractor() {
 
     let error = search_erc20_transfers(
         input,
-        Some(global_assets_repository()),
+        crate::state::embedded_canonical_registry(),
         TEST_MAX_TOKEN_FILTERS,
         &extractor,
     )
@@ -81,9 +81,14 @@ async fn max_token_filter_enforcement_happens_before_extraction() {
         vec!["0x1111111111111111111111111111111111111111".to_string()],
     );
 
-    let error = search_erc20_transfers(input, Some(global_assets_repository()), 1, &extractor)
-        .await
-        .unwrap_err();
+    let error = search_erc20_transfers(
+        input,
+        crate::state::embedded_canonical_registry(),
+        1,
+        &extractor,
+    )
+    .await
+    .unwrap_err();
 
     assert!(matches!(
         error,
@@ -101,9 +106,14 @@ async fn empty_token_filters_preserve_unfiltered_extraction() {
         Vec::new(),
     );
 
-    search_erc20_transfers(input, None, TEST_MAX_TOKEN_FILTERS, &extractor)
-        .await
-        .unwrap();
+    search_erc20_transfers(
+        input,
+        crate::state::embedded_canonical_registry(),
+        TEST_MAX_TOKEN_FILTERS,
+        &extractor,
+    )
+    .await
+    .unwrap();
 
     let requests = extractor.requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
@@ -120,7 +130,7 @@ async fn executable_request_keeps_public_filters_outside_extraction_intent() {
 
     let plan = build_search_plan(
         input,
-        Some(global_assets_repository()),
+        crate::state::embedded_canonical_registry(),
         TEST_MAX_TOKEN_FILTERS,
     )
     .await
@@ -147,7 +157,7 @@ async fn explicit_known_contract_filter_gets_catalog_metadata() {
 
     let result = search_erc20_transfers(
         input,
-        Some(global_assets_repository()),
+        crate::state::embedded_canonical_registry(),
         TEST_MAX_TOKEN_FILTERS,
         &extractor,
     )
@@ -187,7 +197,7 @@ async fn unfiltered_known_row_token_gets_catalog_metadata() {
 
     let result = search_erc20_transfers(
         input,
-        Some(global_assets_repository()),
+        crate::state::embedded_canonical_registry(),
         TEST_MAX_TOKEN_FILTERS,
         &extractor,
     )
@@ -228,9 +238,14 @@ async fn extractor_errors_map_to_pr4_search_errors() {
             Vec::new(),
         );
 
-        let error = search_erc20_transfers(input, None, TEST_MAX_TOKEN_FILTERS, &extractor)
-            .await
-            .unwrap_err();
+        let error = search_erc20_transfers(
+            input,
+            crate::state::embedded_canonical_registry(),
+            TEST_MAX_TOKEN_FILTERS,
+            &extractor,
+        )
+        .await
+        .unwrap_err();
 
         assert_same_search_error(error, expected);
     }

@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-08-07
+last_reviewed: 2026-08-17
 agent_edit_policy: append_only
 ---
 
@@ -9,6 +9,16 @@ agent_edit_policy: append_only
 
 Append-style project change log for notable Mother API contract,
 implementation, and documentation changes.
+
+## 2026-08-17
+
+- Stabilized the feature-gated Async Reports foundation: account and agent
+  report access uses only `reports.read` and `reports.write`, while Bigwig
+  terminal callbacks use the distinct `BIGWIG_REPORT_OUTCOME_TOKEN` rather
+  than a customer API-key capability.
+- Kept Async Reports disabled in standard deployment configuration and recorded
+  that no report type is currently registered. A future accepted specification
+  is required before the gate is enabled for a concrete Bigwig integration.
 
 ## 2026-06-02
 
@@ -443,3 +453,14 @@ implementation, and documentation changes.
 - Added the private Portfolio Strategy Simulation Lab with compiled BTC, ETH,
   and Aave USDC studies, normalized historical evidence, append-only
   account-owned `psr_*` records, and no `/v1` or OpenAPI surface.
+
+## 2026-08-17
+
+- Completed SPEC-033: release-embedded canonical asset, network, and mapping
+  metadata now resolves through the validated in-memory registry for balances,
+  ERC-20 transfers, Data Lab, and Workspace readers. PostgreSQL remains the
+  owner only of mutable authentication, authorization, ownership, activity,
+  quota, and snapshot state; no public API contract changed.
+- Preserved the released `0009_legacy_api_key_capabilities.sql` migration and
+  renumbered the later DeFi protocol registry migration to `0017`, restoring
+  a valid SQLx migration sequence for fresh and upgraded databases.

@@ -999,7 +999,7 @@ async fn same_address_on_different_networks_is_not_a_duplicate() {
 }
 
 #[tokio::test]
-async fn missing_catalog_configuration_returns_service_unavailable() {
+async fn embedded_catalog_resolves_without_a_database_repository() {
     let app = build_router(AppState::new(Config::default()));
     let (status, response) = post_json(
         app,
@@ -1008,8 +1008,8 @@ async fn missing_catalog_configuration_returns_service_unavailable() {
     )
     .await;
 
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(response["error"]["code"], "asset_network_map_unavailable");
+    assert_eq!(status, StatusCode::OK);
+    assert_ne!(response["error"]["code"], "asset_network_map_unavailable");
 }
 
 #[tokio::test]

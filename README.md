@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-08-07
+last_reviewed: 2026-08-17
 agent_edit_policy: update_when_relevant
 ---
 
@@ -72,6 +72,12 @@ internal data dependency is fully available.
 
 In Beta mode, known Alpha-only routes return `403 endpoint_disabled`. Truly
 unknown routes remain normal `404` responses.
+
+Async Reports infrastructure is feature-gated and disabled in the standard
+deployment (`ASYNC_REPORTS_ENABLED=false`). Mother currently registers no
+report type, so it does not expose a usable report capability. A future
+accepted specification must add a closed report type and its Bigwig
+integration before that gate is enabled.
 
 `CONTRACTS.md` and the generated OpenAPI document are the sources of truth for
 exact request bodies, response bodies, validation rules, limits, and error

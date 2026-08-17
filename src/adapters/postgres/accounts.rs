@@ -325,7 +325,7 @@ mod tests {
         );
 
         let row = sqlx::query_as::<_, (Uuid, String, Option<String>, Option<String>, i64)>(
-            "select account.id, account.status, identity.password_hash, identity.verified_at::text, (select count(*) from mother_api.ib_account_capability_grant grant where grant.ib_account_id = account.id) from mother_api.ib_account account join mother_api.account_identity identity on identity.ib_account_id = account.id where identity.email_lookup_hash = $1",
+            "select account.id, account.status, identity.password_hash, identity.verified_at::text, (select count(*) from mother_api.ib_account_capability_grant capability_grant where capability_grant.ib_account_id = account.id) from mother_api.ib_account account join mother_api.account_identity identity on identity.ib_account_id = account.id where identity.email_lookup_hash = $1",
         )
         .bind(lookup_hash.as_slice())
         .fetch_one(&pool)
