@@ -4,7 +4,6 @@ pub(crate) mod assets;
 pub(crate) mod canonical_registry;
 pub(crate) mod capabilities;
 pub(crate) mod defi;
-pub(crate) mod networks;
 pub(crate) mod onchain_time;
 pub(crate) mod passwords;
 pub(crate) mod transfers;

@@ -102,7 +102,13 @@ fn materialize_protocol(
 ) -> Result<RealizedYieldProtocol, VerifiedProtocolRegistryError> {
     validate_slug("protocol slug", &declaration.slug)?;
     validate_slug("protocol network_slug", &declaration.network_slug)?;
-    if declaration.family.trim().is_empty() || !declaration.enabled || !declaration.verified {
+    if declaration.family.trim().is_empty() {
+        return invalid(format!(
+            "protocol {:?} requires a non-empty family",
+            declaration.slug
+        ));
+    }
+    if !declaration.enabled || !declaration.verified {
         return invalid(format!(
             "protocol {:?} must be enabled and verified",
             declaration.slug
@@ -290,6 +296,36 @@ mod tests {
         value["protocols"][0]["targets"][1]["address"] =
             serde_json::json!("0x0000000000000000000000000000000000000000");
         assert!(VerifiedProtocolRegistry::from_json(&value.to_string(), &canonical).is_err());
+    }
+
+    #[test]
+    fn blank_protocol_family_has_a_specific_diagnostic() {
+        let canonical = CanonicalRegistry::from_embedded_catalog().unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(EMBEDDED_PROTOCOLS_JSON).unwrap();
+        value["protocols"][0]["family"] = serde_json::json!("   ");
+
+        let error = VerifiedProtocolRegistry::from_json(&value.to_string(), &canonical)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "invalid verified protocol declarations: protocol \"aave-v3\" requires a non-empty family"
+        );
+    }
+
+    #[test]
+    fn disabled_protocol_retains_enabled_and_verified_diagnostic() {
+        let canonical = CanonicalRegistry::from_embedded_catalog().unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(EMBEDDED_PROTOCOLS_JSON).unwrap();
+        value["protocols"][0]["enabled"] = serde_json::json!(false);
+
+        let error = VerifiedProtocolRegistry::from_json(&value.to_string(), &canonical)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "invalid verified protocol declarations: protocol \"aave-v3\" must be enabled and verified"
+        );
     }
 
     #[test]

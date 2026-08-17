@@ -259,7 +259,7 @@ impl Service {
             let block = resolver.at_or_before(&timestamp).await?;
             let index = self
                 .aave
-                .income_index_at(&protocol, "usdc", block.number, bigwig)
+                .income_index_at(protocol, "usdc", block.number, bigwig)
                 .await
                 .map_err(|_| Error::AaveEvidenceUnavailable)?;
             observations.push(AaveIndexObservation {
@@ -481,13 +481,13 @@ fn simulate(
 }
 
 fn max_drawdown(values: &[Option<D512>]) -> D512 {
-    let mut peak = values[0].clone().expect("complete series");
+    let mut peak = values[0].expect("complete series");
     let mut drawdown = D512::from_str("0", Context::default()).expect("zero is valid");
     for value in values.iter().flatten() {
         if *value > peak {
-            peak = value.clone();
+            peak = *value;
         }
-        let current = (value.clone() - peak.clone()) / peak.clone();
+        let current = (*value - peak) / peak;
         if current < drawdown {
             drawdown = current;
         }
@@ -498,7 +498,7 @@ fn max_drawdown(values: &[Option<D512>]) -> D512 {
 fn annualized_return(final_value: &D512, initial: &D512, days: i64) -> D512 {
     let year = D512::from_str("365.2425", Context::default()).expect("constant is valid");
     let days = D512::from_str(&days.to_string(), Context::default()).expect("positive days");
-    (final_value.clone() / initial.clone()).pow(year / days)
+    (*final_value / *initial).pow(year / days)
         - D512::from_str("1", Context::default()).expect("one is valid")
 }
 

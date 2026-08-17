@@ -113,7 +113,6 @@ pub(crate) struct CanonicalAssetDetail<'a> {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct CanonicalBalanceTarget<'a> {
-    pub(crate) ordinal: usize,
     pub(crate) requested_asset_slug: &'a str,
     pub(crate) network: Option<&'a CanonicalNetwork>,
     pub(crate) asset: Option<&'a CanonicalAsset>,
@@ -357,8 +356,7 @@ impl CanonicalRegistry {
             .filter(|network| is_active(&network.status));
         requested_asset_slugs
             .iter()
-            .enumerate()
-            .map(|(index, requested_asset_slug)| {
+            .map(|requested_asset_slug| {
                 let asset = self
                     .asset_by_slug(requested_asset_slug)
                     .filter(|asset| is_active(&asset.status));
@@ -369,7 +367,6 @@ impl CanonicalRegistry {
                     _ => None,
                 };
                 CanonicalBalanceTarget {
-                    ordinal: index + 1,
                     requested_asset_slug,
                     network,
                     asset,
@@ -397,10 +394,6 @@ impl CanonicalRegistry {
             mapping,
         })
     }
-}
-
-pub(crate) fn embedded_catalog_json() -> &'static str {
-    EMBEDDED_CATALOG_JSON
 }
 
 pub(crate) fn parse_catalog_json(json: &str) -> Result<Catalog, CanonicalRegistryError> {
@@ -930,7 +923,6 @@ mod tests {
         );
         let requested_assets = ["usdc".to_string(), "missing".to_string()];
         let targets = registry.ordered_balance_targets("eth-mainnet", &requested_assets);
-        assert_eq!(targets[0].ordinal, 1);
         assert_eq!(targets[0].requested_asset_slug, "usdc");
         assert_eq!(targets[0].network.unwrap().slug, "eth-mainnet");
         assert!(targets[0].mapping.is_some());

@@ -7,9 +7,7 @@ use std::{
 use crate::application::balances::catalog::{
     BalanceTargetResolution, CatalogBalanceTargetResolver,
 };
-use crate::domain::assets::balance_catalog::{
-    BalanceTargetKind, CatalogIntegrityIssue, CatalogResolverError,
-};
+use crate::domain::assets::balance_catalog::BalanceTargetKind;
 use crate::domain::canonical_registry::CanonicalRegistry;
 use crate::domain::onchain_time::onchain_window::OnchainWindow;
 use crate::domain::transfers::transfer_direction::TransferDirection;
@@ -102,10 +100,6 @@ pub(crate) trait Erc20TransferExtractor {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Erc20TransferSearchError {
-    #[error("ERC-20 transfer asset catalog mapping is unavailable")]
-    AssetContractMappingUnavailable,
-    #[error("ERC-20 transfer asset catalog lookup failed: {0}")]
-    Catalog(#[from] CatalogResolverError),
     #[error("ERC-20 transfer asset was not found")]
     AssetNotFound,
     #[error("ERC-20 transfer asset is not available on the requested network")]
@@ -244,20 +238,11 @@ async fn enrich_token_metadata(
         if let Some(metadata) =
             registry.erc20_metadata(&plan.extraction_request.network_slug, address)
         {
-            let decimals = u8::try_from(metadata.mapping.decimals.ok_or_else(|| {
-                Erc20TransferSearchError::Catalog(CatalogResolverError::InvalidCatalog {
-                    network_slug: plan.extraction_request.network_slug.clone(),
-                    asset_slug: Some(metadata.asset.slug.clone()),
-                    issue: CatalogIntegrityIssue::InvalidDecimals,
-                })
-            })?)
-            .map_err(|_| {
-                Erc20TransferSearchError::Catalog(CatalogResolverError::InvalidCatalog {
-                    network_slug: plan.extraction_request.network_slug.clone(),
-                    asset_slug: Some(metadata.asset.slug.clone()),
-                    issue: CatalogIntegrityIssue::InvalidDecimals,
-                })
-            })?;
+            let decimals = metadata
+                .mapping
+                .decimals
+                .and_then(|decimals| u8::try_from(decimals).ok())
+                .ok_or(Erc20TransferSearchError::InternalError)?;
             let metadata = Erc20TransferTokenCatalogMetadata {
                 contract_address: address.clone(),
                 asset_slug: metadata.asset.slug.clone(),
@@ -334,9 +319,7 @@ async fn resolve_token_filters(
         // network-specific ERC-20 contract addresses. The resolver is still
         // balance-named because it owns catalog-backed asset target resolution.
         let resolver = CatalogBalanceTargetResolver::new(registry);
-        let resolved_asset_filters = resolver
-            .resolve_network(network_slug, &tokens.asset_slugs)
-            .await?;
+        let resolved_asset_filters = resolver.resolve_network(network_slug, &tokens.asset_slugs);
         let resolved_asset_filters = resolved_token_filters_from_catalog(
             network_slug,
             &tokens.asset_slugs,

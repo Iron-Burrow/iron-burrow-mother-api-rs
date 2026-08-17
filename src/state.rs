@@ -38,9 +38,6 @@ pub(crate) struct AppState {
     pub(crate) workspace_repository: Option<WorkspaceRepository>,
     pub(crate) portfolio_simulation_repository: Option<PortfolioSimulationRepository>,
     pub(crate) api_key_minute_limiter: ApiKeyMinuteLimiter,
-    #[cfg(test)]
-    pub(crate) asset_repository:
-        Option<crate::adapters::postgres::global_assets::GlobalAssetRepository>,
     pub(crate) price_indexer_client: Option<PriceIndexerClient>,
     pub(crate) dis_client: Option<DisClient>,
     #[allow(dead_code)]
@@ -93,8 +90,6 @@ impl AppState {
             workspace_repository,
             portfolio_simulation_repository,
             api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
-            #[cfg(test)]
-            asset_repository: None,
             price_indexer_client,
             dis_client,
             bigwig_client,

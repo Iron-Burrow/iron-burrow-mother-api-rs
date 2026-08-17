@@ -124,13 +124,11 @@ mod tests {
     use serde_json::{json, Value};
 
     use crate::state::AppState;
-    use crate::test_utils::{
-        errors::assert_public_error, fixtures::global_assets::sample_assets, http::post_raw,
-    };
+    use crate::test_utils::{errors::assert_public_error, http::post_raw};
     use crate::{
         adapters::{
             bigwig::client::BigwigClient, http::router::build_router,
-            postgres::global_assets::GlobalAssetRepository, price_indexer::PriceIndexerClient,
+            price_indexer::PriceIndexerClient,
         },
         config::Config,
     };
@@ -171,7 +169,6 @@ mod tests {
             portfolio_simulation_repository: None,
             api_key_minute_limiter: crate::adapters::http::rate_limit::ApiKeyMinuteLimiter::default(
             ),
-            asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
             price_indexer_client,
             dis_client: None,
             bigwig_client,

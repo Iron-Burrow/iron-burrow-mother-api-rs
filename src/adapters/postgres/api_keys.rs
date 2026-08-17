@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use super::errors::RepositoryError;
 use crate::domain::capabilities::{
-    Capability, CapabilityBaseline, CapabilityGrant, CapabilityRegistry, GrantStatus, NetworkScope,
+    Capability, CapabilityGrant, CapabilityRegistry, GrantStatus, NetworkScope,
 };
 
 #[derive(Clone, Debug)]
@@ -312,8 +312,7 @@ impl ApiKeyRepository {
 
         let registry = CapabilityRegistry;
         let owner_grants = if key_kind == "anonymous_demo" {
-            registry
-                .baseline(CapabilityBaseline::Legacy)
+            Capability::LEGACY_BASELINE
                 .iter()
                 .copied()
                 .map(|capability| {

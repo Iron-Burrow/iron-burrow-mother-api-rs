@@ -53,7 +53,7 @@ impl ResolveResponse {
             resolved: true,
             query: QueryPayload::from(query),
             result: ResolveResult::Asset {
-                resource_url: asset_resource_url(&asset_match.asset),
+                resource_url: asset_resource_url(asset_match.asset),
                 canonical_path: asset_match.asset.canonical_path.clone(),
                 confidence: asset_match.confidence.as_str(),
                 asset: AssetPayload::from(asset_match.asset),

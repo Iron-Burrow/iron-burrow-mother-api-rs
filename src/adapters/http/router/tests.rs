@@ -20,12 +20,10 @@ use uuid::Uuid;
 
 use super::*;
 use crate::state::AppState;
-use crate::test_utils::fixtures::global_assets::sample_assets;
 use crate::{
     adapters::http::rate_limit::ApiKeyMinuteLimiter,
     adapters::postgres::{
         api_keys::{ApiKeyAuthorizationGrants, ApiKeyLookup},
-        global_assets::GlobalAssetRepository,
         ApiKeyRepository,
     },
     adapters::price_indexer::PriceIndexerClient,
@@ -64,7 +62,6 @@ fn beta_app_with_api_key_repository(api_key_repository: Option<ApiKeyRepository>
         workspace_repository: None,
         portfolio_simulation_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
-        asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
         price_indexer_client: None,
         dis_client: None,
         bigwig_client: None,
@@ -103,7 +100,6 @@ fn test_app_with_price_indexer(price_indexer_url: &str, timeout_ms: u64) -> Rout
         workspace_repository: None,
         portfolio_simulation_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
-        asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
         price_indexer_client: Some(price_indexer_client),
         dis_client: None,
         bigwig_client: None,
@@ -712,7 +708,6 @@ async fn beta_route_capabilities_preserve_balance_access_and_restrict_transfer_a
         workspace_repository: None,
         portfolio_simulation_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
-        asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
         price_indexer_client: None,
         dis_client: None,
         bigwig_client: None,
@@ -1223,7 +1218,7 @@ async fn assets_rejects_invalid_limit() {
 }
 
 #[tokio::test]
-async fn assets_resolve_without_a_database_or_asset_repository() {
+async fn assets_resolve_without_a_database() {
     let response = build_router(AppState::new(Config::default()))
         .oneshot(
             Request::builder()
@@ -1672,7 +1667,7 @@ async fn asset_detail_reports_not_found_for_unknown_slug() {
 }
 
 #[tokio::test]
-async fn asset_detail_resolves_without_a_database_or_asset_repository() {
+async fn asset_detail_resolves_without_a_database() {
     let response = build_router(AppState::new(Config::default()))
         .oneshot(
             Request::builder()
@@ -2069,7 +2064,7 @@ async fn resolve_requires_query() {
 }
 
 #[tokio::test]
-async fn resolve_resolves_without_a_database_or_asset_repository() {
+async fn resolve_resolves_without_a_database() {
     let response = build_router(AppState::new(Config::default()))
         .oneshot(
             Request::builder()

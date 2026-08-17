@@ -27,6 +27,18 @@ pub(crate) struct AsyncReport {
     pub(crate) failed_at: Option<String>,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct CreateAsyncReport {
+    pub(crate) account_id: Uuid,
+    pub(crate) api_key_id: Uuid,
+    pub(crate) client_id: Option<Uuid>,
+    pub(crate) report_type: String,
+    pub(crate) report_version: i32,
+    pub(crate) input: Value,
+    pub(crate) idempotency_key_hash: Vec<u8>,
+    pub(crate) request_digest: String,
+}
+
 #[derive(FromRow)]
 struct AsyncReportRow {
     public_id: String,
@@ -69,24 +81,17 @@ impl AsyncReportRepository {
     }
     pub(crate) async fn create_or_find(
         &self,
-        account_id: Uuid,
-        api_key_id: Uuid,
-        client_id: Option<Uuid>,
-        report_type: &str,
-        report_version: i32,
-        input: Value,
-        idempotency_key_hash: Vec<u8>,
-        request_digest: String,
+        request: CreateAsyncReport,
     ) -> Result<(AsyncReport, bool), RepositoryError> {
         let id = Uuid::new_v4();
         let public_id = format!("rpt_{}", id.simple());
         let inserted = sqlx::query_as::<_, AsyncReportRow>("insert into mother_api.async_report (id, public_id, ib_account_id, requesting_api_key_id, requesting_client_id, report_type, report_version, input, idempotency_key_hash, request_digest) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) on conflict (ib_account_id, idempotency_key_hash) do nothing returning public_id, report_type, report_version, input, request_digest, status, report, report_digest, failure_code, accepted_at::text as accepted_at, started_at::text as started_at, completed_at::text as completed_at, failed_at::text as failed_at")
-            .bind(id).bind(&public_id).bind(account_id).bind(api_key_id).bind(client_id).bind(report_type).bind(report_version).bind(&input).bind(&idempotency_key_hash).bind(&request_digest).fetch_optional(&self.pool).await.map_err(RepositoryError::new)?;
+            .bind(id).bind(&public_id).bind(request.account_id).bind(request.api_key_id).bind(request.client_id).bind(&request.report_type).bind(request.report_version).bind(&request.input).bind(&request.idempotency_key_hash).bind(&request.request_digest).fetch_optional(&self.pool).await.map_err(RepositoryError::new)?;
         if let Some(row) = inserted {
             return Ok((row.into(), true));
         }
         let row = sqlx::query_as::<_, AsyncReportRow>("select public_id, report_type, report_version, input, request_digest, status, report, report_digest, failure_code, accepted_at::text as accepted_at, started_at::text as started_at, completed_at::text as completed_at, failed_at::text as failed_at from mother_api.async_report where ib_account_id=$1 and idempotency_key_hash=$2")
-            .bind(account_id).bind(idempotency_key_hash).fetch_one(&self.pool).await.map_err(RepositoryError::new)?;
+            .bind(request.account_id).bind(request.idempotency_key_hash).fetch_one(&self.pool).await.map_err(RepositoryError::new)?;
         Ok((row.into(), false))
     }
     pub(crate) async fn find_owned(

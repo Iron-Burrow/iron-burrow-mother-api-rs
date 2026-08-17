@@ -6,24 +6,18 @@ use std::{
 use axum::{http::StatusCode, response::IntoResponse, Router};
 use serde_json::{json, Value};
 
+use crate::application::balances::error::BalanceSnapshotServiceError;
 use crate::{
     adapters::{
         bigwig::client::BigwigClient,
         http::{presenters::balances::error::BalancesResponsePresenterError, router::build_router},
-        postgres::{errors::RepositoryError, global_assets::GlobalAssetRepository},
         price_indexer::PriceIndexerClient,
     },
     config::Config,
 };
 use crate::{
     application::balances::error::BalancePlanIssue,
-    test_utils::{
-        errors::assert_public_error, fixtures::global_assets::sample_assets, http::post_raw,
-    },
-};
-use crate::{
-    application::balances::error::BalanceSnapshotServiceError,
-    domain::assets::balance_catalog::CatalogResolverError,
+    test_utils::{errors::assert_public_error, http::post_raw},
 };
 
 use super::*;
@@ -1013,18 +1007,7 @@ async fn embedded_catalog_resolves_without_a_database_repository() {
 }
 
 #[tokio::test]
-async fn repository_and_internal_failures_have_request_wide_mappings() {
-    let repository_error =
-        balance_service_error_to_api_error(BalanceSnapshotServiceError::Catalog(
-            CatalogResolverError::Repository(RepositoryError::test()),
-        ))
-        .into_response();
-    assert_eq!(repository_error.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(
-        response_error_code(repository_error).await,
-        "asset_network_map_unavailable"
-    );
-
+async fn internal_failures_have_request_wide_mappings() {
     for error in [
         BalanceSnapshotServiceError::InvalidPlan {
             network_slug: "eth-mainnet".to_string(),
@@ -1061,7 +1044,6 @@ fn balance_app(bigwig_url: Option<&str>, price_url: Option<&str>) -> Router {
         workspace_repository: None,
         portfolio_simulation_repository: None,
         api_key_minute_limiter: crate::adapters::http::rate_limit::ApiKeyMinuteLimiter::default(),
-        asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
         price_indexer_client,
         dis_client: None,
         bigwig_client,

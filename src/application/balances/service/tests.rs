@@ -11,14 +11,12 @@ use super::*;
 use crate::{
     adapters::bigwig::balances::BigwigRequestValidationCode,
     application::balances::error::GetBalancesCommandError,
-    test_utils::fixtures::global_assets::sample_assets,
 };
 use crate::{
     adapters::bigwig::balances::{
         BigwigEvidenceNetwork, BigwigItemError, BigwigItemErrorCode, BigwigResolvedEvidence,
         BigwigResolvedEvidenceKind,
     },
-    adapters::postgres::global_assets::GlobalAssetRepository,
     adapters::price_indexer::PriceIndexerClient,
 };
 

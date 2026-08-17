@@ -1,7 +1,5 @@
 use std::fmt;
 
-use crate::domain::assets::balance_catalog::CatalogResolverError;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum GetBalancesCommandError {
     EmptyAccounts,
@@ -33,7 +31,6 @@ pub(crate) enum BalancePlanIssue {
 
 #[derive(Debug)]
 pub enum BalanceSnapshotServiceError {
-    Catalog(CatalogResolverError),
     UnsupportedNetwork {
         network_slug: String,
     },
@@ -51,16 +48,9 @@ pub enum BalanceSnapshotServiceError {
     ExecutionTaskFailed,
 }
 
-impl From<CatalogResolverError> for BalanceSnapshotServiceError {
-    fn from(error: CatalogResolverError) -> Self {
-        Self::Catalog(error)
-    }
-}
-
 impl fmt::Display for BalanceSnapshotServiceError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Catalog(error) => write!(formatter, "balance catalog resolution failed: {error}"),
             Self::UnsupportedNetwork { network_slug } => {
                 write!(formatter, "unsupported balance network: {network_slug}")
             }
