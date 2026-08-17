@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-07-31
+last_reviewed: 2026-08-17
 agent_edit_policy: update_when_relevant
 ---
 
@@ -38,6 +38,7 @@ PUBLIC_API_SURFACE=beta
 INFRA_GATEWAY_URL=http://infra-gateway-hub:8080
 INFRA_GATEWAY_TOKEN=<set-production-token>
 BIGWIG_REQUEST_TIMEOUT_MS=30000
+ASYNC_REPORTS_ENABLED=false
 ERC20_TRANSFERS_ENABLED=true
 PUBLIC_API_BASE_URL=https://api.ironburrow.com
 PUBLIC_WEB_BASE_URL=https://www.ironburrow.com
@@ -73,6 +74,11 @@ PUBLIC_API_BASE_URL: https://api.ironburrow.com
 
 Confirm `INFRA_GATEWAY_TOKEN` is present in the rendered service environment,
 but do not paste or store the token in logs, screenshots, or chat.
+
+Async Reports remains disabled until a concrete report type is accepted and
+its Bigwig integration has been deployed. If it is enabled in a future release,
+set the distinct `BIGWIG_REPORT_OUTCOME_TOKEN` secret for Bigwig-to-Mother
+callbacks; it is not interchangeable with `INFRA_GATEWAY_TOKEN`.
 
 Before exposing `/signup`, `/login`, or `/access/demo`, configure the external
 WAF ahead of Caddy: 5 account-entry posts per source IP per 15 minutes, 3 demo

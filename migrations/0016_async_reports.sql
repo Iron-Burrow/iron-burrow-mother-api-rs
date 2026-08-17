@@ -48,6 +48,5 @@ for each row execute function mother_api.reject_async_report_terminal_mutation()
 
 insert into mother_api.capability (id, description) values
   ('reports.read', 'Read account-owned asynchronous reports.'),
-  ('reports.write', 'Request account-owned asynchronous reports.'),
-  ('reports.delivery.write', 'Deliver Bigwig asynchronous report terminal results.')
+  ('reports.write', 'Request account-owned asynchronous reports.')
 on conflict (id) do nothing;

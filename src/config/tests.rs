@@ -55,6 +55,7 @@ fn default_config_matches_public_contract() {
     assert_eq!(config.dis_retry_max_attempts, 2);
     assert_eq!(config.infra_gateway_url, None);
     assert_eq!(config.infra_gateway_token, None);
+    assert_eq!(config.bigwig_report_outcome_token, None);
     assert_eq!(config.bigwig_request_timeout_ms, 30000);
     assert!(!config.erc20_transfers_enabled);
     assert_eq!(config.erc20_transfers_max_token_filters, 20);
@@ -464,12 +465,39 @@ fn config_debug_redacts_bigwig_token() {
     let config = Config {
         infra_gateway_url: Some(INFRA_GATEWAY_URL.to_string()),
         infra_gateway_token: Some("super-secret".to_string()),
+        bigwig_report_outcome_token: Some("outcome-secret".to_string()),
         ..Config::default()
     };
     let debug = format!("{config:?}");
 
     assert!(debug.contains("<redacted>"));
     assert!(!debug.contains("super-secret"));
+    assert!(!debug.contains("outcome-secret"));
+}
+
+#[test]
+fn async_reports_require_a_dedicated_outcome_token() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let _snapshots = capture_env_vars(&["ASYNC_REPORTS_ENABLED", "BIGWIG_REPORT_OUTCOME_TOKEN"]);
+    std::env::set_var("ASYNC_REPORTS_ENABLED", "true");
+    std::env::remove_var("BIGWIG_REPORT_OUTCOME_TOKEN");
+
+    assert_eq!(
+        Config::from_env(),
+        Err(ConfigError::MissingBigwigReportOutcomeToken)
+    );
+
+    std::env::set_var("BIGWIG_REPORT_OUTCOME_TOKEN", "   ");
+    assert_eq!(
+        Config::from_env(),
+        Err(ConfigError::MissingBigwigReportOutcomeToken)
+    );
+
+    std::env::set_var("BIGWIG_REPORT_OUTCOME_TOKEN", "outcome-token");
+    assert_eq!(
+        Config::from_env().unwrap().bigwig_report_outcome_token,
+        Some("outcome-token".to_string())
+    );
 }
 
 #[test]

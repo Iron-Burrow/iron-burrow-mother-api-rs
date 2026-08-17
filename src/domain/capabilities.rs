@@ -15,11 +15,10 @@ pub(crate) enum Capability {
     TreasurySnapshotWrite,
     ReportsRead,
     ReportsWrite,
-    ReportsDeliveryWrite,
 }
 
 impl Capability {
-    pub(crate) const ALL: [Self; 12] = [
+    pub(crate) const ALL: [Self; 11] = [
         Self::BalancesRead,
         Self::Erc20TransfersRead,
         Self::WorkspaceActivityRead,
@@ -31,7 +30,6 @@ impl Capability {
         Self::TreasurySnapshotWrite,
         Self::ReportsRead,
         Self::ReportsWrite,
-        Self::ReportsDeliveryWrite,
     ];
     pub(crate) const LEGACY_BASELINE: [Self; 2] = [Self::BalancesRead, Self::Erc20TransfersRead];
     /// New Phase 6 capabilities are deliberately opt-in for API keys. Browser
@@ -64,7 +62,6 @@ impl Capability {
             Self::TreasurySnapshotWrite => "treasury.snapshot.write",
             Self::ReportsRead => "reports.read",
             Self::ReportsWrite => "reports.write",
-            Self::ReportsDeliveryWrite => "reports.delivery.write",
         }
     }
 
@@ -82,7 +79,6 @@ impl Capability {
             Self::TreasurySnapshotWrite => "Capture account-owned Workspace treasury snapshots.",
             Self::ReportsRead => "Read account-owned asynchronous reports.",
             Self::ReportsWrite => "Request account-owned asynchronous reports.",
-            Self::ReportsDeliveryWrite => "Deliver Bigwig asynchronous report terminal results.",
         }
     }
 

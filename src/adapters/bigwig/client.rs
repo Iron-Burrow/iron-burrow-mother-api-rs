@@ -146,14 +146,20 @@ impl BigwigClient {
         input: &Value,
         timeout_ms: u64,
     ) -> Result<(), BigwigError> {
-        let response = self.client.post(self.async_report_execute_url(report_id))
+        let response = self
+            .client
+            .post(self.async_report_execute_url(report_id))
             .bearer_auth(&self.token)
             .header("X-Client-Service", CLIENT_SERVICE)
             .timeout(Duration::from_millis(timeout_ms))
             .json(&json!({"report_type":report_type,"report_version":report_version,"input":input}))
-            .send().await.map_err(map_reqwest_error)?;
+            .send()
+            .await
+            .map_err(map_reqwest_error)?;
         let status = response.status();
-        if status == StatusCode::ACCEPTED || status == StatusCode::OK { return Ok(()); }
+        if status == StatusCode::ACCEPTED || status == StatusCode::OK {
+            return Ok(());
+        }
         let body = response.bytes().await.map_err(map_reqwest_error)?;
         Err(map_error_response(status, &body, None))
     }

@@ -88,19 +88,60 @@ pub(crate) async fn require_lab_api_key(
     require_api_key_for(Capability::LabRead, state, request, next).await
 }
 pub(crate) async fn require_reports_read_api_key(
-    State(state): State<AppState>, request: Request, next: Next,
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
 ) -> Response {
     require_api_key_for(Capability::ReportsRead, state, request, next).await
 }
 pub(crate) async fn require_reports_write_api_key(
-    State(state): State<AppState>, request: Request, next: Next,
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
 ) -> Response {
     require_api_key_for(Capability::ReportsWrite, state, request, next).await
 }
-pub(crate) async fn require_reports_delivery_api_key(
-    State(state): State<AppState>, request: Request, next: Next,
+
+pub(crate) async fn require_bigwig_report_outcome_token(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
 ) -> Response {
-    require_api_key_for(Capability::ReportsDeliveryWrite, state, request, next).await
+    let valid = state
+        .config
+        .bigwig_report_outcome_token
+        .as_deref()
+        .zip(bearer_token(request.headers()))
+        .is_some_and(|(expected, presented)| {
+            constant_time_eq(expected.as_bytes(), presented.as_bytes())
+        });
+
+    if !valid {
+        return ApiError::internal_unauthorized().into_response();
+    }
+
+    next.run(request).await
+}
+
+fn bearer_token(headers: &axum::http::HeaderMap) -> Option<&str> {
+    headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .filter(|value| !value.is_empty())
+}
+
+fn constant_time_eq(expected: &[u8], presented: &[u8]) -> bool {
+    let max_len = expected.len().max(presented.len());
+    let mut difference = expected.len() ^ presented.len();
+
+    for index in 0..max_len {
+        let expected_byte = expected.get(index).copied().unwrap_or_default();
+        let presented_byte = presented.get(index).copied().unwrap_or_default();
+        difference |= usize::from(expected_byte ^ presented_byte);
+    }
+
+    difference == 0
 }
 
 pub(crate) async fn require_network_scopes(

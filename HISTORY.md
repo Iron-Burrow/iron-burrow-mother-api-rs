@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-08-07
+last_reviewed: 2026-08-17
 agent_edit_policy: append_only
 ---
 
@@ -9,6 +9,16 @@ agent_edit_policy: append_only
 
 Append-style project change log for notable Mother API contract,
 implementation, and documentation changes.
+
+## 2026-08-17
+
+- Stabilized the feature-gated Async Reports foundation: account and agent
+  report access uses only `reports.read` and `reports.write`, while Bigwig
+  terminal callbacks use the distinct `BIGWIG_REPORT_OUTCOME_TOKEN` rather
+  than a customer API-key capability.
+- Kept Async Reports disabled in standard deployment configuration and recorded
+  that no report type is currently registered. A future accepted specification
+  is required before the gate is enabled for a concrete Bigwig integration.
 
 ## 2026-06-02
 

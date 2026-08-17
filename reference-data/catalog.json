@@ -36,6 +36,14 @@
     {
       "id": "treasury.snapshot.write",
       "description": "Capture account-owned Workspace treasury snapshots."
+    },
+    {
+      "id": "reports.read",
+      "description": "Read account-owned asynchronous reports."
+    },
+    {
+      "id": "reports.write",
+      "description": "Request account-owned asynchronous reports."
     }
   ],
   "assets": [

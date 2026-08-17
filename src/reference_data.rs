@@ -382,6 +382,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn async_report_reference_capabilities_exclude_internal_delivery() {
+        let Some(pool) = migrated_pool().await else {
+            return;
+        };
+
+        apply_embedded_catalog(&pool).await.unwrap();
+        let capabilities = sqlx::query_scalar::<_, String>(
+            "select id from mother_api.capability where id like 'reports.%' order by id",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(capabilities, vec!["reports.read", "reports.write"]);
+    }
+
+    #[tokio::test]
     async fn apply_reference_leaves_existing_catalog_overrides_unchanged() {
         let Some(pool) = migrated_pool().await else {
             return;

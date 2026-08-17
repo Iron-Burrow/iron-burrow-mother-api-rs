@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-08-07
+last_reviewed: 2026-08-17
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -241,8 +241,11 @@ unmatched-route `404 Not Found` responses.
 
 ## Private-Beta Async Reports
 
-When `PUBLIC_API_SURFACE=beta` and `ASYNC_REPORTS_ENABLED=true`, Mother exposes
-an account-owned polling API for a closed set of documented report types.
+Async Reports infrastructure is disabled in the standard deployment
+(`ASYNC_REPORTS_ENABLED=false`), and Mother currently registers no report
+type. When a future accepted specification registers a type and operators
+enable both `PUBLIC_API_SURFACE=beta` and `ASYNC_REPORTS_ENABLED=true`, Mother
+exposes an account-owned polling API for that closed compiled set.
 Account and delegated-agent bearer keys require `reports.write` to create a
 report and `reports.read` to retrieve one. Legacy and anonymous-demo keys do
 not receive these capabilities. The authenticated account owns every report;
@@ -2184,7 +2187,7 @@ Fields:
 
 | HTTP | `error.code`            | Trigger                                                                |
 | ---- | ----------------------- | ---------------------------------------------------------------------- |
-| 401  | `unauthorized`          | A Beta protected route request lacks a valid active API key.            |
+| 401  | `unauthorized`          | A protected request lacks valid credentials; public Beta routes use active API keys and private report callbacks use their dedicated service token. |
 | 403  | `capability_not_granted` | A valid Beta API key lacks the capability required by the requested operation. |
 | 429  | `rate_limited`          | A valid Beta API key exceeded a configured request limit.               |
 | 403  | `endpoint_disabled`     | A known Alpha-only endpoint is intentionally disabled by the Beta route surface. |
@@ -2203,6 +2206,7 @@ Fields:
 | 400  | `invalid_json`          | A strict JSON endpoint receives malformed JSON, a non-object body, or missing/non-JSON content type and exposes that specific code; balance endpoints map these failures to `invalid_request`. |
 | 400  | `idempotency_key_required` | An Async Reports creation request omitted `Idempotency-Key`. |
 | 400  | `invalid_idempotency_key` | An Async Reports idempotency key was empty, malformed, or too long. |
+| 413  | `report_too_large` | A Bigwig Async Reports completion body exceeds Mother’s 1 MiB private boundary. |
 | 400  | `unknown_field`         | A strict JSON request object, including balance request objects, contains an unsupported field. |
 | 400  | `missing_network_slug`  | A transfer search request omits `account.network_slug` or sends it empty. |
 | 400  | `invalid_address`       | A transfer search `account.address` is not an EVM address.             |

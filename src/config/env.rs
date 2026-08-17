@@ -32,6 +32,7 @@ pub(crate) struct Config {
     pub(crate) aave_v3_min_block_confirmations: u64,
     pub(crate) erc20_transfers_enabled: bool,
     pub(crate) async_reports_enabled: bool,
+    pub(crate) bigwig_report_outcome_token: Option<String>,
     pub(crate) bigwig_report_start_timeout_ms: u64,
     pub(crate) erc20_transfers_max_token_filters: u64,
     pub(crate) bigwig_max_contract_addresses: u64,
@@ -101,6 +102,7 @@ impl Config {
                 DEFAULT_ASYNC_REPORTS_ENABLED,
             )
             .map_err(ConfigError::InvalidAsyncReportsEnabled)?,
+            bigwig_report_outcome_token: optional_env("BIGWIG_REPORT_OUTCOME_TOKEN"),
             bigwig_report_start_timeout_ms: parse_positive_optional_u64_env(
                 "BIGWIG_REPORT_START_TIMEOUT_MS",
                 DEFAULT_BIGWIG_REPORT_START_TIMEOUT_MS,
@@ -140,6 +142,10 @@ impl Config {
             });
         }
 
+        if self.async_reports_enabled && self.bigwig_report_outcome_token.is_none() {
+            return Err(ConfigError::MissingBigwigReportOutcomeToken);
+        }
+
         if self.app_env == "production"
             && (self.public_web_base_url.trim().is_empty()
                 || self.public_web_base_url == DEFAULT_PUBLIC_WEB_BASE_URL
@@ -176,6 +182,7 @@ impl Default for Config {
             aave_v3_min_block_confirmations: DEFAULT_AAVE_V3_MIN_BLOCK_CONFIRMATIONS,
             erc20_transfers_enabled: DEFAULT_ERC20_TRANSFERS_ENABLED,
             async_reports_enabled: DEFAULT_ASYNC_REPORTS_ENABLED,
+            bigwig_report_outcome_token: None,
             bigwig_report_start_timeout_ms: DEFAULT_BIGWIG_REPORT_START_TIMEOUT_MS,
             erc20_transfers_max_token_filters: DEFAULT_ERC20_TRANSFERS_MAX_TOKEN_FILTERS,
             bigwig_max_contract_addresses: DEFAULT_BIGWIG_MAX_CONTRACT_ADDRESSES,
@@ -223,6 +230,13 @@ impl std::fmt::Debug for Config {
             )
             .field("erc20_transfers_enabled", &self.erc20_transfers_enabled)
             .field("async_reports_enabled", &self.async_reports_enabled)
+            .field(
+                "bigwig_report_outcome_token",
+                &self
+                    .bigwig_report_outcome_token
+                    .as_ref()
+                    .map(|_| "<redacted>"),
+            )
             .field(
                 "bigwig_report_start_timeout_ms",
                 &self.bigwig_report_start_timeout_ms,

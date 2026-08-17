@@ -836,6 +836,22 @@ mod tests {
     }
 
     #[test]
+    fn embedded_catalog_capabilities_match_the_runtime_registry() {
+        let catalog = parse_catalog_json(embedded_catalog_json()).unwrap();
+        let declared = catalog
+            .capabilities
+            .iter()
+            .map(|capability| (capability.id.as_str(), capability.description.as_str()))
+            .collect::<Vec<_>>();
+        let runtime = Capability::ALL
+            .into_iter()
+            .map(|capability| (capability.id(), capability.description()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(declared, runtime);
+    }
+
+    #[test]
     fn malformed_unknown_and_unsupported_catalogs_fail() {
         assert!(matches!(
             CanonicalRegistry::from_json("{").unwrap_err(),

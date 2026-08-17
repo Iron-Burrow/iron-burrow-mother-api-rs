@@ -162,7 +162,7 @@ database procedure.
 ## Relationship to RFC-005 and follow-up specifications
 
 This RFC replaces
-[RFC-005](RFC-005-incremental-mother-owned-sqlite-persistence.md). RFC-005 is
+[RFC-005](../archive/RFC-005-incremental-mother-owned-sqlite-persistence.md). RFC-005 is
 historical SQLite-direction material and is archived with this RFC as its
 successor; it does not authorize SQLite work.
 

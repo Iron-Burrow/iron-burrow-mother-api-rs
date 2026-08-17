@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-08-07
+last_reviewed: 2026-08-17
 agent_edit_policy: update_when_relevant
 ---
 
@@ -69,15 +69,15 @@ internal data dependency is fully available.
 | `POST` | `/v1/balances`               | API key | Read latest or historical balances for one supported account. |
 | `POST` | `/v1/balances/bulk`          | API key | Read latest or historical balances for supported accounts, networks, and tokens. |
 | `POST` | `/v1/erc20-transfers/search` | API key | Search bounded ERC-20 transfers. |
-| `POST` | `/v1/reports/{report_type}` | Account/agent key | Request one supported asynchronous report. |
-| `GET` | `/v1/reports/{report_id}` | Account/agent key | Poll one account-owned asynchronous report. |
 
 In Beta mode, known Alpha-only routes return `403 endpoint_disabled`. Truly
 unknown routes remain normal `404` responses.
 
-Async Reports is additionally gated by `ASYNC_REPORTS_ENABLED=true`. It has a
-closed report-type catalog; an unsupported type is not accepted as a generic
-job. See `CONTRACTS.md` for the polling and idempotency contract.
+Async Reports infrastructure is feature-gated and disabled in the standard
+deployment (`ASYNC_REPORTS_ENABLED=false`). Mother currently registers no
+report type, so it does not expose a usable report capability. A future
+accepted specification must add a closed report type and its Bigwig
+integration before that gate is enabled.
 
 `CONTRACTS.md` and the generated OpenAPI document are the sources of truth for
 exact request bodies, response bodies, validation rules, limits, and error

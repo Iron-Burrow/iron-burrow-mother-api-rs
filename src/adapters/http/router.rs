@@ -11,14 +11,17 @@ use tracing::{debug, warn};
 
 use crate::{
     adapters::http::{
-        auth::{require_api_key, require_reports_delivery_api_key, require_reports_read_api_key, require_reports_write_api_key, require_transfer_api_key},
+        auth::{
+            require_api_key, require_bigwig_report_outcome_token, require_reports_read_api_key,
+            require_reports_write_api_key, require_transfer_api_key,
+        },
         error::ApiError,
         routes::{
             assets::{get_asset, get_price_stats_signal, get_price_trend_signal, list_assets},
             balances::{resolve_bulk_balances, resolve_single_balance},
             erc20_transfers::search_erc20_transfers,
-            reports::{complete_report, create_report, fail_report, get_report},
             health::health,
+            reports::{complete_report, create_report, fail_report, get_report},
             resolve::assets_resolve,
             status::status,
         },
@@ -61,10 +64,16 @@ pub fn build_router(state: AppState) -> Router {
     }
 
     if beta_auth_enabled && state.config.async_reports_enabled {
-        let create = post(create_report).route_layer(middleware::from_fn_with_state(state.clone(), require_reports_write_api_key));
-        let get = get(get_report).route_layer(middleware::from_fn_with_state(state.clone(), require_reports_read_api_key));
+        let create = post(create_report).route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_reports_write_api_key,
+        ));
+        let get = get(get_report).route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_reports_read_api_key,
+        ));
         v1_routes = v1_routes
-            .route("/reports/{report_type}", create)
+            .route("/reports/{report_id}", create)
             .route("/reports/{report_id}", get);
     }
 
@@ -92,13 +101,14 @@ pub fn build_router(state: AppState) -> Router {
         let internal = Router::new()
             .route("/reports/{report_id}/complete", post(complete_report))
             .route("/reports/{report_id}/fail", post(fail_report))
-            .route_layer(middleware::from_fn_with_state(state.clone(), require_reports_delivery_api_key));
+            .route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                require_bigwig_report_outcome_token,
+            ));
         router = router.nest("/internal/v1", internal);
     }
 
-    router
-        .layer(TraceLayer::new_for_http())
-        .with_state(state)
+    router.layer(TraceLayer::new_for_http()).with_state(state)
 }
 
 fn alpha_v1_routes() -> Router<AppState> {

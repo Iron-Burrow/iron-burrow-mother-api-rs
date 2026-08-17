@@ -34,6 +34,7 @@ use crate::{
         api_keys::hash_presented_api_key,
         capabilities::{Capability, CapabilityGrant, NetworkScope},
     },
+    test_utils::postgres::{migrated_pool, POSTGRES_TEST_DATABASE_URL_ENV},
 };
 
 const TEST_API_KEY: &str =
@@ -71,6 +72,18 @@ fn beta_app_with_api_key_repository(api_key_repository: Option<ApiKeyRepository>
         dis_client: None,
         bigwig_client: None,
     })
+}
+
+fn async_reports_callback_app() -> Router {
+    build_router(AppState::with_asset_repository(
+        Config {
+            public_api_surface: PublicApiSurface::Beta,
+            async_reports_enabled: true,
+            bigwig_report_outcome_token: Some("bigwig-outcome-token".to_string()),
+            ..Config::default()
+        },
+        GlobalAssetRepository::in_memory(sample_assets()),
+    ))
 }
 
 fn beta_app_with_lookup(lookup: ApiKeyLookup) -> Router {
@@ -905,8 +918,10 @@ fn production_caddy_separates_machine_and_human_route_surfaces() {
         .expect("Caddy must declare a dedicated web site");
     assert!(api_site.contains("path /v1/* /health /openapi.json"));
     assert!(!api_site.contains("/scan"));
+    assert!(!api_site.contains("/internal/v1"));
     assert!(web_site.contains("path / /scan /scan/* /access /access/demo /docs /docs/* /assets/* /signup /login /logout /workspaces /workspaces/* /catalog /catalog/* /prices /prices/* /lab /lab/* /lab.json"));
     assert!(!web_site.contains("/v1/*"));
+    assert!(!web_site.contains("/internal/v1"));
     assert!(caddyfile.contains("reverse_proxy mother-api:3000"));
     assert!(!caddyfile.contains("CADDY_DOMAIN"));
     assert!(!caddyfile.contains("/app"));
@@ -915,6 +930,142 @@ fn production_caddy_separates_machine_and_human_route_surfaces() {
     assert!(!caddyfile.contains("uri strip_prefix"));
     assert!(caddyfile.contains("object-src 'none'"));
     assert!(!caddyfile.contains("'unsafe-inline'"));
+}
+
+#[tokio::test]
+async fn async_report_callbacks_require_the_dedicated_bigwig_outcome_token() {
+    let callback = "/internal/v1/reports/rpt_0123456789abcdef0123456789abcdef/complete";
+    let customer_api_key = format!("Bearer {TEST_API_KEY}");
+
+    for authorization in [
+        None,
+        Some("Bearer gateway-token"),
+        Some(customer_api_key.as_str()),
+    ] {
+        let mut request = Request::builder()
+            .method("POST")
+            .uri(callback)
+            .header(CONTENT_TYPE, "application/json");
+        if let Some(authorization) = authorization {
+            request = request.header(AUTHORIZATION, authorization);
+        }
+        let response = async_reports_callback_app()
+            .oneshot(
+                request
+                    .body(Body::from(
+                        r#"{"report_type":"test","report_version":1,"report":{}}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    let response = async_reports_callback_app()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(callback)
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, "Bearer bigwig-outcome-token")
+                .body(Body::from(
+                    r#"{"report_type":"test","report_version":1,"report":{}}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+}
+
+#[tokio::test]
+async fn async_report_callback_token_protects_persisted_reports() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+    let database_url = std::env::var(POSTGRES_TEST_DATABASE_URL_ENV).unwrap();
+    let account_id = Uuid::new_v4();
+    let account_public_id = format!("iba_{}", Uuid::new_v4().simple());
+    let report_id = format!("rpt_{}", Uuid::new_v4().simple());
+
+    sqlx::query(
+        "insert into mother_api.ib_account (id, public_id, status) values ($1, $2, 'active')",
+    )
+    .bind(account_id)
+    .bind(&account_public_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("insert into mother_api.async_report (id, public_id, ib_account_id, report_type, report_version, input, idempotency_key_hash, request_digest) values ($1, $2, $3, 'unregistered.test.v1', 1, '{}'::jsonb, $4, $5)")
+        .bind(Uuid::new_v4())
+        .bind(&report_id)
+        .bind(account_id)
+        .bind(vec![7_u8; 32])
+        .bind("0".repeat(64))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let app = build_router(AppState::new(Config {
+        public_api_surface: PublicApiSurface::Beta,
+        database_url: Some(database_url),
+        async_reports_enabled: true,
+        bigwig_report_outcome_token: Some("bigwig-outcome-token".to_string()),
+        ..Config::default()
+    }));
+    let callback = format!("/internal/v1/reports/{report_id}/complete");
+    let body = r#"{"report_type":"unregistered.test.v1","report_version":1,"report":{}}"#;
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(&callback)
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, "Bearer wrong-token")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let status = sqlx::query_scalar::<_, String>(
+        "select status from mother_api.async_report where public_id = $1",
+    )
+    .bind(&report_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(status, "accepted");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(&callback)
+                .header(CONTENT_TYPE, "application/json")
+                .header(AUTHORIZATION, "Bearer bigwig-outcome-token")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    sqlx::query("delete from mother_api.async_report where public_id = $1")
+        .bind(&report_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("delete from mother_api.ib_account where id = $1")
+        .bind(account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
