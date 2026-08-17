@@ -17,6 +17,11 @@ pub(crate) enum Capability {
     ReportsWrite,
 }
 
+/// Immutable release-owned definitions. PostgreSQL persists grants for these
+/// capabilities but is not allowed to define additional capability IDs.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct CapabilityRegistry;
+
 impl Capability {
     pub(crate) const ALL: [Self; 11] = [
         Self::BalancesRead,
@@ -65,7 +70,7 @@ impl Capability {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) const fn description(self) -> &'static str {
         match self {
             Self::BalancesRead => "Read supported latest and historical balance snapshots.",
@@ -86,6 +91,22 @@ impl Capability {
         Self::ALL
             .into_iter()
             .find(|capability| capability.id() == value)
+    }
+}
+
+impl CapabilityRegistry {
+    #[cfg(test)]
+    pub(crate) const fn all(self) -> &'static [Capability] {
+        &Capability::ALL
+    }
+
+    pub(crate) fn parse(self, value: &str) -> Option<Capability> {
+        Capability::parse(value)
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn description(self, capability: Capability) -> &'static str {
+        capability.description()
     }
 }
 
@@ -186,9 +207,9 @@ pub(crate) struct AuthorizationContext {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum AuthorizationDeny {
-    OwnerCapabilityNotGranted,
-    ClientCapabilityNotGranted,
-    KeyCapabilityNotGranted,
+    Owner,
+    Client,
+    Key,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -206,12 +227,12 @@ pub(crate) fn evaluate_authorization(
         .iter()
         .any(|grant| grant.permits(request))
     {
-        return AuthorizationDecision::Deny(AuthorizationDeny::OwnerCapabilityNotGranted);
+        return AuthorizationDecision::Deny(AuthorizationDeny::Owner);
     }
 
     if let Some(grants) = context.client_grants.as_ref() {
         if !grants.iter().any(|grant| grant.permits(request)) {
-            return AuthorizationDecision::Deny(AuthorizationDeny::ClientCapabilityNotGranted);
+            return AuthorizationDecision::Deny(AuthorizationDeny::Client);
         }
     }
 
@@ -220,7 +241,7 @@ pub(crate) fn evaluate_authorization(
         .iter()
         .any(|grant| grant.permits(request))
     {
-        return AuthorizationDecision::Deny(AuthorizationDeny::KeyCapabilityNotGranted);
+        return AuthorizationDecision::Deny(AuthorizationDeny::Key);
     }
 
     AuthorizationDecision::Allow
@@ -238,6 +259,22 @@ mod tests {
     fn legacy_baseline_stays_pinned_to_the_compatibility_capabilities() {
         assert_eq!(Capability::LEGACY_BASELINE.len(), 2);
         assert_eq!(Capability::ACCOUNT_BASELINE.len(), 3);
+        assert_eq!(Capability::DATALAB_BROWSER_BASELINE.len(), 6);
+    }
+
+    #[test]
+    fn binary_registry_owns_definitions_and_baselines() {
+        let registry = CapabilityRegistry;
+        assert_eq!(registry.all().len(), 11);
+        assert_eq!(
+            registry.parse("balances.read"),
+            Some(Capability::BalancesRead)
+        );
+        assert_eq!(registry.parse("unknown.read"), None);
+        assert_eq!(
+            registry.description(Capability::BalancesRead),
+            "Read supported latest and historical balance snapshots."
+        );
     }
 
     #[test]
@@ -248,14 +285,14 @@ mod tests {
                 vec![],
                 vec![grant(Capability::BalancesRead, NetworkScope::Any)],
                 AuthorizationRequest::route(Capability::BalancesRead),
-                AuthorizationDecision::Deny(AuthorizationDeny::OwnerCapabilityNotGranted),
+                AuthorizationDecision::Deny(AuthorizationDeny::Owner),
             ),
             (
                 "key narrows owner grant",
                 vec![grant(Capability::BalancesRead, NetworkScope::Any)],
                 vec![],
                 AuthorizationRequest::route(Capability::BalancesRead),
-                AuthorizationDecision::Deny(AuthorizationDeny::KeyCapabilityNotGranted),
+                AuthorizationDecision::Deny(AuthorizationDeny::Key),
             ),
             (
                 "matching grants allow",
@@ -275,7 +312,7 @@ mod tests {
                     NetworkScope::Exact("eth-mainnet".to_string()),
                 )],
                 AuthorizationRequest::network(Capability::BalancesRead, "base-mainnet"),
-                AuthorizationDecision::Deny(AuthorizationDeny::OwnerCapabilityNotGranted),
+                AuthorizationDecision::Deny(AuthorizationDeny::Owner),
             ),
             (
                 "expired grants do not allow",
@@ -286,7 +323,7 @@ mod tests {
                 }],
                 vec![grant(Capability::BalancesRead, NetworkScope::Any)],
                 AuthorizationRequest::route(Capability::BalancesRead),
-                AuthorizationDecision::Deny(AuthorizationDeny::OwnerCapabilityNotGranted),
+                AuthorizationDecision::Deny(AuthorizationDeny::Owner),
             ),
         ];
 
@@ -333,7 +370,7 @@ mod tests {
                 },
                 &request,
             ),
-            AuthorizationDecision::Deny(AuthorizationDeny::ClientCapabilityNotGranted)
+            AuthorizationDecision::Deny(AuthorizationDeny::Client)
         );
 
         assert_eq!(

@@ -305,6 +305,10 @@ impl ApiError {
         }
     }
 
+    #[expect(
+        dead_code,
+        reason = "Retained for the documented balance catalog unavailability response."
+    )]
     pub fn asset_network_map_unavailable() -> Self {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,
@@ -337,6 +341,10 @@ impl ApiError {
         }
     }
 
+    #[expect(
+        dead_code,
+        reason = "Retained for the documented transfer catalog unavailability response."
+    )]
     pub fn asset_contract_mapping_unavailable() -> Self {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,

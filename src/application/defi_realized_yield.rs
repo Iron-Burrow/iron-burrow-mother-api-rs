@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::{
     adapters::{
         aave_v3::{
@@ -5,9 +7,8 @@ use crate::{
             Result as AaveResult,
         },
         bigwig::BigwigClient,
-        postgres::DefiProtocolRepository,
     },
-    domain::defi::RealizedYieldProtocol,
+    domain::{defi::RealizedYieldProtocol, verified_protocol_registry::VerifiedProtocolRegistry},
 };
 
 #[derive(Clone, Debug)]
@@ -31,8 +32,6 @@ pub(crate) enum Error {
     ProtocolUnavailable,
     #[error("protocol operation is unsupported")]
     OperationUnsupported,
-    #[error("registry is unavailable")]
-    Registry,
     #[error(transparent)]
     Aave(#[from] AaveError),
 }
@@ -49,7 +48,7 @@ impl RealizedYieldProtocolAdapter for AaveV3RealizedYieldAdapter {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Service {
-    protocols: DefiProtocolRepository,
+    protocols: Arc<VerifiedProtocolRegistry>,
     bigwig: BigwigClient,
     min_confirmations: u64,
     aave_v3: AaveV3RealizedYieldAdapter,
@@ -57,7 +56,7 @@ pub(crate) struct Service {
 
 impl Service {
     pub(crate) fn new(
-        protocols: DefiProtocolRepository,
+        protocols: Arc<VerifiedProtocolRegistry>,
         bigwig: BigwigClient,
         min_confirmations: u64,
     ) -> Self {
@@ -72,9 +71,8 @@ impl Service {
     pub(crate) async fn resolve(&self, command: Command) -> std::result::Result<Result, Error> {
         let protocol = self
             .protocols
-            .load_realized_yield_protocol(&command.protocol_slug)
-            .await
-            .map_err(|_| Error::Registry)?
+            .realized_yield_protocol(&command.protocol_slug)
+            .cloned()
             .ok_or(Error::ProtocolUnavailable)?;
         if protocol.adapter_kind != self.aave_v3.adapter_kind() {
             return Err(Error::OperationUnsupported);

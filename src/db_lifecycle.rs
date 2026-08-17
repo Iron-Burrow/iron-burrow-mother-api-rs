@@ -1,5 +1,4 @@
 use crate::cli::DbCommand;
-use crate::reference_data;
 use sqlx::{migrate::Migrator, postgres::PgPoolOptions};
 
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
@@ -8,7 +7,6 @@ static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum LifecycleStep {
     Migrate,
-    ApplyReference,
 }
 
 #[derive(Debug, Eq, PartialEq, thiserror::Error)]
@@ -19,19 +17,13 @@ pub(crate) enum LifecycleError {
     DatabaseConnection(String),
     #[error("failed to run embedded SQLx migrations: {0}")]
     Migration(String),
-    #[error("failed to apply embedded reference data: {0}")]
-    ApplyReference(String),
 }
 
 pub(crate) async fn run(command: DbCommand) -> Result<(), LifecycleError> {
     let database_url = database_url_from_env()?;
     match command {
         DbCommand::Migrate => run_migrations(database_url.as_str()).await,
-        DbCommand::ApplyReference => apply_reference(database_url.as_str()).await,
-        DbCommand::Apply => {
-            run_migrations(database_url.as_str()).await?;
-            apply_reference(database_url.as_str()).await
-        }
+        DbCommand::Apply => run_migrations(database_url.as_str()).await,
     }
 }
 
@@ -60,18 +52,6 @@ async fn run_migrations(database_url: &str) -> Result<(), LifecycleError> {
         .map_err(|error| LifecycleError::Migration(error.to_string()))
 }
 
-async fn apply_reference(database_url: &str) -> Result<(), LifecycleError> {
-    let pool = PgPoolOptions::new()
-        .max_connections(1)
-        .connect(database_url)
-        .await
-        .map_err(|error| LifecycleError::DatabaseConnection(error.to_string()))?;
-
-    reference_data::apply_embedded_catalog(&pool)
-        .await
-        .map_err(|error| LifecycleError::ApplyReference(error.to_string()))
-}
-
 #[cfg(test)]
 fn run_with_executor<F>(
     command: DbCommand,
@@ -83,11 +63,7 @@ where
 {
     match command {
         DbCommand::Migrate => execute_step(LifecycleStep::Migrate, database_url),
-        DbCommand::ApplyReference => execute_step(LifecycleStep::ApplyReference, database_url),
-        DbCommand::Apply => {
-            execute_step(LifecycleStep::Migrate, database_url)?;
-            execute_step(LifecycleStep::ApplyReference, database_url)
-        }
+        DbCommand::Apply => execute_step(LifecycleStep::Migrate, database_url),
     }
 }
 
@@ -143,24 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn populated_database_url_reaches_apply_reference_scaffold() {
-        let mut calls = Vec::new();
-
-        let result = run_with_executor(
-            DbCommand::ApplyReference,
-            DATABASE_URL,
-            |step, database_url| record_step(&mut calls, step, database_url, Ok(())),
-        );
-
-        assert_eq!(result, Ok(()));
-        assert_eq!(
-            calls,
-            vec![(LifecycleStep::ApplyReference, DATABASE_URL.to_string())]
-        );
-    }
-
-    #[test]
-    fn db_apply_attempts_migrate_before_apply_reference() {
+    fn db_apply_runs_migrations_only() {
         let mut calls = Vec::new();
 
         let result = run_with_executor(DbCommand::Apply, DATABASE_URL, |step, database_url| {
@@ -170,10 +129,7 @@ mod tests {
         assert_eq!(result, Ok(()));
         assert_eq!(
             calls,
-            vec![
-                (LifecycleStep::Migrate, DATABASE_URL.to_string()),
-                (LifecycleStep::ApplyReference, DATABASE_URL.to_string())
-            ]
+            vec![(LifecycleStep::Migrate, DATABASE_URL.to_string())]
         );
     }
 

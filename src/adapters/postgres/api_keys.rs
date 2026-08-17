@@ -9,7 +9,9 @@ use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use super::errors::RepositoryError;
-use crate::domain::capabilities::{Capability, CapabilityGrant, GrantStatus, NetworkScope};
+use crate::domain::capabilities::{
+    Capability, CapabilityGrant, CapabilityRegistry, GrantStatus, NetworkScope,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) enum ApiKeyRepository {
@@ -276,11 +278,6 @@ impl ApiKeyRepository {
             join mother_api.ib_client client on client.ib_account_id = capability_grant.ib_account_id
             join mother_api.api_key api_key on api_key.client_id = client.id
             where api_key.id = $1 and api_key.kind = 'agent'
-            union all
-            select id as capability_id, 'eth-mainnet'::text as network_scope, 'active'::text as status, false as is_expired
-            from mother_api.capability
-            where id in ('balances.read', 'transfers.read')
-              and exists (select 1 from mother_api.api_key where id = $1 and kind = 'anonymous_demo')
             "#,
         )
         .bind(api_key_id)
@@ -313,21 +310,37 @@ impl ApiKeyRepository {
         .await
         .map_err(RepositoryError::new)?;
 
-        Ok(ApiKeyAuthorizationGrants {
-            owner_grants: owner_grants
+        let registry = CapabilityRegistry;
+        let owner_grants = if key_kind == "anonymous_demo" {
+            Capability::LEGACY_BASELINE
+                .iter()
+                .copied()
+                .map(|capability| {
+                    CapabilityGrant::active(
+                        capability,
+                        NetworkScope::Exact("eth-mainnet".to_string()),
+                    )
+                })
+                .collect()
+        } else {
+            owner_grants
                 .into_iter()
-                .filter_map(CapabilityGrantRow::into_domain)
-                .collect(),
+                .map(|row| row.into_domain(registry))
+                .collect::<Result<Vec<_>, _>>()?
+        };
+
+        Ok(ApiKeyAuthorizationGrants {
+            owner_grants,
             key_grants: key_grants
                 .into_iter()
-                .filter_map(CapabilityGrantRow::into_domain)
-                .collect(),
+                .map(|row| row.into_domain(registry))
+                .collect::<Result<Vec<_>, _>>()?,
             client_grants: if key_kind == "agent" {
                 Some(
                     client_grants
                         .into_iter()
-                        .filter_map(CapabilityGrantRow::into_domain)
-                        .collect(),
+                        .map(|row| row.into_domain(registry))
+                        .collect::<Result<Vec<_>, _>>()?,
                 )
             } else {
                 None
@@ -875,22 +888,37 @@ struct CapabilityGrantRow {
 }
 
 impl CapabilityGrantRow {
-    fn into_domain(self) -> Option<CapabilityGrant> {
-        let capability = Capability::parse(&self.capability_id)?;
-        let network_scope = NetworkScope::parse(&self.network_scope)?;
+    fn into_domain(self, registry: CapabilityRegistry) -> Result<CapabilityGrant, RepositoryError> {
+        let capability = registry.parse(&self.capability_id).ok_or_else(|| {
+            RepositoryError::protocol(format!(
+                "database integrity error: unknown persisted capability id {:?}",
+                self.capability_id
+            ))
+        })?;
+        let network_scope = NetworkScope::parse(&self.network_scope).ok_or_else(|| {
+            RepositoryError::protocol(format!(
+                "database integrity error: invalid persisted network scope {:?}",
+                self.network_scope
+            ))
+        })?;
         let status = if self.is_expired {
             GrantStatus::Expired
         } else {
             match self.status.as_str() {
                 "active" => GrantStatus::Active,
                 "revoked" => GrantStatus::Revoked,
-                _ => return None,
+                _ => {
+                    return Err(RepositoryError::protocol(format!(
+                        "database integrity error: invalid persisted grant status {:?}",
+                        self.status
+                    )))
+                }
             }
         };
 
         let mut grant = CapabilityGrant::active(capability, network_scope);
         grant.status = status;
-        Some(grant)
+        Ok(grant)
     }
 }
 

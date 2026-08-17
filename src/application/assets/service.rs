@@ -8,7 +8,6 @@ use crate::{
         LatestAssetPrice, PriceIndexerClient, PriceLookupError, PriceSignalError,
         PriceSignalRequest, PriceStatus,
     },
-    domain::assets::asset_chain_map::AssetChainMap,
     domain::canonical_registry::{
         CanonicalAsset, CanonicalAssetChainMap, CanonicalAssetDetail, CanonicalNetwork,
         CanonicalRegistry,
@@ -582,20 +581,6 @@ impl From<(&CanonicalAssetChainMap, &CanonicalNetwork)> for AssetNetworkMapPaylo
     }
 }
 
-impl From<AssetChainMap> for AssetNetworkMapPayload {
-    fn from(chain_map: AssetChainMap) -> Self {
-        let network = chain_map.network;
-
-        Self {
-            network_slug: network.slug,
-            network_name: network.name,
-            caip2: network.caip2,
-            is_native: chain_map.is_native,
-            address: chain_map.address,
-        }
-    }
-}
-
 fn parse_limit(raw_limit: Option<&str>) -> Result<u64, AssetsServiceError> {
     let Some(raw_limit) = raw_limit else {
         return Ok(DEFAULT_LIMIT);
@@ -764,7 +749,7 @@ mod tests {
         };
         let prices = HashMap::from([("ethereum".to_string(), price)]);
 
-        let assets = vec![
+        let assets = [
             test_asset(" Ethereum ", "ETH", 10),
             test_asset("ethereum", "ETH2", 20),
         ];

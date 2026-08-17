@@ -146,15 +146,13 @@ impl BalanceSnapshotService {
         for group in grouped_accounts {
             let asset_resolutions = self
                 .catalog_resolver
-                .resolve_network(&group.network_slug, &request.tokens().asset_slugs)
-                .await?;
+                .resolve_network(&group.network_slug, &request.tokens().asset_slugs);
             let network_resolution = if request.tokens().contract_addresses.is_empty() {
                 None
             } else {
                 let Some(network) = self
                     .catalog_resolver
                     .resolve_evm_network(&group.network_slug)
-                    .await?
                 else {
                     return Err(BalanceSnapshotServiceError::UnsupportedNetwork {
                         network_slug: group.network_slug,
@@ -163,11 +161,9 @@ impl BalanceSnapshotService {
                 Some(network)
             };
             let contract_resolutions = match network_resolution.as_ref() {
-                Some(network) => {
-                    self.catalog_resolver
-                        .resolve_erc20_contracts(network, &request.tokens().contract_addresses)
-                        .await?
-                }
+                Some(network) => self
+                    .catalog_resolver
+                    .resolve_erc20_contracts(network, &request.tokens().contract_addresses),
                 None => Vec::new(),
             };
             plans.push(plan_network_group(

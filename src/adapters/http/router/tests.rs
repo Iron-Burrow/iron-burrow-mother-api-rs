@@ -20,12 +20,10 @@ use uuid::Uuid;
 
 use super::*;
 use crate::state::AppState;
-use crate::test_utils::fixtures::global_assets::sample_assets;
 use crate::{
     adapters::http::rate_limit::ApiKeyMinuteLimiter,
     adapters::postgres::{
         api_keys::{ApiKeyAuthorizationGrants, ApiKeyLookup},
-        global_assets::GlobalAssetRepository,
         ApiKeyRepository,
     },
     adapters::price_indexer::PriceIndexerClient,
@@ -42,10 +40,7 @@ const TEST_API_KEY: &str =
 const TEST_API_KEY_PREFIX: &str = "ib_live_0123456789abcdef";
 
 fn test_app() -> Router {
-    build_router(AppState::with_asset_repository(
-        Config::default(),
-        GlobalAssetRepository::in_memory(sample_assets()),
-    ))
+    build_router(AppState::for_tests(Config::default()))
 }
 
 fn beta_config() -> Config {
@@ -60,14 +55,13 @@ fn beta_app_with_api_key_repository(api_key_repository: Option<ApiKeyRepository>
         config: beta_config(),
         version: env!("CARGO_PKG_VERSION"),
         canonical_registry: crate::state::embedded_canonical_registry(),
+        verified_protocol_registry: crate::state::embedded_verified_protocol_registry(),
         database_pool: None,
         api_key_repository,
         account_repository: None,
         workspace_repository: None,
         portfolio_simulation_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
-        asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
-        defi_protocol_repository: None,
         price_indexer_client: None,
         dis_client: None,
         bigwig_client: None,
@@ -75,15 +69,12 @@ fn beta_app_with_api_key_repository(api_key_repository: Option<ApiKeyRepository>
 }
 
 fn async_reports_callback_app() -> Router {
-    build_router(AppState::with_asset_repository(
-        Config {
-            public_api_surface: PublicApiSurface::Beta,
-            async_reports_enabled: true,
-            bigwig_report_outcome_token: Some("bigwig-outcome-token".to_string()),
-            ..Config::default()
-        },
-        GlobalAssetRepository::in_memory(sample_assets()),
-    ))
+    build_router(AppState::for_tests(Config {
+        public_api_surface: PublicApiSurface::Beta,
+        async_reports_enabled: true,
+        bigwig_report_outcome_token: Some("bigwig-outcome-token".to_string()),
+        ..Config::default()
+    }))
 }
 
 fn beta_app_with_lookup(lookup: ApiKeyLookup) -> Router {
@@ -102,14 +93,13 @@ fn test_app_with_price_indexer(price_indexer_url: &str, timeout_ms: u64) -> Rout
         config: Config::default(),
         version: env!("CARGO_PKG_VERSION"),
         canonical_registry: crate::state::embedded_canonical_registry(),
+        verified_protocol_registry: crate::state::embedded_verified_protocol_registry(),
         database_pool: None,
         api_key_repository: None,
         account_repository: None,
         workspace_repository: None,
         portfolio_simulation_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
-        asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
-        defi_protocol_repository: None,
         price_indexer_client: Some(price_indexer_client),
         dis_client: None,
         bigwig_client: None,
@@ -711,14 +701,13 @@ async fn beta_route_capabilities_preserve_balance_access_and_restrict_transfer_a
         },
         version: env!("CARGO_PKG_VERSION"),
         canonical_registry: crate::state::embedded_canonical_registry(),
+        verified_protocol_registry: crate::state::embedded_verified_protocol_registry(),
         database_pool: None,
         api_key_repository: Some(repository),
         account_repository: None,
         workspace_repository: None,
         portfolio_simulation_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
-        asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
-        defi_protocol_repository: None,
         price_indexer_client: None,
         dis_client: None,
         bigwig_client: None,
@@ -1229,7 +1218,7 @@ async fn assets_rejects_invalid_limit() {
 }
 
 #[tokio::test]
-async fn assets_resolve_without_a_database_or_asset_repository() {
+async fn assets_resolve_without_a_database() {
     let response = build_router(AppState::new(Config::default()))
         .oneshot(
             Request::builder()
@@ -1678,7 +1667,7 @@ async fn asset_detail_reports_not_found_for_unknown_slug() {
 }
 
 #[tokio::test]
-async fn asset_detail_resolves_without_a_database_or_asset_repository() {
+async fn asset_detail_resolves_without_a_database() {
     let response = build_router(AppState::new(Config::default()))
         .oneshot(
             Request::builder()
@@ -2075,7 +2064,7 @@ async fn resolve_requires_query() {
 }
 
 #[tokio::test]
-async fn resolve_resolves_without_a_database_or_asset_repository() {
+async fn resolve_resolves_without_a_database() {
     let response = build_router(AppState::new(Config::default()))
         .oneshot(
             Request::builder()

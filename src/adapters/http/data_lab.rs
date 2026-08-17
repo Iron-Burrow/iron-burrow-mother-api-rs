@@ -93,7 +93,7 @@ pub(crate) fn routes(state: AppState) -> Router<AppState> {
 
 fn realized_yield_service(state: &AppState) -> Option<RealizedYieldService> {
     Some(RealizedYieldService::new(
-        state.defi_protocol_repository.clone()?,
+        state.verified_protocol_registry.clone(),
         state.bigwig_client.clone()?,
         state.config.aave_v3_min_block_confirmations,
     ))
@@ -102,7 +102,7 @@ fn realized_yield_service(state: &AppState) -> Option<RealizedYieldService> {
 fn portfolio_simulation_service(state: &AppState) -> PortfolioSimulationService {
     PortfolioSimulationService::new(
         state.price_indexer_client.clone(),
-        state.defi_protocol_repository.clone(),
+        state.verified_protocol_registry.clone(),
         state.bigwig_client.clone(),
     )
 }
@@ -399,17 +399,17 @@ async fn portfolio_simulation_submit(
         },
     };
     match repository
-        .create(
+        .create(crate::adapters::postgres::CreatePortfolioSimulationRun {
             account_id,
-            &run.outcome,
-            &run.strategy_slug,
-            &run.strategy_version,
-            run.engine_version,
-            &run.evidence_digest,
-            run.input,
-            run.evidence,
-            run.result,
-        )
+            outcome: run.outcome.clone(),
+            strategy_slug: run.strategy_slug.clone(),
+            strategy_version: run.strategy_version.clone(),
+            engine_version: run.engine_version.to_string(),
+            evidence_digest: run.evidence_digest.clone(),
+            input: run.input,
+            evidence: run.evidence,
+            result: run.result,
+        })
         .await
     {
         Ok(persisted) => Redirect::to(&format!(
@@ -814,20 +814,20 @@ fn chart_points(snapshots: &[PortfolioSnapshotView]) -> String {
     if values.len() < 2 {
         return String::new();
     }
-    let mut low = values[0].clone();
-    let mut high = values[0].clone();
+    let mut low = values[0];
+    let mut high = values[0];
     for value in &values {
         if value < &low {
-            low = value.clone();
+            low = *value;
         }
         if value > &high {
-            high = value.clone();
+            high = *value;
         }
     }
     let zero = D512::from_str("0", Context::default()).expect("zero is valid");
     let one = D512::from_str("1", Context::default()).expect("one is valid");
     let hundred = D512::from_str("100", Context::default()).expect("constant is valid");
-    let span = high.clone() - low.clone();
+    let span = high - low;
     let span = if span > zero { span } else { one };
     let divisor = D512::from_str(&(values.len() - 1).to_string(), Context::default())
         .expect("small length is valid");
@@ -837,9 +837,8 @@ fn chart_points(snapshots: &[PortfolioSnapshotView]) -> String {
         .map(|(index, value)| {
             let index = D512::from_str(&index.to_string(), Context::default())
                 .expect("small index is valid");
-            let x = index * hundred.clone() / divisor.clone();
-            let y =
-                hundred.clone() - (value.clone() - low.clone()) / span.clone() * hundred.clone();
+            let x = index * hundred / divisor;
+            let y = hundred - (*value - low) / span * hundred;
             format!("{},{}", chart_decimal(&x), chart_decimal(&y))
         })
         .collect::<Vec<_>>()

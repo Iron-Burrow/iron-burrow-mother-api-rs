@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "protocols": [
+    {
+      "slug": "aave-v3",
+      "network_slug": "eth-mainnet",
+      "family": "aave-v3",
+      "adapter_kind": "aave_v3_realized_yield",
+      "adapter_version": "v1",
+      "enabled": true,
+      "verified": true,
+      "targets": [
+        {
+          "key": "pool",
+          "kind": "pool",
+          "address": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+          "enabled": true,
+          "verified": true
+        },
+        {
+          "key": "usdc",
+          "kind": "reserve",
+          "asset_slug": "usdc",
+          "address": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+          "enabled": true,
+          "verified": true
+        },
+        {
+          "key": "usdt",
+          "kind": "reserve",
+          "asset_slug": "usdt",
+          "address": "0xdac17f958d2ee523a2206206994597c13d831ec7",
+          "enabled": true,
+          "verified": true
+        },
+        {
+          "key": "dai",
+          "kind": "reserve",
+          "asset_slug": "dai",
+          "address": "0x6b175474e89094c44da98b954eedeac495271d0f",
+          "enabled": true,
+          "verified": true
+        },
+        {
+          "key": "gho",
+          "kind": "reserve",
+          "asset_slug": "gho",
+          "address": "0x40d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f",
+          "enabled": true,
+          "verified": true
+        }
+      ]
+    }
+  ]
+}

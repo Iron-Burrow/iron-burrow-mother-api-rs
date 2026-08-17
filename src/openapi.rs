@@ -174,9 +174,9 @@ struct ReportsApiDoc;
 
 #[utoipa::path(
     post,
-    path = "/v1/reports/{report_type}",
+    path = "/v1/reports/{report}",
     tag = "reports",
-    params(("report_type" = String, Path, description = "A documented closed report type")),
+    params(("report" = String, Path, description = "A documented closed report type")),
     responses(
         (status = 202, description = "Bigwig accepted the report for asynchronous execution"),
         (status = 400, description = "Invalid request or missing Idempotency-Key", body = ErrorResponse),
@@ -192,9 +192,9 @@ async fn create_report_operation() {}
 
 #[utoipa::path(
     get,
-    path = "/v1/reports/{report_id}",
+    path = "/v1/reports/{report}",
     tag = "reports",
-    params(("report_id" = String, Path, description = "Mother-owned report identifier")),
+    params(("report" = String, Path, description = "Mother-owned report identifier")),
     responses(
         (status = 200, description = "Account-owned report status and terminal result when available"),
         (status = 401, description = "The request lacks a valid active API key", body = ErrorResponse),

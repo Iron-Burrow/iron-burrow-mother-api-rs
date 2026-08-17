@@ -33,7 +33,6 @@ use crate::application::erc20_transfers::service::{
     Erc20TransferSearchResult, Erc20TransferSearchTokenFilters, Erc20TransferTokenCatalogMetadata,
     Erc20TransferTokenFilterSource, ResolvedErc20TransferTokenFilter,
 };
-use crate::domain::assets::balance_catalog::{CatalogIntegrityIssue, CatalogResolverError};
 use crate::domain::onchain_time::onchain_window::OnchainWindow;
 use crate::domain::transfers::transfer_direction::TransferDirection;
 use crate::{
@@ -237,37 +236,6 @@ fn transfer_row_direction(
 
 fn erc20_transfer_search_error_to_api_error(error: Erc20TransferSearchError) -> ApiError {
     match error {
-        Erc20TransferSearchError::AssetContractMappingUnavailable => {
-            ApiError::asset_contract_mapping_unavailable()
-        }
-        Erc20TransferSearchError::Catalog(CatalogResolverError::Repository(error)) => {
-            warn!(%error, "ERC-20 transfer asset catalog lookup failed");
-            ApiError::asset_contract_mapping_unavailable()
-        }
-        Erc20TransferSearchError::Catalog(CatalogResolverError::InvalidCatalog {
-            issue, ..
-        }) if matches!(
-            issue,
-            CatalogIntegrityIssue::IncompleteMapping
-                | CatalogIntegrityIssue::InvalidDecimals
-                | CatalogIntegrityIssue::MalformedErc20Address
-        ) =>
-        {
-            warn!(
-                ?issue,
-                "ERC-20 transfer asset catalog mapping is incomplete"
-            );
-            ApiError::asset_contract_mapping_unavailable()
-        }
-        Erc20TransferSearchError::Catalog(CatalogResolverError::InvalidCatalog {
-            issue, ..
-        }) => {
-            warn!(
-                ?issue,
-                "ERC-20 transfer asset catalog is internally inconsistent"
-            );
-            ApiError::internal_error()
-        }
         Erc20TransferSearchError::AssetNotFound => ApiError::asset_not_found(),
         Erc20TransferSearchError::AssetNotAvailableOnNetwork => {
             ApiError::asset_not_available_on_network()

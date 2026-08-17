@@ -16,7 +16,7 @@ use crate::{
             validation::{ensure_json_content_type, reject_unknown_fields},
         },
         postgres::{
-            async_reports::{sha256_hex, AsyncReport},
+            async_reports::{sha256_hex, AsyncReport, CreateAsyncReport},
             AsyncReportRepository,
         },
     },
@@ -59,16 +59,16 @@ pub async fn create_report(
     let request_digest = sha256_hex(canonical_request.as_bytes());
     let key_hash = Sha256::digest(idempotency_key.as_bytes()).to_vec();
     let (report, created) = repository
-        .create_or_find(
+        .create_or_find(CreateAsyncReport {
             account_id,
-            principal.api_key_id,
-            principal.client_id,
-            definition.report_type,
+            api_key_id: principal.api_key_id,
+            client_id: principal.client_id,
+            report_type: definition.report_type.to_string(),
             report_version,
             input,
-            key_hash,
-            request_digest.clone(),
-        )
+            idempotency_key_hash: key_hash,
+            request_digest: request_digest.clone(),
+        })
         .await
         .map_err(|_| ApiError::database_unavailable_for_auth())?;
     if !created && report.request_digest != request_digest {
@@ -258,7 +258,7 @@ fn canonical_json(value: &Value) -> String {
     match value {
         Value::Object(object) => {
             let mut entries = object.iter().collect::<Vec<_>>();
-            entries.sort_by(|(a, _), (b, _)| a.cmp(b));
+            entries.sort_by_key(|(key, _)| *key);
             format!(
                 "{{{}}}",
                 entries

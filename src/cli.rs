@@ -11,7 +11,6 @@ pub(crate) enum Command {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum DbCommand {
     Migrate,
-    ApplyReference,
     Apply,
 }
 
@@ -106,7 +105,6 @@ pub(crate) const USAGE: &str = "\
 Usage:
   mother-api [serve]
   mother-api db migrate
-  mother-api db apply-reference
   mother-api db apply
   mother-api admin api-key issue --consumer-slug <slug> --display-name <name> --category <friend|partner|public|internal> --label <label> [--requests-per-minute <n>] [--requests-per-day <n>] [--expires-at <rfc3339>] [--format <human|json>]
   mother-api admin api-key issue-account --ib-account-id <iba_id> --label <label> [--requests-per-minute <n>] [--requests-per-day <n>] [--expires-at <rfc3339>] [--format <human|json>]
@@ -136,7 +134,6 @@ where
         ["db"] => Err(ParseError::new("db requires a subcommand")),
         ["db", arg] if is_help_arg(arg) => Ok(Command::Help),
         ["db", "migrate"] => Ok(Command::Db(DbCommand::Migrate)),
-        ["db", "apply-reference"] => Ok(Command::Db(DbCommand::ApplyReference)),
         ["db", "apply"] => Ok(Command::Db(DbCommand::Apply)),
         ["db", subcommand] => Err(ParseError::new(format!(
             "unknown db subcommand {subcommand:?}"
@@ -614,10 +611,6 @@ mod tests {
         assert_eq!(
             parse_args(["db", "migrate"]).unwrap(),
             Command::Db(DbCommand::Migrate)
-        );
-        assert_eq!(
-            parse_args(["db", "apply-reference"]).unwrap(),
-            Command::Db(DbCommand::ApplyReference)
         );
         assert_eq!(
             parse_args(["db", "apply"]).unwrap(),

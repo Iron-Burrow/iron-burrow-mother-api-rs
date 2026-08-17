@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::domain::{
-    assets::balance_catalog::{BalanceTarget, BalanceTargetKind, CatalogResolverError},
+    assets::balance_catalog::{BalanceTarget, BalanceTargetKind},
     canonical_registry::{CanonicalAssetChainMap, CanonicalRegistry},
 };
 
@@ -15,13 +15,12 @@ impl CatalogBalanceTargetResolver {
         Self { registry }
     }
 
-    pub async fn resolve_network(
+    pub fn resolve_network(
         &self,
         network_slug: &str,
         ordered_asset_slugs: &[String],
-    ) -> Result<Vec<BalanceTargetResolution>, CatalogResolverError> {
-        Ok(self
-            .registry
+    ) -> Vec<BalanceTargetResolution> {
+        self.registry
             .ordered_balance_targets(network_slug, ordered_asset_slugs)
             .into_iter()
             .map(
@@ -62,34 +61,29 @@ impl CatalogBalanceTargetResolver {
                     }
                 },
             )
-            .collect())
+            .collect()
     }
 
-    pub async fn resolve_evm_network(
-        &self,
-        network_slug: &str,
-    ) -> Result<Option<BalanceNetworkResolution>, CatalogResolverError> {
-        let Some(network) = self.registry.network_by_slug(network_slug) else {
-            return Ok(None);
-        };
+    pub fn resolve_evm_network(&self, network_slug: &str) -> Option<BalanceNetworkResolution> {
+        let network = self.registry.network_by_slug(network_slug)?;
         if network.status != "active" || network.family != "evm" {
-            return Ok(None);
+            return None;
         }
-        Ok(network
+        network
             .chain_id
             .filter(|id| *id > 0)
             .map(|chain_id| BalanceNetworkResolution {
                 network_slug: network.slug.clone(),
                 chain_id,
-            }))
+            })
     }
 
-    pub async fn resolve_erc20_contracts(
+    pub fn resolve_erc20_contracts(
         &self,
         network: &BalanceNetworkResolution,
         ordered_contract_addresses: &[String],
-    ) -> Result<Vec<ContractBalanceTargetResolution>, CatalogResolverError> {
-        Ok(ordered_contract_addresses
+    ) -> Vec<ContractBalanceTargetResolution> {
+        ordered_contract_addresses
             .iter()
             .map(|address| {
                 let address = address.to_ascii_lowercase();
@@ -113,7 +107,7 @@ impl CatalogBalanceTargetResolver {
                         contract_address: address,
                     })
             })
-            .collect())
+            .collect()
     }
 }
 
@@ -191,10 +185,8 @@ mod tests {
     #[tokio::test]
     async fn resolves_catalog_targets_without_postgres() {
         let resolver = CatalogBalanceTargetResolver::new(embedded_canonical_registry());
-        let targets = resolver
-            .resolve_network("eth-mainnet", &["ethereum".to_string(), "usdc".to_string()])
-            .await
-            .unwrap();
+        let targets =
+            resolver.resolve_network("eth-mainnet", &["ethereum".to_string(), "usdc".to_string()]);
         assert!(matches!(targets[0], BalanceTargetResolution::Resolved(_)));
         assert!(matches!(targets[1], BalanceTargetResolution::Resolved(_)));
     }
@@ -202,18 +194,11 @@ mod tests {
     #[tokio::test]
     async fn unknown_contract_stays_unknown_without_postgres() {
         let resolver = CatalogBalanceTargetResolver::new(embedded_canonical_registry());
-        let network = resolver
-            .resolve_evm_network("eth-mainnet")
-            .await
-            .unwrap()
-            .unwrap();
-        let targets = resolver
-            .resolve_erc20_contracts(
-                &network,
-                &["0x1111111111111111111111111111111111111111".to_string()],
-            )
-            .await
-            .unwrap();
+        let network = resolver.resolve_evm_network("eth-mainnet").unwrap();
+        let targets = resolver.resolve_erc20_contracts(
+            &network,
+            &["0x1111111111111111111111111111111111111111".to_string()],
+        );
         assert!(matches!(
             targets[0],
             ContractBalanceTargetResolution::Unknown { .. }

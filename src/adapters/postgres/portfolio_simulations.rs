@@ -24,6 +24,19 @@ pub(crate) struct PortfolioSimulationRun {
     pub(crate) created_at: String,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct CreatePortfolioSimulationRun {
+    pub(crate) account_id: Uuid,
+    pub(crate) outcome: String,
+    pub(crate) strategy_slug: String,
+    pub(crate) strategy_version: String,
+    pub(crate) engine_version: String,
+    pub(crate) evidence_digest: String,
+    pub(crate) input: Value,
+    pub(crate) evidence: Value,
+    pub(crate) result: Value,
+}
+
 #[derive(FromRow)]
 struct RunRow {
     public_id: String,
@@ -64,15 +77,7 @@ impl PortfolioSimulationRepository {
 
     pub(crate) async fn create(
         &self,
-        account_id: Uuid,
-        outcome: &str,
-        strategy_slug: &str,
-        strategy_version: &str,
-        engine_version: &str,
-        evidence_digest: &str,
-        input: Value,
-        evidence: Value,
-        result: Value,
+        request: CreatePortfolioSimulationRun,
     ) -> Result<PortfolioSimulationRun, RepositoryError> {
         let id = Uuid::new_v4();
         let public_id = format!("psr_{}", id.simple());
@@ -87,15 +92,15 @@ impl PortfolioSimulationRepository {
         )
         .bind(id)
         .bind(public_id)
-        .bind(account_id)
-        .bind(outcome)
-        .bind(strategy_slug)
-        .bind(strategy_version)
-        .bind(engine_version)
-        .bind(evidence_digest)
-        .bind(input)
-        .bind(evidence)
-        .bind(result)
+        .bind(request.account_id)
+        .bind(request.outcome)
+        .bind(request.strategy_slug)
+        .bind(request.strategy_version)
+        .bind(request.engine_version)
+        .bind(request.evidence_digest)
+        .bind(request.input)
+        .bind(request.evidence)
+        .bind(request.result)
         .fetch_one(&self.pool)
         .await
         .map_err(RepositoryError::new)

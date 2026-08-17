@@ -6,18 +6,22 @@ use crate::adapters::bigwig::{client::create_bigwig_client, BigwigClient};
 use crate::adapters::dis::{client::create_dis_client, DisClient};
 use crate::adapters::http::rate_limit::ApiKeyMinuteLimiter;
 use crate::adapters::postgres::{
-    AccountRepository, ApiKeyRepository, DefiProtocolRepository, PortfolioSimulationRepository,
-    WorkspaceRepository,
+    AccountRepository, ApiKeyRepository, PortfolioSimulationRepository, WorkspaceRepository,
 };
 use crate::adapters::price_indexer::{client::create_price_indexer_client, PriceIndexerClient};
 use crate::config::Config;
 use crate::domain::canonical_registry::{CanonicalRegistry, CanonicalRegistryError};
+use crate::domain::verified_protocol_registry::{
+    VerifiedProtocolRegistry, VerifiedProtocolRegistryError,
+};
 use crate::infra::db;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum AppStateError {
     #[error("canonical registry initialization failed")]
     CanonicalRegistry(#[source] CanonicalRegistryError),
+    #[error("verified protocol registry initialization failed")]
+    VerifiedProtocolRegistry(#[source] VerifiedProtocolRegistryError),
     #[error("database pool initialization failed")]
     Database(#[source] sqlx::Error),
 }
@@ -27,16 +31,13 @@ pub(crate) struct AppState {
     pub(crate) config: Config,
     pub(crate) version: &'static str,
     pub(crate) canonical_registry: Arc<CanonicalRegistry>,
+    pub(crate) verified_protocol_registry: Arc<VerifiedProtocolRegistry>,
     pub(crate) database_pool: Option<PgPool>,
     pub(crate) api_key_repository: Option<ApiKeyRepository>,
     pub(crate) account_repository: Option<AccountRepository>,
     pub(crate) workspace_repository: Option<WorkspaceRepository>,
     pub(crate) portfolio_simulation_repository: Option<PortfolioSimulationRepository>,
     pub(crate) api_key_minute_limiter: ApiKeyMinuteLimiter,
-    #[cfg(test)]
-    pub(crate) asset_repository:
-        Option<crate::adapters::postgres::global_assets::GlobalAssetRepository>,
-    pub(crate) defi_protocol_repository: Option<DefiProtocolRepository>,
     pub(crate) price_indexer_client: Option<PriceIndexerClient>,
     pub(crate) dis_client: Option<DisClient>,
     #[allow(dead_code)]
@@ -62,6 +63,10 @@ impl AppState {
     {
         let canonical_registry =
             Arc::new(build_registry().map_err(AppStateError::CanonicalRegistry)?);
+        let verified_protocol_registry = Arc::new(
+            VerifiedProtocolRegistry::from_embedded(&canonical_registry)
+                .map_err(AppStateError::VerifiedProtocolRegistry)?,
+        );
         let database_pool =
             db::create_pool(config.database_url.as_deref()).map_err(AppStateError::Database)?;
         let api_key_repository = database_pool.clone().map(ApiKeyRepository::database);
@@ -70,7 +75,6 @@ impl AppState {
         let portfolio_simulation_repository = database_pool
             .clone()
             .map(PortfolioSimulationRepository::database);
-        let defi_protocol_repository = database_pool.clone().map(DefiProtocolRepository::database);
         let price_indexer_client = create_price_indexer_client(&config);
         let dis_client = create_dis_client(&config);
         let bigwig_client = create_bigwig_client(&config);
@@ -79,15 +83,13 @@ impl AppState {
             config,
             version: env!("CARGO_PKG_VERSION"),
             canonical_registry,
+            verified_protocol_registry,
             database_pool,
             api_key_repository,
             account_repository,
             workspace_repository,
             portfolio_simulation_repository,
             api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
-            #[cfg(test)]
-            asset_repository: None,
-            defi_protocol_repository,
             price_indexer_client,
             dis_client,
             bigwig_client,
@@ -95,17 +97,13 @@ impl AppState {
     }
 
     #[cfg(test)]
-    pub(crate) fn with_asset_repository(
-        config: Config,
-        _asset_repository: crate::adapters::postgres::global_assets::GlobalAssetRepository,
-    ) -> Self {
+    pub(crate) fn for_tests(config: Config) -> Self {
         Self::new(config)
     }
 
     #[cfg(test)]
-    pub(crate) fn with_asset_repository_and_bigwig_client(
+    pub(crate) fn for_tests_with_bigwig_client(
         config: Config,
-        _asset_repository: crate::adapters::postgres::global_assets::GlobalAssetRepository,
         bigwig_client: BigwigClient,
     ) -> Self {
         let mut state = Self::new(config);
@@ -119,6 +117,15 @@ pub(crate) fn embedded_canonical_registry() -> Arc<CanonicalRegistry> {
     Arc::new(
         CanonicalRegistry::from_embedded_catalog()
             .expect("embedded catalog should construct the canonical registry"),
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn embedded_verified_protocol_registry() -> Arc<VerifiedProtocolRegistry> {
+    let canonical = embedded_canonical_registry();
+    Arc::new(
+        VerifiedProtocolRegistry::from_embedded(&canonical)
+            .expect("embedded protocol declarations should construct the registry"),
     )
 }
 

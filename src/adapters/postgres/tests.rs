@@ -10,6 +10,10 @@ const IDENTITY_CONSTRAINTS_MIGRATION_SQL: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/migrations/0006_reference_data_identity_constraints.sql"
 ));
+const REMOVE_CAPABILITY_REGISTRY_MIGRATION_SQL: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/migrations/0018_remove_database_capability_registry.sql"
+));
 
 fn assert_database_constraint(error: sqlx::Error, expected_constraint: &str) {
     let sqlx::Error::Database(database_error) = error else {
@@ -934,14 +938,10 @@ async fn api_key_policy_usage_tables_exist_after_migration() {
 }
 
 #[tokio::test]
-async fn api_key_adoption_migrations_and_reference_data_create_no_real_keys() {
+async fn migrations_create_no_real_keys_or_capability_table() {
     let Some(pool) = migrated_pool().await else {
         return;
     };
-
-    crate::reference_data::apply_embedded_catalog(&pool)
-        .await
-        .unwrap();
 
     let consumer_count =
         sqlx::query_scalar::<_, i64>("select count(*) from mother_api.api_consumer")
@@ -968,96 +968,12 @@ async fn api_key_adoption_migrations_and_reference_data_create_no_real_keys() {
     assert_eq!(policy_count, 0);
     assert_eq!(usage_count, 0);
 
-    let capabilities = sqlx::query_as::<_, (String, String)>(
-        "select id, description from mother_api.capability order by id",
-    )
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    assert_eq!(
-        capabilities,
-        vec![
-            (
-                "balances.read".to_string(),
-                "Read supported latest and historical balance snapshots.".to_string(),
-            ),
-            (
-                "catalog.read".to_string(),
-                "Read authenticated Data Lab asset and network catalog views.".to_string(),
-            ),
-            (
-                "lab.read".to_string(),
-                "Run authenticated curated Data Lab research.".to_string(),
-            ),
-            (
-                "prices.read".to_string(),
-                "Read authenticated Data Lab price views.".to_string(),
-            ),
-            (
-                "reports.read".to_string(),
-                "Read account-owned asynchronous reports.".to_string(),
-            ),
-            (
-                "reports.write".to_string(),
-                "Request account-owned asynchronous reports.".to_string(),
-            ),
-            (
-                "scan.read".to_string(),
-                "Read authenticated Workspace-member Scan views.".to_string(),
-            ),
-            (
-                "transfers.read".to_string(),
-                "Search bounded ERC-20 transfers.".to_string(),
-            ),
-            (
-                "treasury.read".to_string(),
-                "Read account-owned Workspace treasury snapshots.".to_string(),
-            ),
-            (
-                "treasury.snapshot.write".to_string(),
-                "Capture account-owned Workspace treasury snapshots.".to_string(),
-            ),
-            (
-                "workspace.activity.read".to_string(),
-                "Read account-owned Workspace activity and evidence.".to_string(),
-            ),
-        ]
-    );
-}
-
-#[tokio::test]
-async fn reference_data_reconciles_legacy_capability_grants_for_existing_keys() {
-    let Some(pool) = migrated_pool().await else {
-        return;
-    };
-
-    let suffix = uuid::Uuid::new_v4().simple().to_string();
-    let (consumer_slug, _key_prefix, consumer_id, key_id) =
-        insert_repository_test_key(&pool, &suffix, vec![60_u8; 32]).await;
-
-    crate::reference_data::apply_embedded_catalog(&pool)
-        .await
-        .unwrap();
-
-    let owner_grant_count = sqlx::query_scalar::<_, i64>(
-        "select count(*) from mother_api.api_consumer_capability_grant where consumer_id = $1",
-    )
-    .bind(consumer_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let key_grant_count = sqlx::query_scalar::<_, i64>(
-        "select count(*) from mother_api.api_key_capability_grant where api_key_id = $1",
-    )
-    .bind(key_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-
-    assert_eq!(owner_grant_count, 2);
-    assert_eq!(key_grant_count, 2);
-
-    delete_api_consumer_test_rows(&pool, &consumer_slug).await;
+    let capability_table_exists =
+        sqlx::query_scalar::<_, bool>("select to_regclass('mother_api.capability') is not null")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(!capability_table_exists);
 }
 
 #[tokio::test]
@@ -2035,9 +1951,6 @@ async fn capability_grants_are_persisted_at_owner_and_key_boundaries() {
     };
 
     let suffix = uuid::Uuid::new_v4().simple().to_string();
-    crate::reference_data::apply_embedded_catalog(&pool)
-        .await
-        .unwrap();
     let (consumer_slug, _key_prefix, consumer_id, key_id) =
         insert_repository_test_key(&pool, &suffix, vec![61_u8; 32]).await;
 
@@ -2079,6 +1992,232 @@ async fn capability_grants_are_persisted_at_owner_and_key_boundaries() {
     assert_eq!(grants.key_grants, vec![expected]);
 
     delete_api_consumer_test_rows(&pool, &consumer_slug).await;
+}
+
+#[tokio::test]
+async fn unknown_persisted_capability_is_a_database_integrity_error() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let (consumer_slug, _key_prefix, consumer_id, key_id) =
+        insert_repository_test_key(&pool, &suffix, vec![62_u8; 32]).await;
+    sqlx::query(
+        "insert into mother_api.api_consumer_capability_grant (consumer_id, capability_id, network_scope) values ($1, 'unknown.read', '*')",
+    )
+    .bind(consumer_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let error = ApiKeyRepository::database(pool.clone())
+        .find_authorization_grants(key_id)
+        .await
+        .expect_err("unknown capability IDs must stop authorization");
+    assert!(error.to_string().contains("database integrity error"));
+    assert!(error.to_string().contains("unknown.read"));
+
+    delete_api_consumer_test_rows(&pool, &consumer_slug).await;
+}
+
+#[tokio::test]
+async fn capability_registry_removal_migration_backfills_without_broadening_narrow_grants() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+    let mut transaction = pool.begin().await.unwrap();
+    restore_capability_table_and_foreign_keys(&mut transaction).await;
+
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let consumer_id = insert_api_consumer(&mut transaction, &format!("upgrade-{suffix}")).await;
+    let key_id = insert_api_key(
+        &mut transaction,
+        consumer_id,
+        &format!("ib_live_upgrade_{suffix}"),
+        vec![63_u8; 32],
+    )
+    .await;
+    sqlx::query(
+        "insert into mother_api.api_consumer_capability_grant (consumer_id, capability_id, network_scope) values ($1, 'balances.read', 'eth-mainnet')",
+    )
+    .bind(consumer_id)
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+
+    sqlx::raw_sql(REMOVE_CAPABILITY_REGISTRY_MIGRATION_SQL)
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+
+    let broad_balance_grants = sqlx::query_scalar::<_, i64>(
+        "select count(*) from mother_api.api_consumer_capability_grant where consumer_id = $1 and capability_id = 'balances.read' and network_scope = '*'",
+    )
+    .bind(consumer_id)
+    .fetch_one(&mut *transaction)
+    .await
+    .unwrap();
+    let backfilled_transfer_grants = sqlx::query_scalar::<_, i64>(
+        "select count(*) from mother_api.api_key_capability_grant where api_key_id = $1 and capability_id = 'transfers.read' and network_scope = '*'",
+    )
+    .bind(key_id)
+    .fetch_one(&mut *transaction)
+    .await
+    .unwrap();
+    assert_eq!(broad_balance_grants, 0);
+    assert_eq!(backfilled_transfer_grants, 1);
+    assert!(!sqlx::query_scalar::<_, bool>(
+        "select to_regclass('mother_api.capability') is not null"
+    )
+    .fetch_one(&mut *transaction)
+    .await
+    .unwrap());
+    transaction.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn capability_registry_removal_migration_rejects_unknown_persisted_ids() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+    let mut transaction = pool.begin().await.unwrap();
+    restore_capability_table_and_foreign_keys(&mut transaction).await;
+    sqlx::query("alter table mother_api.api_consumer_capability_grant drop constraint api_consumer_capability_grant_capability_id_fkey")
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    let consumer_id = insert_api_consumer(
+        &mut transaction,
+        &format!("unknown-{}", uuid::Uuid::new_v4().simple()),
+    )
+    .await;
+    sqlx::query("insert into mother_api.api_consumer_capability_grant (consumer_id, capability_id, network_scope) values ($1, 'unknown.read', '*')")
+        .bind(consumer_id)
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    let error = sqlx::raw_sql(REMOVE_CAPABILITY_REGISTRY_MIGRATION_SQL)
+        .execute(&mut *transaction)
+        .await
+        .expect_err("unknown persisted IDs must reject migration");
+    assert_database_message_contains(error, "unknown persisted capability IDs: unknown.read");
+    transaction.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn v030_shaped_upgrade_preserves_legacy_grants_and_drops_the_registry() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+    let mut transaction = pool.begin().await.unwrap();
+    sqlx::raw_sql("drop schema mother_api cascade")
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+
+    for migration in [
+        include_str!("../../../migrations/0001_mother_api_global_assets.sql"),
+        include_str!("../../../migrations/0002_seed_demo_global_assets.sql"),
+        include_str!("../../../migrations/0003_global_asset_slug_unique.sql"),
+        include_str!("../../../migrations/0004_seed_mxnb_global_asset.sql"),
+        include_str!("../../../migrations/0005_canonical_evm_network_slugs.sql"),
+        include_str!("../../../migrations/0006_reference_data_identity_constraints.sql"),
+        include_str!("../../../migrations/0007_api_key_adoption.sql"),
+        include_str!("../../../migrations/0008_api_key_policy_usage.sql"),
+    ] {
+        sqlx::raw_sql(migration)
+            .execute(&mut *transaction)
+            .await
+            .unwrap();
+    }
+
+    let consumer_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "insert into mother_api.api_consumer (slug, display_name, category) values ('v030-upgrade', 'v0.3.0 upgrade', 'internal') returning id",
+    )
+    .fetch_one(&mut *transaction)
+    .await
+    .unwrap();
+    let key_id = sqlx::query_scalar::<_, uuid::Uuid>(
+        "insert into mother_api.api_key (consumer_id, label, key_prefix, key_hash) values ($1, 'v0.3.0 key', 'v030_upgrade', decode(repeat('aa', 32), 'hex')) returning id",
+    )
+    .bind(consumer_id)
+    .fetch_one(&mut *transaction)
+    .await
+    .unwrap();
+
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/0009_legacy_api_key_capabilities.sql"
+    ))
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+    sqlx::raw_sql(
+        "insert into mother_api.capability (id, description) values ('balances.read', 'balances'), ('transfers.read', 'transfers')",
+    )
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
+    for migration in [
+        include_str!("../../../migrations/0010_rfc003_phase3_accounts.sql"),
+        include_str!("../../../migrations/0011_rfc003_phase4_workspaces.sql"),
+        include_str!("../../../migrations/0012_rfc003_phase5_workspace_activity.sql"),
+        include_str!("../../../migrations/0013_rfc003_phase6_core.sql"),
+        include_str!("../../../migrations/0014_ib_account_password_authentication.sql"),
+        include_str!("../../../migrations/0015_portfolio_simulation_lab.sql"),
+        include_str!("../../../migrations/0016_async_reports.sql"),
+        include_str!("../../../migrations/0017_defi_protocol_registry.sql"),
+        REMOVE_CAPABILITY_REGISTRY_MIGRATION_SQL,
+    ] {
+        sqlx::raw_sql(migration)
+            .execute(&mut *transaction)
+            .await
+            .unwrap();
+    }
+
+    let owner_count = sqlx::query_scalar::<_, i64>(
+        "select count(*) from mother_api.api_consumer_capability_grant where consumer_id = $1 and capability_id in ('balances.read', 'transfers.read')",
+    )
+    .bind(consumer_id)
+    .fetch_one(&mut *transaction)
+    .await
+    .unwrap();
+    let key_count = sqlx::query_scalar::<_, i64>(
+        "select count(*) from mother_api.api_key_capability_grant where api_key_id = $1 and capability_id in ('balances.read', 'transfers.read')",
+    )
+    .bind(key_id)
+    .fetch_one(&mut *transaction)
+    .await
+    .unwrap();
+    assert_eq!(owner_count, 2);
+    assert_eq!(key_count, 2);
+    assert!(!sqlx::query_scalar::<_, bool>(
+        "select to_regclass('mother_api.capability') is not null"
+    )
+    .fetch_one(&mut *transaction)
+    .await
+    .unwrap());
+    transaction.rollback().await.unwrap();
+}
+
+async fn restore_capability_table_and_foreign_keys(transaction: &mut Transaction<'_, Postgres>) {
+    sqlx::raw_sql(
+        r#"
+        create table mother_api.capability (id text primary key);
+        insert into mother_api.capability (id) values
+          ('balances.read'), ('transfers.read'), ('workspace.activity.read'),
+          ('catalog.read'), ('prices.read'), ('scan.read'), ('lab.read'),
+          ('treasury.read'), ('treasury.snapshot.write'), ('reports.read'), ('reports.write');
+        alter table mother_api.api_consumer_capability_grant add constraint api_consumer_capability_grant_capability_id_fkey foreign key (capability_id) references mother_api.capability(id);
+        alter table mother_api.api_key_capability_grant add constraint api_key_capability_grant_capability_id_fkey foreign key (capability_id) references mother_api.capability(id);
+        alter table mother_api.ib_account_capability_grant add constraint ib_account_capability_grant_capability_id_fkey foreign key (capability_id) references mother_api.capability(id);
+        alter table mother_api.ib_client_capability_grant add constraint ib_client_capability_grant_capability_id_fkey foreign key (capability_id) references mother_api.capability(id);
+        alter table mother_api.product_usage_event add constraint product_usage_event_capability_id_fkey foreign key (capability_id) references mother_api.capability(id);
+        "#,
+    )
+    .execute(&mut **transaction)
+    .await
+    .unwrap();
 }
 
 #[tokio::test]

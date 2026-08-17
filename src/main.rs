@@ -10,7 +10,6 @@ mod domain;
 mod infra;
 #[allow(dead_code)]
 mod openapi;
-mod reference_data;
 mod state;
 
 #[cfg(test)]
