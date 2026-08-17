@@ -63,11 +63,12 @@ async fn insert_api_key(
         r#"
         insert into mother_api.api_key (
             consumer_id,
+            kind,
             label,
             key_prefix,
             key_hash
         )
-        values ($1, 'Test Key', $2, $3)
+        values ($1, 'legacy', 'Test Key', $2, $3)
         returning id
         "#,
     )
@@ -108,11 +109,12 @@ async fn insert_api_key_with_pool(
         r#"
         insert into mother_api.api_key (
             consumer_id,
+            kind,
             label,
             key_prefix,
             key_hash
         )
-        values ($1, 'Repository Test Key', $2, $3)
+        values ($1, 'legacy', 'Repository Test Key', $2, $3)
         returning id
         "#,
     )
@@ -392,6 +394,12 @@ async fn canonical_network_migration_rejects_conflicting_rows() {
     };
 
     let mut transaction = pool.begin().await.unwrap();
+    sqlx::query(
+        "alter table mother_api.workspace_member_address drop constraint workspace_member_address_network_slug_fkey",
+    )
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
     sqlx::query("alter table mother_api.network drop constraint network_slug_unique")
         .execute(&mut *transaction)
         .await
@@ -549,6 +557,12 @@ async fn identity_constraint_migration_rejects_existing_duplicate_network_slugs(
     };
 
     let mut transaction = pool.begin().await.unwrap();
+    sqlx::query(
+        "alter table mother_api.workspace_member_address drop constraint workspace_member_address_network_slug_fkey",
+    )
+    .execute(&mut *transaction)
+    .await
+    .unwrap();
     sqlx::query("alter table mother_api.network drop constraint network_slug_unique")
         .execute(&mut *transaction)
         .await
@@ -968,8 +982,44 @@ async fn api_key_adoption_migrations_and_reference_data_create_no_real_keys() {
                 "Read supported latest and historical balance snapshots.".to_string(),
             ),
             (
+                "catalog.read".to_string(),
+                "Read authenticated Data Lab asset and network catalog views.".to_string(),
+            ),
+            (
+                "lab.read".to_string(),
+                "Run authenticated curated Data Lab research.".to_string(),
+            ),
+            (
+                "prices.read".to_string(),
+                "Read authenticated Data Lab price views.".to_string(),
+            ),
+            (
+                "reports.read".to_string(),
+                "Read account-owned asynchronous reports.".to_string(),
+            ),
+            (
+                "reports.write".to_string(),
+                "Request account-owned asynchronous reports.".to_string(),
+            ),
+            (
+                "scan.read".to_string(),
+                "Read authenticated Workspace-member Scan views.".to_string(),
+            ),
+            (
                 "transfers.read".to_string(),
                 "Search bounded ERC-20 transfers.".to_string(),
+            ),
+            (
+                "treasury.read".to_string(),
+                "Read account-owned Workspace treasury snapshots.".to_string(),
+            ),
+            (
+                "treasury.snapshot.write".to_string(),
+                "Capture account-owned Workspace treasury snapshots.".to_string(),
+            ),
+            (
+                "workspace.activity.read".to_string(),
+                "Read account-owned Workspace activity and evidence.".to_string(),
             ),
         ]
     );
@@ -1230,11 +1280,12 @@ async fn api_key_prefix_hash_and_status_are_constrained() {
         r#"
         insert into mother_api.api_key (
             consumer_id,
+            kind,
             label,
             key_prefix,
             key_hash
         )
-        values ($1, 'Duplicate Prefix Key', 'duplicate_prefix', $2)
+        values ($1, 'legacy', 'Duplicate Prefix Key', 'duplicate_prefix', $2)
         "#,
     )
     .bind(consumer_id)
@@ -1259,11 +1310,12 @@ async fn api_key_prefix_hash_and_status_are_constrained() {
         r#"
         insert into mother_api.api_key (
             consumer_id,
+            kind,
             label,
             key_prefix,
             key_hash
         )
-        values ($1, 'Duplicate Hash Key', 'second_hash_prefix', $2)
+        values ($1, 'legacy', 'Duplicate Hash Key', 'second_hash_prefix', $2)
         "#,
     )
     .bind(consumer_id)
@@ -1280,11 +1332,12 @@ async fn api_key_prefix_hash_and_status_are_constrained() {
         r#"
         insert into mother_api.api_key (
             consumer_id,
+            kind,
             label,
             key_prefix,
             key_hash
         )
-        values ($1, 'Bad Prefix Key', 'Bad-Prefix', $2)
+        values ($1, 'legacy', 'Bad Prefix Key', 'Bad-Prefix', $2)
         "#,
     )
     .bind(consumer_id)
@@ -1301,12 +1354,13 @@ async fn api_key_prefix_hash_and_status_are_constrained() {
         r#"
         insert into mother_api.api_key (
             consumer_id,
+            kind,
             label,
             key_prefix,
             key_hash,
             status
         )
-        values ($1, 'Bad Status Key', 'bad_status_prefix', $2, 'pending')
+        values ($1, 'legacy', 'Bad Status Key', 'bad_status_prefix', $2, 'pending')
         "#,
     )
     .bind(consumer_id)
@@ -1330,11 +1384,12 @@ async fn api_key_hash_algorithm_length_and_metadata_are_constrained() {
         r#"
         insert into mother_api.api_key (
             consumer_id,
+            kind,
             label,
             key_prefix,
             key_hash
         )
-        values ($1, '   ', 'blank_label_prefix', $2)
+        values ($1, 'legacy', '   ', 'blank_label_prefix', $2)
         "#,
     )
     .bind(consumer_id)
@@ -1352,12 +1407,13 @@ async fn api_key_hash_algorithm_length_and_metadata_are_constrained() {
         r#"
         insert into mother_api.api_key (
             consumer_id,
+            kind,
             label,
             key_prefix,
             key_hash,
             hash_algorithm
         )
-        values ($1, 'Bad Algorithm Key', 'bad_algorithm_prefix', $2, 'bcrypt')
+        values ($1, 'legacy', 'Bad Algorithm Key', 'bad_algorithm_prefix', $2, 'bcrypt')
         "#,
     )
     .bind(consumer_id)
@@ -1375,11 +1431,12 @@ async fn api_key_hash_algorithm_length_and_metadata_are_constrained() {
         r#"
         insert into mother_api.api_key (
             consumer_id,
+            kind,
             label,
             key_prefix,
             key_hash
         )
-        values ($1, 'Bad Hash Length Key', 'bad_hash_length_prefix', $2)
+        values ($1, 'legacy', 'Bad Hash Length Key', 'bad_hash_length_prefix', $2)
         "#,
     )
     .bind(consumer_id)
@@ -1397,12 +1454,13 @@ async fn api_key_hash_algorithm_length_and_metadata_are_constrained() {
         r#"
         insert into mother_api.api_key (
             consumer_id,
+            kind,
             label,
             key_prefix,
             key_hash,
             metadata
         )
-        values ($1, 'Bad Metadata Key', 'bad_metadata_prefix', $2, $3)
+        values ($1, 'legacy', 'Bad Metadata Key', 'bad_metadata_prefix', $2, $3)
         "#,
     )
     .bind(consumer_id)
@@ -1455,6 +1513,7 @@ async fn api_key_timestamp_sanity_is_enforced() {
         r#"
         insert into mother_api.api_key (
             consumer_id,
+            kind,
             label,
             key_prefix,
             key_hash,
@@ -1463,6 +1522,7 @@ async fn api_key_timestamp_sanity_is_enforced() {
         )
         values (
             $1,
+            'legacy',
             'Bad Expires Key',
             'bad_expires_prefix',
             $2,
@@ -1486,12 +1546,13 @@ async fn api_key_timestamp_sanity_is_enforced() {
         r#"
         insert into mother_api.api_key (
             consumer_id,
+            kind,
             label,
             key_prefix,
             key_hash,
             status
         )
-        values ($1, 'Missing Revoked At Key', 'missing_revoked_prefix', $2, 'revoked')
+        values ($1, 'legacy', 'Missing Revoked At Key', 'missing_revoked_prefix', $2, 'revoked')
         "#,
     )
     .bind(consumer_id)
@@ -1512,6 +1573,7 @@ async fn api_key_timestamp_sanity_is_enforced() {
         r#"
         insert into mother_api.api_key (
             consumer_id,
+            kind,
             label,
             key_prefix,
             key_hash,
@@ -1521,6 +1583,7 @@ async fn api_key_timestamp_sanity_is_enforced() {
         )
         values (
             $1,
+            'legacy',
             'Bad Revoked At Key',
             'bad_revoked_at_prefix',
             $2,
@@ -1545,6 +1608,7 @@ async fn api_key_timestamp_sanity_is_enforced() {
         r#"
         insert into mother_api.api_key (
             consumer_id,
+            kind,
             label,
             key_prefix,
             key_hash,
@@ -1553,6 +1617,7 @@ async fn api_key_timestamp_sanity_is_enforced() {
         )
         values (
             $1,
+            'legacy',
             'Bad Last Used Key',
             'bad_last_used_prefix',
             $2,
@@ -1576,6 +1641,7 @@ async fn api_key_timestamp_sanity_is_enforced() {
         r#"
         insert into mother_api.api_key (
             consumer_id,
+            kind,
             label,
             key_prefix,
             key_hash,
@@ -1584,6 +1650,7 @@ async fn api_key_timestamp_sanity_is_enforced() {
         )
         values (
             $1,
+            'legacy',
             'Bad Updated At Key',
             'bad_updated_at_prefix',
             $2,

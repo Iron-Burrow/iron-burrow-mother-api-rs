@@ -193,10 +193,6 @@ fn assets_error_to_api_error(error: AssetsServiceError) -> ApiError {
     match error {
         AssetsServiceError::InvalidLimit => ApiError::invalid_limit(),
         AssetsServiceError::AssetNotFound => ApiError::asset_not_found(),
-        AssetsServiceError::Repository(error) => {
-            let _ = error;
-            ApiError::internal_error()
-        }
     }
 }
 

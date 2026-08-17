@@ -1,15 +1,16 @@
 use std::{
     collections::{HashMap, HashSet},
     future::Future,
+    sync::Arc,
 };
 
-use crate::adapters::postgres::global_assets::GlobalAssetRepository;
 use crate::application::balances::catalog::{
     BalanceTargetResolution, CatalogBalanceTargetResolver,
 };
 use crate::domain::assets::balance_catalog::{
     BalanceTargetKind, CatalogIntegrityIssue, CatalogResolverError,
 };
+use crate::domain::canonical_registry::CanonicalRegistry;
 use crate::domain::onchain_time::onchain_window::OnchainWindow;
 use crate::domain::transfers::transfer_direction::TransferDirection;
 
@@ -158,21 +159,21 @@ pub(crate) enum Erc20TransferExtractionError {
 #[allow(dead_code)]
 pub(crate) async fn search_erc20_transfers<E>(
     input: Erc20TransferSearchInput,
-    repository: Option<GlobalAssetRepository>,
+    registry: Arc<CanonicalRegistry>,
     max_token_filters: u64,
     extractor: &E,
 ) -> Result<Erc20TransferSearchResult, Erc20TransferSearchError>
 where
     E: Erc20TransferExtractor + Sync,
 {
-    let plan = build_search_plan(input, repository.clone(), max_token_filters).await?;
+    let plan = build_search_plan(input, registry.clone(), max_token_filters).await?;
 
-    execute_search_plan(plan, repository, extractor).await
+    execute_search_plan(plan, registry, extractor).await
 }
 
 pub(crate) async fn build_search_plan(
     input: Erc20TransferSearchInput,
-    repository: Option<GlobalAssetRepository>,
+    registry: Arc<CanonicalRegistry>,
     max_token_filters: u64,
 ) -> Result<Erc20TransferSearchPlan, Erc20TransferSearchError> {
     let requested_token_filters = Erc20TransferSearchTokenFilters {
@@ -180,7 +181,7 @@ pub(crate) async fn build_search_plan(
         contract_addresses: input.contract_addresses,
     };
     let resolved_token_filters = resolve_token_filters(
-        repository,
+        registry,
         &input.network_slug,
         requested_token_filters.clone(),
     )
@@ -207,7 +208,7 @@ pub(crate) async fn build_search_plan(
 
 pub(crate) async fn execute_search_plan<E>(
     mut plan: Erc20TransferSearchPlan,
-    repository: Option<GlobalAssetRepository>,
+    registry: Arc<CanonicalRegistry>,
     extractor: &E,
 ) -> Result<Erc20TransferSearchResult, Erc20TransferSearchError>
 where
@@ -217,7 +218,7 @@ where
         .search_erc20_transfers(plan.extraction_request.clone())
         .await
         .map_err(Erc20TransferSearchError::from)?;
-    let token_metadata = enrich_token_metadata(&mut plan, &extraction, repository).await?;
+    let token_metadata = enrich_token_metadata(&mut plan, &extraction, registry).await?;
 
     Ok(Erc20TransferSearchResult {
         plan,
@@ -229,7 +230,7 @@ where
 async fn enrich_token_metadata(
     plan: &mut Erc20TransferSearchPlan,
     extraction: &Erc20TransferExtractionResult,
-    repository: Option<GlobalAssetRepository>,
+    registry: Arc<CanonicalRegistry>,
 ) -> Result<Vec<Erc20TransferTokenCatalogMetadata>, Erc20TransferSearchError> {
     let lookup_addresses = collect_metadata_lookup_addresses(plan, extraction);
     let mut metadata_by_contract = plan
@@ -239,28 +240,22 @@ async fn enrich_token_metadata(
         .map(|metadata| (metadata.contract_address.clone(), metadata))
         .collect::<HashMap<_, _>>();
 
-    if let Some(repository) = repository {
-        let rows = repository
-            .load_erc20_token_catalog_rows(&plan.extraction_request.network_slug, &lookup_addresses)
-            .await
-            .map_err(CatalogResolverError::from)?;
-
-        for row in rows {
-            let decimals = row
-                .decimals
-                .and_then(|decimals| u8::try_from(decimals).ok())
-                .ok_or_else(|| {
+    for address in &lookup_addresses {
+        if let Some(metadata) =
+            registry.erc20_metadata(&plan.extraction_request.network_slug, address)
+        {
+            let decimals =
+                u8::try_from(metadata.mapping.decimals.unwrap_or_default()).map_err(|_| {
                     Erc20TransferSearchError::Catalog(CatalogResolverError::InvalidCatalog {
                         network_slug: plan.extraction_request.network_slug.clone(),
-                        asset_slug: Some(row.asset_slug.clone()),
+                        asset_slug: Some(metadata.asset.slug.clone()),
                         issue: CatalogIntegrityIssue::InvalidDecimals,
                     })
                 })?;
-
             let metadata = Erc20TransferTokenCatalogMetadata {
-                contract_address: row.contract_address.to_ascii_lowercase(),
-                asset_slug: row.asset_slug,
-                symbol: row.asset_symbol,
+                contract_address: address.clone(),
+                asset_slug: metadata.asset.slug.clone(),
+                symbol: metadata.asset.symbol.clone(),
                 decimals,
             };
             metadata_by_contract
@@ -321,7 +316,7 @@ fn metadata_from_resolved_filter(
 }
 
 async fn resolve_token_filters(
-    repository: Option<GlobalAssetRepository>,
+    registry: Arc<CanonicalRegistry>,
     network_slug: &str,
     tokens: Erc20TransferSearchTokenFilters,
 ) -> Result<Vec<ResolvedErc20TransferTokenFilter>, Erc20TransferSearchError> {
@@ -329,12 +324,10 @@ async fn resolve_token_filters(
     let mut seen = HashSet::new();
 
     if !tokens.asset_slugs.is_empty() {
-        let repository =
-            repository.ok_or(Erc20TransferSearchError::AssetContractMappingUnavailable)?;
         // Reused by ERC-20 transfer search to resolve public asset slugs into
         // network-specific ERC-20 contract addresses. The resolver is still
         // balance-named because it owns catalog-backed asset target resolution.
-        let resolver = CatalogBalanceTargetResolver::new(repository);
+        let resolver = CatalogBalanceTargetResolver::new(registry);
         let resolved_asset_filters = resolver
             .resolve_network(network_slug, &tokens.asset_slugs)
             .await?;

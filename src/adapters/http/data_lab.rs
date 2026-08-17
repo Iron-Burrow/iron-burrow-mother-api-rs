@@ -143,10 +143,10 @@ async fn browser_account(
     }
 }
 fn assets(state: &AppState) -> Option<AssetsService> {
-    state
-        .asset_repository
-        .clone()
-        .map(|repo| AssetsService::from_database(repo, state.price_indexer_client.clone()))
+    Some(AssetsService::new(
+        state.canonical_registry.clone(),
+        state.price_indexer_client.clone(),
+    ))
 }
 async fn assets_view(
     State(state): State<AppState>,
@@ -635,7 +635,6 @@ fn private_json<T: serde::Serialize>(result: Result<T, AssetsServiceError>) -> R
         }
         Err(AssetsServiceError::AssetNotFound) => StatusCode::NOT_FOUND.into_response(),
         Err(AssetsServiceError::InvalidLimit) => StatusCode::BAD_REQUEST.into_response(),
-        Err(AssetsServiceError::Repository(_)) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
     }
 }
 #[derive(Template)]

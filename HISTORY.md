@@ -453,3 +453,14 @@ implementation, and documentation changes.
 - Added the private Portfolio Strategy Simulation Lab with compiled BTC, ETH,
   and Aave USDC studies, normalized historical evidence, append-only
   account-owned `psr_*` records, and no `/v1` or OpenAPI surface.
+
+## 2026-08-17
+
+- Completed SPEC-033: release-embedded canonical asset, network, and mapping
+  metadata now resolves through the validated in-memory registry for balances,
+  ERC-20 transfers, Data Lab, and Workspace readers. PostgreSQL remains the
+  owner only of mutable authentication, authorization, ownership, activity,
+  quota, and snapshot state; no public API contract changed.
+- Preserved the released `0009_legacy_api_key_capabilities.sql` migration and
+  renumbered the later DeFi protocol registry migration to `0017`, restoring
+  a valid SQLx migration sequence for fresh and upgraded databases.

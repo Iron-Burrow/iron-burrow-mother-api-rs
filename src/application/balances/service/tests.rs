@@ -501,7 +501,7 @@ fn service_with_quote(
     price_quote_client: Option<PriceQuoteClient>,
 ) -> BalanceSnapshotService {
     BalanceSnapshotService::new(
-        CatalogBalanceTargetResolver::new(GlobalAssetRepository::in_memory(sample_assets())),
+        CatalogBalanceTargetResolver::new(crate::state::embedded_canonical_registry()),
         client,
         price_quote_client,
     )
@@ -983,7 +983,10 @@ async fn missing_bigwig_client_marks_supported_items_provider_unavailable() {
     ));
     assert!(matches!(
         &result.accounts[0].items[1],
-        BalanceItemOutcome::Skipped { .. }
+        BalanceItemOutcome::Failed {
+            code: BalanceItemErrorCode::BalanceProviderUnavailable,
+            ..
+        }
     ));
 }
 

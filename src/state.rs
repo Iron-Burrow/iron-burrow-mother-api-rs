@@ -6,8 +6,8 @@ use crate::adapters::bigwig::{client::create_bigwig_client, BigwigClient};
 use crate::adapters::dis::{client::create_dis_client, DisClient};
 use crate::adapters::http::rate_limit::ApiKeyMinuteLimiter;
 use crate::adapters::postgres::{
-    AccountRepository, ApiKeyRepository, DefiProtocolRepository, GlobalAssetRepository,
-    PortfolioSimulationRepository, WorkspaceRepository,
+    AccountRepository, ApiKeyRepository, DefiProtocolRepository, PortfolioSimulationRepository,
+    WorkspaceRepository,
 };
 use crate::adapters::price_indexer::{client::create_price_indexer_client, PriceIndexerClient};
 use crate::config::Config;
@@ -26,7 +26,6 @@ pub(crate) enum AppStateError {
 pub(crate) struct AppState {
     pub(crate) config: Config,
     pub(crate) version: &'static str,
-    #[allow(dead_code)] // Runtime consumers arrive in later SPEC-033 PRs.
     pub(crate) canonical_registry: Arc<CanonicalRegistry>,
     pub(crate) database_pool: Option<PgPool>,
     pub(crate) api_key_repository: Option<ApiKeyRepository>,
@@ -34,7 +33,9 @@ pub(crate) struct AppState {
     pub(crate) workspace_repository: Option<WorkspaceRepository>,
     pub(crate) portfolio_simulation_repository: Option<PortfolioSimulationRepository>,
     pub(crate) api_key_minute_limiter: ApiKeyMinuteLimiter,
-    pub(crate) asset_repository: Option<GlobalAssetRepository>,
+    #[cfg(test)]
+    pub(crate) asset_repository:
+        Option<crate::adapters::postgres::global_assets::GlobalAssetRepository>,
     pub(crate) defi_protocol_repository: Option<DefiProtocolRepository>,
     pub(crate) price_indexer_client: Option<PriceIndexerClient>,
     pub(crate) dis_client: Option<DisClient>,
@@ -69,7 +70,6 @@ impl AppState {
         let portfolio_simulation_repository = database_pool
             .clone()
             .map(PortfolioSimulationRepository::database);
-        let asset_repository = database_pool.clone().map(GlobalAssetRepository::database);
         let defi_protocol_repository = database_pool.clone().map(DefiProtocolRepository::database);
         let price_indexer_client = create_price_indexer_client(&config);
         let dis_client = create_dis_client(&config);
@@ -85,7 +85,8 @@ impl AppState {
             workspace_repository,
             portfolio_simulation_repository,
             api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
-            asset_repository,
+            #[cfg(test)]
+            asset_repository: None,
             defi_protocol_repository,
             price_indexer_client,
             dis_client,
@@ -96,48 +97,20 @@ impl AppState {
     #[cfg(test)]
     pub(crate) fn with_asset_repository(
         config: Config,
-        asset_repository: GlobalAssetRepository,
+        _asset_repository: crate::adapters::postgres::global_assets::GlobalAssetRepository,
     ) -> Self {
-        Self {
-            config,
-            version: env!("CARGO_PKG_VERSION"),
-            canonical_registry: embedded_canonical_registry(),
-            database_pool: None,
-            api_key_repository: None,
-            account_repository: None,
-            workspace_repository: None,
-            portfolio_simulation_repository: None,
-            api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
-            asset_repository: Some(asset_repository),
-            defi_protocol_repository: None,
-            price_indexer_client: None,
-            dis_client: None,
-            bigwig_client: None,
-        }
+        Self::new(config)
     }
 
     #[cfg(test)]
     pub(crate) fn with_asset_repository_and_bigwig_client(
         config: Config,
-        asset_repository: GlobalAssetRepository,
+        _asset_repository: crate::adapters::postgres::global_assets::GlobalAssetRepository,
         bigwig_client: BigwigClient,
     ) -> Self {
-        Self {
-            config,
-            version: env!("CARGO_PKG_VERSION"),
-            canonical_registry: embedded_canonical_registry(),
-            database_pool: None,
-            api_key_repository: None,
-            account_repository: None,
-            workspace_repository: None,
-            portfolio_simulation_repository: None,
-            api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
-            asset_repository: Some(asset_repository),
-            defi_protocol_repository: None,
-            price_indexer_client: None,
-            dis_client: None,
-            bigwig_client: Some(bigwig_client),
-        }
+        let mut state = Self::new(config);
+        state.bigwig_client = Some(bigwig_client);
+        state
     }
 }
 

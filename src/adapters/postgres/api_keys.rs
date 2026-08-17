@@ -258,26 +258,26 @@ impl ApiKeyRepository {
         .map_err(RepositoryError::new)?;
         let owner_grants = sqlx::query_as::<_, CapabilityGrantRow>(
             r#"
-            select grant.capability_id, grant.network_scope, grant.status,
-                grant.expires_at is not null and grant.expires_at <= now() as is_expired
-            from mother_api.api_consumer_capability_grant grant
-            join mother_api.api_key api_key on api_key.consumer_id = grant.consumer_id
+            select capability_grant.capability_id, capability_grant.network_scope, capability_grant.status,
+                capability_grant.expires_at is not null and capability_grant.expires_at <= now() as is_expired
+            from mother_api.api_consumer_capability_grant capability_grant
+            join mother_api.api_key api_key on api_key.consumer_id = capability_grant.consumer_id
             where api_key.id = $1 and api_key.kind = 'legacy'
             union all
-            select grant.capability_id, grant.network_scope, grant.status,
-                grant.expires_at is not null and grant.expires_at <= now() as is_expired
-            from mother_api.ib_account_capability_grant grant
-            join mother_api.api_key api_key on api_key.ib_account_id = grant.ib_account_id
+            select capability_grant.capability_id, capability_grant.network_scope, capability_grant.status,
+                capability_grant.expires_at is not null and capability_grant.expires_at <= now() as is_expired
+            from mother_api.ib_account_capability_grant capability_grant
+            join mother_api.api_key api_key on api_key.ib_account_id = capability_grant.ib_account_id
             where api_key.id = $1 and api_key.kind = 'account'
             union all
-            select grant.capability_id, grant.network_scope, grant.status,
-                grant.expires_at is not null and grant.expires_at <= now() as is_expired
-            from mother_api.ib_account_capability_grant grant
-            join mother_api.ib_client client on client.ib_account_id = grant.ib_account_id
+            select capability_grant.capability_id, capability_grant.network_scope, capability_grant.status,
+                capability_grant.expires_at is not null and capability_grant.expires_at <= now() as is_expired
+            from mother_api.ib_account_capability_grant capability_grant
+            join mother_api.ib_client client on client.ib_account_id = capability_grant.ib_account_id
             join mother_api.api_key api_key on api_key.client_id = client.id
             where api_key.id = $1 and api_key.kind = 'agent'
             union all
-            select capability_id, 'eth-mainnet'::text as network_scope, 'active'::text as status, false as is_expired
+            select id as capability_id, 'eth-mainnet'::text as network_scope, 'active'::text as status, false as is_expired
             from mother_api.capability
             where id in ('balances.read', 'transfers.read')
               and exists (select 1 from mother_api.api_key where id = $1 and kind = 'anonymous_demo')
@@ -289,10 +289,10 @@ impl ApiKeyRepository {
         .map_err(RepositoryError::new)?;
         let client_grants = sqlx::query_as::<_, CapabilityGrantRow>(
             r#"
-            select grant.capability_id, grant.network_scope, grant.status,
-                grant.expires_at is not null and grant.expires_at <= now() as is_expired
-            from mother_api.ib_client_capability_grant grant
-            join mother_api.api_key api_key on api_key.client_id = grant.ib_client_id
+            select capability_grant.capability_id, capability_grant.network_scope, capability_grant.status,
+                capability_grant.expires_at is not null and capability_grant.expires_at <= now() as is_expired
+            from mother_api.ib_client_capability_grant capability_grant
+            join mother_api.api_key api_key on api_key.client_id = capability_grant.ib_client_id
             where api_key.id = $1 and api_key.kind = 'agent'
             "#,
         )

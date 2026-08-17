@@ -66,7 +66,7 @@ pub async fn search_erc20_transfers(
     .await?;
     let plan = build_search_plan(
         input,
-        state.asset_repository.clone(),
+        state.canonical_registry.clone(),
         state.config.erc20_transfers_max_token_filters,
     )
     .await
@@ -76,7 +76,7 @@ pub async fn search_erc20_transfers(
         return Err(ApiError::extraction_unavailable());
     };
 
-    let result = execute_search_plan(plan, state.asset_repository.clone(), bigwig_client)
+    let result = execute_search_plan(plan, state.canonical_registry.clone(), bigwig_client)
         .await
         .map_err(erc20_transfer_search_error_to_api_error)?;
 

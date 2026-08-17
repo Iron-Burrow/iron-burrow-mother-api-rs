@@ -244,7 +244,7 @@ fn service_with_quote(
     price_quote_client: Option<PriceQuoteClient>,
 ) -> BalanceSnapshotService {
     BalanceSnapshotService::new(
-        CatalogBalanceTargetResolver::new(GlobalAssetRepository::in_memory(sample_assets())),
+        CatalogBalanceTargetResolver::new(crate::state::embedded_canonical_registry()),
         client,
         price_quote_client,
     )
