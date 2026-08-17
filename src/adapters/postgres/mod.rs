@@ -7,7 +7,6 @@ pub mod asset_match;
 pub mod async_reports;
 #[cfg(test)]
 pub mod balance_catalog;
-pub mod defi_protocols;
 pub mod errors;
 #[cfg(test)]
 pub mod global_assets;
@@ -18,7 +17,6 @@ pub mod workspaces;
 pub(crate) use accounts::AccountRepository;
 pub(crate) use api_keys::ApiKeyRepository;
 pub(crate) use async_reports::AsyncReportRepository;
-pub(crate) use defi_protocols::DefiProtocolRepository;
 #[cfg(test)]
 pub use global_assets::GlobalAssetRepository;
 pub(crate) use portfolio_simulations::{PortfolioSimulationRepository, PortfolioSimulationRun};

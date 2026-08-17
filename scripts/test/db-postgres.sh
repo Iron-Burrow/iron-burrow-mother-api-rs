@@ -67,9 +67,6 @@ MOTHER_API_POSTGRES_TEST_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:${
 	cargo test adapters::postgres::tests -- --test-threads=1
 
 MOTHER_API_POSTGRES_TEST_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:${host_port}/${TEST_DB_NAME}" \
-	cargo test reference_data::tests -- --test-threads=1
-
-MOTHER_API_POSTGRES_TEST_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:${host_port}/${TEST_DB_NAME}" \
 	cargo test adapters::http::router::tests::async_report_callback_token_protects_persisted_reports -- --test-threads=1
 
 echo "Rust Postgres-backed regression tests passed against disposable Docker Postgres."

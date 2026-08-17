@@ -171,7 +171,7 @@ This decision is implemented in two ordered draft specifications:
 1. [SPEC-033](../specs/SPEC-033-in-memory-canonical-asset-registry.md)
    establishes the immutable asset, network, and asset/network-mapping
    registry and migrates all readers for that slice.
-2. [SPEC-034](../specs/SPEC-034-in-memory-verified-protocol-registry.md)
+2. [SPEC-034](../specs/SPEC-034-binary-owned-capability-and-verified-protocol-registries.md)
    extends the same registry with verified protocol declarations and migrates
    the existing Aave Lab readers after SPEC-033 is implemented.
 

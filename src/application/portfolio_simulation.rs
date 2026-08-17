@@ -2,7 +2,7 @@
 //! This is intentionally small: strategy definitions are compiled here and
 //! historical sources are normalized before any strategy sees them.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use fastnum::{decimal::Context, D512};
 use serde::Serialize;
@@ -12,9 +12,9 @@ use sha2::{Digest, Sha256};
 use crate::adapters::{
     aave_v3::AaveV3RealizedYieldAdapter,
     bigwig::BigwigClient,
-    postgres::DefiProtocolRepository,
     price_indexer::{HistoricalPricePoint, PriceIndexerClient, PriceSignalError},
 };
+use crate::domain::verified_protocol_registry::VerifiedProtocolRegistry;
 
 const REQUEST_SCHEMA_VERSION: u32 = 1;
 const ENGINE_VERSION: &str = "v1";
@@ -63,7 +63,7 @@ pub(crate) enum Error {
 #[derive(Clone, Debug)]
 pub(crate) struct Service {
     prices: Option<PriceIndexerClient>,
-    protocols: Option<DefiProtocolRepository>,
+    protocols: Arc<VerifiedProtocolRegistry>,
     bigwig: Option<BigwigClient>,
     aave: AaveV3RealizedYieldAdapter,
 }
@@ -71,7 +71,7 @@ pub(crate) struct Service {
 impl Service {
     pub(crate) fn new(
         prices: Option<PriceIndexerClient>,
-        protocols: Option<DefiProtocolRepository>,
+        protocols: Arc<VerifiedProtocolRegistry>,
         bigwig: Option<BigwigClient>,
     ) -> Self {
         Self {
@@ -245,13 +245,12 @@ impl Service {
         &self,
         window: &SimulationWindow,
     ) -> Result<Vec<AaveIndexObservation>, Error> {
-        let (Some(protocols), Some(bigwig)) = (&self.protocols, &self.bigwig) else {
+        let Some(bigwig) = &self.bigwig else {
             return Err(Error::AaveEvidenceUnavailable);
         };
-        let protocol = protocols
-            .load_realized_yield_protocol("aave-v3")
-            .await
-            .map_err(|_| Error::AaveEvidenceUnavailable)?
+        let protocol = self
+            .protocols
+            .realized_yield_protocol("aave-v3")
             .filter(|protocol| protocol.adapter_kind == "aave_v3_realized_yield")
             .ok_or(Error::AaveEvidenceUnavailable)?;
         let mut resolver = BlockResolver::new(bigwig);

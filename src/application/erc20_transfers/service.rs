@@ -244,14 +244,20 @@ async fn enrich_token_metadata(
         if let Some(metadata) =
             registry.erc20_metadata(&plan.extraction_request.network_slug, address)
         {
-            let decimals =
-                u8::try_from(metadata.mapping.decimals.unwrap_or_default()).map_err(|_| {
-                    Erc20TransferSearchError::Catalog(CatalogResolverError::InvalidCatalog {
-                        network_slug: plan.extraction_request.network_slug.clone(),
-                        asset_slug: Some(metadata.asset.slug.clone()),
-                        issue: CatalogIntegrityIssue::InvalidDecimals,
-                    })
-                })?;
+            let decimals = u8::try_from(metadata.mapping.decimals.ok_or_else(|| {
+                Erc20TransferSearchError::Catalog(CatalogResolverError::InvalidCatalog {
+                    network_slug: plan.extraction_request.network_slug.clone(),
+                    asset_slug: Some(metadata.asset.slug.clone()),
+                    issue: CatalogIntegrityIssue::InvalidDecimals,
+                })
+            })?)
+            .map_err(|_| {
+                Erc20TransferSearchError::Catalog(CatalogResolverError::InvalidCatalog {
+                    network_slug: plan.extraction_request.network_slug.clone(),
+                    asset_slug: Some(metadata.asset.slug.clone()),
+                    issue: CatalogIntegrityIssue::InvalidDecimals,
+                })
+            })?;
             let metadata = Erc20TransferTokenCatalogMetadata {
                 contract_address: address.clone(),
                 asset_slug: metadata.asset.slug.clone(),

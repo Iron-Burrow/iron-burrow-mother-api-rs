@@ -78,7 +78,7 @@ docker run --rm \
 	"$SMOKE_IMAGE" \
 	-c 'if command -v sqlx >/dev/null 2>&1; then echo "sqlx must not be present" >&2; exit 1; fi; if command -v psql >/dev/null 2>&1; then echo "psql must not be present" >&2; exit 1; fi'
 
-echo "Running embedded migrations before applying reference data..."
+echo "Running embedded migrations..."
 
 docker run --rm \
 	--network "$SMOKE_NETWORK" \
@@ -86,82 +86,13 @@ docker run --rm \
 	"$SMOKE_IMAGE" \
 	mother-api db migrate
 
-snapshot_catalog_rows() {
-	docker run --rm \
-		--network "$SMOKE_NETWORK" \
-		-e PGPASSWORD=postgres \
-		postgres:17-alpine \
-		psql \
-		-h "$SMOKE_DB_CONTAINER" \
-		-U postgres \
-		-d "$SMOKE_DB_NAME" \
-		-v ON_ERROR_STOP=1 \
-		-At \
-		-F '|' \
-		-c "
-			select 'asset', id::text, created_at::text, updated_at::text
-			from mother_api.global_asset
-			where slug = 'bitso-mxn'
-			union all
-			select 'network', id::text, created_at::text, updated_at::text
-			from mother_api.network
-			where slug = 'arbitrum-mainnet'
-			union all
-			select 'mapping', mapping.id::text, mapping.created_at::text, mapping.updated_at::text
-			from mother_api.asset_chain_map mapping
-			join mother_api.global_asset asset on asset.id = mapping.asset_id
-			join mother_api.network network on network.id = mapping.network_id
-			where asset.slug = 'bitso-mxn'
-				and network.slug = 'arbitrum-mainnet'
-			order by 1;
-		"
-}
-
-migrated_snapshot="$(snapshot_catalog_rows)"
-
-if [ "$(printf '%s\n' "$migrated_snapshot" | sed '/^$/d' | wc -l | tr -d ' ')" != "3" ]; then
-	echo "Expected lifecycle smoke snapshot to include asset, network, and mapping rows." >&2
-	printf '%s\n' "$migrated_snapshot" >&2
-	exit 1
-fi
-
-echo "Applying PostgreSQL-owned reference data without reconciling catalog rows..."
-
-docker run --rm \
-	--network "$SMOKE_NETWORK" \
-	-e DATABASE_URL="$SMOKE_DATABASE_URL" \
-	"$SMOKE_IMAGE" \
-	mother-api db apply-reference
-
-reference_snapshot="$(snapshot_catalog_rows)"
-
-if [ "$reference_snapshot" != "$migrated_snapshot" ]; then
-	echo "db apply-reference changed historical catalog audit rows." >&2
-	echo "Before:" >&2
-	printf '%s\n' "$migrated_snapshot" >&2
-	echo "After:" >&2
-	printf '%s\n' "$reference_snapshot" >&2
-	exit 1
-fi
-
-echo "Running mother-api db apply after reference application..."
+echo "Running mother-api db apply as an idempotent migration command..."
 
 docker run --rm \
 	--network "$SMOKE_NETWORK" \
 	-e DATABASE_URL="$SMOKE_DATABASE_URL" \
 	"$SMOKE_IMAGE" \
 	mother-api db apply
-
-apply_snapshot="$(snapshot_catalog_rows)"
-
-if [ "$apply_snapshot" != "$migrated_snapshot" ]; then
-	echo "db apply changed historical catalog audit rows." >&2
-	echo "Before:" >&2
-	printf '%s\n' "$migrated_snapshot" >&2
-	echo "After:" >&2
-	printf '%s\n' "$apply_snapshot" >&2
-	exit 1
-fi
 
 echo "Starting mother-api serve from the same image..."
 

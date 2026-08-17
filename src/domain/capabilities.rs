@@ -17,6 +17,18 @@ pub(crate) enum Capability {
     ReportsWrite,
 }
 
+/// Immutable release-owned definitions. PostgreSQL persists grants for these
+/// capabilities but is not allowed to define additional capability IDs.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct CapabilityRegistry;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CapabilityBaseline {
+    Legacy,
+    Account,
+    DataLabBrowser,
+}
+
 impl Capability {
     pub(crate) const ALL: [Self; 11] = [
         Self::BalancesRead,
@@ -86,6 +98,28 @@ impl Capability {
         Self::ALL
             .into_iter()
             .find(|capability| capability.id() == value)
+    }
+}
+
+impl CapabilityRegistry {
+    pub(crate) const fn all(self) -> &'static [Capability] {
+        &Capability::ALL
+    }
+
+    pub(crate) fn parse(self, value: &str) -> Option<Capability> {
+        Capability::parse(value)
+    }
+
+    pub(crate) const fn description(self, capability: Capability) -> &'static str {
+        capability.description()
+    }
+
+    pub(crate) const fn baseline(self, baseline: CapabilityBaseline) -> &'static [Capability] {
+        match baseline {
+            CapabilityBaseline::Legacy => &Capability::LEGACY_BASELINE,
+            CapabilityBaseline::Account => &Capability::ACCOUNT_BASELINE,
+            CapabilityBaseline::DataLabBrowser => &Capability::DATALAB_BROWSER_BASELINE,
+        }
     }
 }
 
@@ -238,6 +272,25 @@ mod tests {
     fn legacy_baseline_stays_pinned_to_the_compatibility_capabilities() {
         assert_eq!(Capability::LEGACY_BASELINE.len(), 2);
         assert_eq!(Capability::ACCOUNT_BASELINE.len(), 3);
+    }
+
+    #[test]
+    fn binary_registry_owns_definitions_and_baselines() {
+        let registry = CapabilityRegistry;
+        assert_eq!(registry.all().len(), 11);
+        assert_eq!(
+            registry.parse("balances.read"),
+            Some(Capability::BalancesRead)
+        );
+        assert_eq!(registry.parse("unknown.read"), None);
+        assert_eq!(
+            registry.description(Capability::BalancesRead),
+            "Read supported latest and historical balance snapshots."
+        );
+        assert_eq!(
+            registry.baseline(CapabilityBaseline::Legacy),
+            &Capability::LEGACY_BASELINE
+        );
     }
 
     #[test]

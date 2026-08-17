@@ -93,7 +93,7 @@ pub(crate) fn routes(state: AppState) -> Router<AppState> {
 
 fn realized_yield_service(state: &AppState) -> Option<RealizedYieldService> {
     Some(RealizedYieldService::new(
-        state.defi_protocol_repository.clone()?,
+        state.verified_protocol_registry.clone(),
         state.bigwig_client.clone()?,
         state.config.aave_v3_min_block_confirmations,
     ))
@@ -102,7 +102,7 @@ fn realized_yield_service(state: &AppState) -> Option<RealizedYieldService> {
 fn portfolio_simulation_service(state: &AppState) -> PortfolioSimulationService {
     PortfolioSimulationService::new(
         state.price_indexer_client.clone(),
-        state.defi_protocol_repository.clone(),
+        state.verified_protocol_registry.clone(),
         state.bigwig_client.clone(),
     )
 }

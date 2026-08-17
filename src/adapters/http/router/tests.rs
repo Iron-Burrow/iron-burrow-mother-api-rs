@@ -42,10 +42,7 @@ const TEST_API_KEY: &str =
 const TEST_API_KEY_PREFIX: &str = "ib_live_0123456789abcdef";
 
 fn test_app() -> Router {
-    build_router(AppState::with_asset_repository(
-        Config::default(),
-        GlobalAssetRepository::in_memory(sample_assets()),
-    ))
+    build_router(AppState::for_tests(Config::default()))
 }
 
 fn beta_config() -> Config {
@@ -60,6 +57,7 @@ fn beta_app_with_api_key_repository(api_key_repository: Option<ApiKeyRepository>
         config: beta_config(),
         version: env!("CARGO_PKG_VERSION"),
         canonical_registry: crate::state::embedded_canonical_registry(),
+        verified_protocol_registry: crate::state::embedded_verified_protocol_registry(),
         database_pool: None,
         api_key_repository,
         account_repository: None,
@@ -67,7 +65,6 @@ fn beta_app_with_api_key_repository(api_key_repository: Option<ApiKeyRepository>
         portfolio_simulation_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
-        defi_protocol_repository: None,
         price_indexer_client: None,
         dis_client: None,
         bigwig_client: None,
@@ -75,15 +72,12 @@ fn beta_app_with_api_key_repository(api_key_repository: Option<ApiKeyRepository>
 }
 
 fn async_reports_callback_app() -> Router {
-    build_router(AppState::with_asset_repository(
-        Config {
-            public_api_surface: PublicApiSurface::Beta,
-            async_reports_enabled: true,
-            bigwig_report_outcome_token: Some("bigwig-outcome-token".to_string()),
-            ..Config::default()
-        },
-        GlobalAssetRepository::in_memory(sample_assets()),
-    ))
+    build_router(AppState::for_tests(Config {
+        public_api_surface: PublicApiSurface::Beta,
+        async_reports_enabled: true,
+        bigwig_report_outcome_token: Some("bigwig-outcome-token".to_string()),
+        ..Config::default()
+    }))
 }
 
 fn beta_app_with_lookup(lookup: ApiKeyLookup) -> Router {
@@ -102,6 +96,7 @@ fn test_app_with_price_indexer(price_indexer_url: &str, timeout_ms: u64) -> Rout
         config: Config::default(),
         version: env!("CARGO_PKG_VERSION"),
         canonical_registry: crate::state::embedded_canonical_registry(),
+        verified_protocol_registry: crate::state::embedded_verified_protocol_registry(),
         database_pool: None,
         api_key_repository: None,
         account_repository: None,
@@ -109,7 +104,6 @@ fn test_app_with_price_indexer(price_indexer_url: &str, timeout_ms: u64) -> Rout
         portfolio_simulation_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
-        defi_protocol_repository: None,
         price_indexer_client: Some(price_indexer_client),
         dis_client: None,
         bigwig_client: None,
@@ -711,6 +705,7 @@ async fn beta_route_capabilities_preserve_balance_access_and_restrict_transfer_a
         },
         version: env!("CARGO_PKG_VERSION"),
         canonical_registry: crate::state::embedded_canonical_registry(),
+        verified_protocol_registry: crate::state::embedded_verified_protocol_registry(),
         database_pool: None,
         api_key_repository: Some(repository),
         account_repository: None,
@@ -718,7 +713,6 @@ async fn beta_route_capabilities_preserve_balance_access_and_restrict_transfer_a
         portfolio_simulation_repository: None,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
-        defi_protocol_repository: None,
         price_indexer_client: None,
         dis_client: None,
         bigwig_client: None,

@@ -3,16 +3,13 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::domain::{
-    capabilities::Capability,
-    validation::{is_asset_slug, is_evm_address},
-};
+use crate::domain::validation::{is_asset_slug, is_evm_address};
 
 const EMBEDDED_CATALOG_JSON: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/reference-data/catalog.json"
 ));
-pub(crate) const CATALOG_VERSION: u32 = 2;
+pub(crate) const CATALOG_VERSION: u32 = 3;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum CanonicalRegistryError {
@@ -26,17 +23,9 @@ pub(crate) enum CanonicalRegistryError {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Catalog {
     pub(crate) version: u32,
-    pub(crate) capabilities: Vec<CapabilityDeclaration>,
     pub(crate) assets: Vec<CanonicalAsset>,
     pub(crate) networks: Vec<CanonicalNetwork>,
     pub(crate) asset_chain_maps: Vec<CanonicalAssetChainMap>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct CapabilityDeclaration {
-    pub(crate) id: String,
-    pub(crate) description: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -428,8 +417,6 @@ pub(crate) fn validate_catalog(catalog: &Catalog) -> Result<(), CanonicalRegistr
         ));
     }
 
-    validate_capabilities(&catalog.capabilities)?;
-
     let mut asset_slugs = HashSet::new();
     for asset in &catalog.assets {
         validate_asset(asset)?;
@@ -534,31 +521,6 @@ pub(crate) fn validate_catalog(catalog: &Catalog) -> Result<(), CanonicalRegistr
         }
     }
 
-    Ok(())
-}
-
-fn validate_capabilities(
-    capabilities: &[CapabilityDeclaration],
-) -> Result<(), CanonicalRegistryError> {
-    let mut declared_capabilities = HashSet::new();
-    for capability in capabilities {
-        validate_non_empty("capability id", &capability.id)?;
-        validate_non_empty("capability description", &capability.description)?;
-        if Capability::parse(&capability.id).is_none() {
-            return invalid(format!("unknown capability id {:?}", capability.id));
-        }
-        if !declared_capabilities.insert(capability.id.as_str()) {
-            return invalid(format!("duplicate capability id {:?}", capability.id));
-        }
-    }
-
-    let required_capabilities = Capability::ALL
-        .into_iter()
-        .map(Capability::id)
-        .collect::<HashSet<_>>();
-    if declared_capabilities != required_capabilities {
-        return invalid("capability declarations must match the application registry".to_string());
-    }
     Ok(())
 }
 
@@ -836,22 +798,6 @@ mod tests {
     }
 
     #[test]
-    fn embedded_catalog_capabilities_match_the_runtime_registry() {
-        let catalog = parse_catalog_json(embedded_catalog_json()).unwrap();
-        let declared = catalog
-            .capabilities
-            .iter()
-            .map(|capability| (capability.id.as_str(), capability.description.as_str()))
-            .collect::<Vec<_>>();
-        let runtime = Capability::ALL
-            .into_iter()
-            .map(|capability| (capability.id(), capability.description()))
-            .collect::<Vec<_>>();
-
-        assert_eq!(declared, runtime);
-    }
-
-    #[test]
     fn malformed_unknown_and_unsupported_catalogs_fail() {
         assert!(matches!(
             CanonicalRegistry::from_json("{").unwrap_err(),
@@ -1051,13 +997,6 @@ mod tests {
         let chain_id = 10_000;
         Catalog {
             version: CATALOG_VERSION,
-            capabilities: Capability::ALL
-                .into_iter()
-                .map(|capability| CapabilityDeclaration {
-                    id: capability.id().to_string(),
-                    description: capability.description().to_string(),
-                })
-                .collect(),
             assets: vec![asset(&asset_slug)],
             networks: vec![CanonicalNetwork {
                 slug: network_slug.clone(),

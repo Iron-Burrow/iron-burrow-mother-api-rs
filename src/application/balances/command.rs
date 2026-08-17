@@ -163,6 +163,7 @@ mod tests {
             config: Config::default(),
             version: env!("CARGO_PKG_VERSION"),
             canonical_registry: crate::state::embedded_canonical_registry(),
+            verified_protocol_registry: crate::state::embedded_verified_protocol_registry(),
             database_pool: None,
             api_key_repository: None,
             account_repository: None,
@@ -171,7 +172,6 @@ mod tests {
             api_key_minute_limiter: crate::adapters::http::rate_limit::ApiKeyMinuteLimiter::default(
             ),
             asset_repository: Some(GlobalAssetRepository::in_memory(sample_assets())),
-            defi_protocol_repository: None,
             price_indexer_client,
             dis_client: None,
             bigwig_client,

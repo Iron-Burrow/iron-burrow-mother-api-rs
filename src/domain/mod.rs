@@ -9,3 +9,4 @@ pub(crate) mod onchain_time;
 pub(crate) mod passwords;
 pub(crate) mod transfers;
 pub(crate) mod validation;
+pub(crate) mod verified_protocol_registry;
