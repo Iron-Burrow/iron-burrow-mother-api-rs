@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-06-02
+last_reviewed: 2026-08-18
 agent_edit_policy: update_when_relevant
 external_contract: iron-burrow-price-indexer/CONTRACTS.md@2026-06-02
 ---
@@ -45,7 +45,7 @@ than degrading to a partial response.
 
 The source of those answers is `price-indexer`, not Mother API. Mother API
 owns public routing, parameter validation, upstream orchestration, response
-shape, and error mapping. DIS is not involved in this workflow.
+shape, and error mapping.
 
 The upstream source documents for this spec are:
 
@@ -112,7 +112,6 @@ Mother API must not:
 - Recalculate statistics or trend locally.
 - Re-bucket price series locally.
 - Reinterpret, hide, or invent upstream warning codes.
-- Call DIS for price stats or price trend.
 - Send legacy `range` or `resolution` parameters to `price-indexer`.
 
 ## Upstream price-indexer dependency
@@ -389,7 +388,6 @@ This spec explicitly does not cover:
 - Read-model caching or materialized views.
 - Recalculating stats or trend in Mother API.
 - Changing price-indexer formulas or contracts.
-- DIS integration.
 - Billing, rate-limit, API key, or x402 redesign.
 - Exposing upstream `asOf` in V0.
 - Extending the price-indexer `window` and `granularity` matrix.

@@ -1,7 +1,7 @@
 ---
 status: draft
 owner: iron-burrow
-last_reviewed: 2026-08-07
+last_reviewed: 2026-08-18
 agent_edit_policy: update_when_relevant
 ---
 
@@ -31,7 +31,7 @@ cargo run
 ```
 
 and open `http://localhost:3000` without a `.env` file, Docker, Caddy, Bigwig,
-Price Indexer, or DIS. Local mode uses deterministic in-process mocks at each
+or Price Indexer. Local mode uses deterministic in-process mocks at each
 external boundary. Production continues to use Bigwig for controlled chain
 reads and Price Indexer for price and FX data.
 
@@ -40,9 +40,9 @@ reads and Price Indexer for price and FX data.
 Mother already runs as one Axum binary and serves Askama pages from the same
 runtime as `/v1`. `PUBLIC_API_SURFACE` currently selects Alpha or Beta behavior
 only for the existing `/v1` route surface. It is not a general product-profile
-mechanism. Current application services hold concrete Bigwig, Price Indexer,
-and DIS clients; a general provider abstraction and a fixture-backed runtime
-do not yet exist.
+mechanism. Current application services hold concrete Bigwig and Price Indexer
+clients; a general provider abstraction and a fixture-backed runtime do not
+yet exist.
 
 The accepted delivery policy is:
 
@@ -158,7 +158,6 @@ responses for every current external dependency Mother invokes:
 | --- | --- | --- |
 | Chain reads | In-process Bigwig-compatible mock | Bigwig |
 | Prices and FX | In-process Price Indexer-compatible mock | Price Indexer Query Layer |
-| DeFi intelligence | In-process DIS-compatible mock | DIS, where an accepted capability uses it |
 
 Mocks make no outbound HTTP or RPC request. They only implement inputs and
 outputs required by currently supported Mother application flows and their
@@ -221,7 +220,7 @@ This RFC does not propose:
 - a public admin, explorer, account, key-management, price, or DeFi route;
 - a new `/v1` operation, OpenAPI operation, or `CONTRACTS.md` promise;
 - direct RPC, arbitrary RPC/price endpoints, or a complete blockchain emulator;
-- Docker, Caddy, Bigwig, Price Indexer, or DIS as a local Mother prerequisite;
+- Docker, Caddy, Bigwig, or Price Indexer as a local Mother prerequisite;
 - automatic migrations, automatic reference-data application, or fixture
   account seeding at application startup; or
 - a generic test framework in place of focused application and adapter tests.
@@ -248,7 +247,7 @@ following are demonstrated:
 - With an empty environment and a prepared native default PostgreSQL database,
   `cargo run` serves the browser product at `http://localhost:3000`.
 - The local process starts no Caddy process and makes no outbound Bigwig, Price
-  Indexer, DIS, RPC, or other provider request.
+  Indexer, RPC, or other provider request.
 - Local fixtures produce repeatable results for their supported application and
   browser flows, including a recorded `local-default-v1` fixture version.
 - Missing PostgreSQL, unapplied migrations, or absent reference data stops
@@ -267,6 +266,6 @@ specification, not to this decision RFC:
 - fixture file format and the smallest fixture coverage that supports each
   current application flow;
 - the concrete application-port names and error types extracted from the
-  current Bigwig, Price Indexer, and DIS clients; and
+  current Bigwig and Price Indexer clients; and
 - the production configuration validation matrix beyond the local and
   production profile rules established here.

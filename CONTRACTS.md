@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-08-17
+last_reviewed: 2026-08-18
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -367,7 +367,6 @@ in `ok` and `checks`.
     "app": "ok",
     "database": "reachable",
     "price_indexer": "configured",
-    "dis": "configured",
     "evm_indexer": "not_connected"
   }
 }
@@ -386,15 +385,10 @@ Fields:
 | `checks.app`      | string  | Always `"ok"`.                                                                     |
 | `checks.database` | string  | One of `"reachable"`, `"unreachable"`, `"skipped"`. `"skipped"` when unconfigured. |
 | `checks.price_indexer` | string | One of `"configured"`, `"not_configured"`, `"invalid_config"`. Config/client availability only; not a live price-indexer network probe. |
-| `checks.dis`      | string  | One of `"configured"`, `"not_configured"`, `"invalid_config"`. Config/client availability only; not a live DIS network probe. |
 | `checks.evm_indexer`   | string | Currently always `"not_connected"`. Reserved.                                    |
 
 `ok` is `false` when `checks.database` is `"unreachable"`. `"skipped"` is
 treated as healthy because the database is optional.
-
-The DIS check reflects dormant local configuration/client availability only. It
-does not indicate a live DIS probe, a production dependency, or an active
-DIS-backed Mother API capability.
 
 ---
 
@@ -2267,7 +2261,7 @@ not be assumed to exist or behave consistently if encountered:
   compatibility promise. A future public operation requires accepted scope,
   implementation, and a CONTRACTS.md revision before it becomes part of this
   surface.
-- Direct exposure of internal DIS or read-model service shapes. Price
+- Direct exposure of internal read-model service shapes. Price
   signal endpoints preserve price-indexer signal payload fields inside
   Mother API envelopes; other public responses are owned by this contract,
   not by upstream services.

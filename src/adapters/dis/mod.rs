@@ -1,3 +1,0 @@
-pub(crate) mod client;
-
-pub(crate) use client::DisClient;

@@ -22,9 +22,6 @@ pub(crate) struct Config {
     pub(crate) price_indexer_url: Option<String>,
     pub(crate) price_ql_internal_token: Option<String>,
     pub(crate) price_indexer_timeout_ms: u64,
-    pub(crate) dis_base_url: Option<String>,
-    pub(crate) dis_request_timeout_ms: u64,
-    pub(crate) dis_retry_max_attempts: u64,
     pub(crate) infra_gateway_url: Option<String>,
     pub(crate) infra_gateway_token: Option<String>,
     pub(crate) bigwig_request_timeout_ms: u64,
@@ -67,17 +64,6 @@ impl Config {
                 DEFAULT_PRICE_INDEXER_TIMEOUT_MS,
             )
             .map_err(ConfigError::InvalidPriceIndexerTimeout)?,
-            dis_base_url: optional_env("DIS_BASE_URL"),
-            dis_request_timeout_ms: parse_optional_u64_env(
-                "DIS_REQUEST_TIMEOUT_MS",
-                DEFAULT_DIS_REQUEST_TIMEOUT_MS,
-            )
-            .map_err(ConfigError::InvalidDisRequestTimeout)?,
-            dis_retry_max_attempts: parse_positive_optional_u64_env(
-                "DIS_RETRY_MAX_ATTEMPTS",
-                DEFAULT_DIS_RETRY_MAX_ATTEMPTS,
-            )
-            .map_err(ConfigError::InvalidDisRetryMaxAttempts)?,
             infra_gateway_url: optional_env("INFRA_GATEWAY_URL"),
             infra_gateway_token: optional_env("INFRA_GATEWAY_TOKEN"),
             bigwig_request_timeout_ms: parse_positive_optional_u64_env(
@@ -172,9 +158,6 @@ impl Default for Config {
             price_indexer_url: None,
             price_ql_internal_token: None,
             price_indexer_timeout_ms: DEFAULT_PRICE_INDEXER_TIMEOUT_MS,
-            dis_base_url: None,
-            dis_request_timeout_ms: DEFAULT_DIS_REQUEST_TIMEOUT_MS,
-            dis_retry_max_attempts: DEFAULT_DIS_RETRY_MAX_ATTEMPTS,
             infra_gateway_url: None,
             infra_gateway_token: None,
             bigwig_request_timeout_ms: DEFAULT_BIGWIG_REQUEST_TIMEOUT_MS,
@@ -214,9 +197,6 @@ impl std::fmt::Debug for Config {
                 &self.price_ql_internal_token.as_ref().map(|_| "<redacted>"),
             )
             .field("price_indexer_timeout_ms", &self.price_indexer_timeout_ms)
-            .field("dis_base_url", &self.dis_base_url)
-            .field("dis_request_timeout_ms", &self.dis_request_timeout_ms)
-            .field("dis_retry_max_attempts", &self.dis_retry_max_attempts)
             .field("infra_gateway_url", &self.infra_gateway_url)
             .field(
                 "infra_gateway_token",

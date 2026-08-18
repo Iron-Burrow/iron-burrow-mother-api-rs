@@ -6,10 +6,6 @@ pub(crate) enum ConfigError {
     InvalidPublicApiSurface(String),
     #[error("PRICE_INDEXER_TIMEOUT_MS must be a valid u64, got {0:?}")]
     InvalidPriceIndexerTimeout(String),
-    #[error("DIS_REQUEST_TIMEOUT_MS must be a valid u64, got {0:?}")]
-    InvalidDisRequestTimeout(String),
-    #[error("DIS_RETRY_MAX_ATTEMPTS must be a positive u64, got {0:?}")]
-    InvalidDisRetryMaxAttempts(String),
     #[error("BIGWIG_REQUEST_TIMEOUT_MS must be a positive u64, got {0:?}")]
     InvalidBigwigRequestTimeout(String),
     #[error("AAVE_V3_MIN_BLOCK_CONFIRMATIONS must be a valid u64, got {0:?}")]

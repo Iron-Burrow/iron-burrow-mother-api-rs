@@ -1,7 +1,7 @@
 ---
 status: draft
 owner: iron-burrow
-last_reviewed: 2026-07-31
+last_reviewed: 2026-08-18
 agent_edit_policy: update_when_relevant
 ---
 
@@ -172,8 +172,8 @@ All durable data remains in Postgres under `mother_api` schema.
 - Route-to-capability mapping is explicit and kept beside protected route
   definitions.
 - Web handlers call focused application services and presenters.
-- No direct coupling from usage-console handlers to Bigwig, DIS, or price
-  indexer adapters.
+- No direct coupling from usage-console handlers to Bigwig or price-indexer
+  adapters.
 
 ## Test requirements
 

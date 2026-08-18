@@ -3,7 +3,6 @@ use std::sync::Arc;
 use crate::{
     adapters::{
         bigwig::client::create_bigwig_client,
-        dis::client::create_dis_client,
         http::{rate_limit::ApiKeyMinuteLimiter, state::HttpState},
         postgres::{
             AccountRepository, ApiKeyRepository, PortfolioSimulationRepository, WorkspaceRepository,
@@ -53,7 +52,6 @@ where
         .clone()
         .map(PortfolioSimulationRepository::database);
     let price_indexer_client = create_price_indexer_client(&config);
-    let dis_client = create_dis_client(&config);
     let bigwig_client = create_bigwig_client(&config);
 
     Ok(HttpState {
@@ -68,7 +66,6 @@ where
         portfolio_simulation_repository,
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         price_indexer_client,
-        dis_client,
         bigwig_client,
     })
 }
@@ -87,7 +84,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::constants::{DIS_BASE_URL, INFRA_GATEWAY_URL};
+    use crate::test_utils::constants::INFRA_GATEWAY_URL;
 
     #[test]
     fn registry_constructs_without_a_database_pool() {
@@ -112,35 +109,6 @@ mod tests {
         );
         assert!(!error.to_string().contains("fixture"));
         assert!(std::error::Error::source(&error).is_some());
-    }
-
-    #[test]
-    fn missing_dis_base_url_disables_client() {
-        let state = build_http_state(Config::default()).unwrap();
-
-        assert!(state.dis_client.is_none());
-    }
-
-    #[test]
-    fn valid_dis_base_url_creates_client() {
-        let state = build_http_state(Config {
-            dis_base_url: Some(DIS_BASE_URL.to_string()),
-            ..Config::default()
-        })
-        .unwrap();
-
-        assert!(state.dis_client.is_some());
-    }
-
-    #[test]
-    fn invalid_dis_base_url_disables_client_without_failing_startup() {
-        let state = build_http_state(Config {
-            dis_base_url: Some("not a url".to_string()),
-            ..Config::default()
-        })
-        .unwrap();
-
-        assert!(state.dis_client.is_none());
     }
 
     #[test]

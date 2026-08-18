@@ -24,7 +24,6 @@ pub struct StatusChecks {
     app: &'static str,
     database: &'static str,
     price_indexer: &'static str,
-    dis: &'static str,
     evm_indexer: &'static str,
 }
 
@@ -78,7 +77,6 @@ fn status_response(state: &HttpState, database: DatabaseCheck) -> StatusResponse
             app: "ok",
             database: database.as_str(),
             price_indexer: price_indexer_check(state),
-            dis: dis_check(state),
             evm_indexer: "not_connected",
         },
     }
@@ -96,26 +94,14 @@ fn price_indexer_check(state: &HttpState) -> &'static str {
     }
 }
 
-fn dis_check(state: &HttpState) -> &'static str {
-    match (
-        state.config.dis_base_url.as_ref(),
-        state.dis_client.as_ref(),
-    ) {
-        (None, _) => "not_configured",
-        (Some(_), Some(_)) => "configured",
-        (Some(_), None) => "invalid_config",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
     use super::*;
     use crate::{
-        adapters::http::state::HttpStateTestBuilder,
-        config::Config,
-        test_utils::constants::{DIS_BASE_URL, PRICE_INDEXER_URL},
+        adapters::http::state::HttpStateTestBuilder, config::Config,
+        test_utils::constants::PRICE_INDEXER_URL,
     };
 
     #[test]
@@ -141,23 +127,10 @@ mod tests {
                     "app": "ok",
                     "database": "unreachable",
                     "price_indexer": "not_configured",
-                    "dis": "not_configured",
                     "evm_indexer": "not_connected"
                 }
             })
         );
-    }
-
-    #[test]
-    fn status_response_reports_missing_dis_config() {
-        let response = status_response(
-            &HttpStateTestBuilder::new(Config::default()).build(),
-            DatabaseCheck::Skipped,
-        );
-        let json = serde_json::to_value(response).unwrap();
-
-        assert_eq!(json["ok"], true);
-        assert_eq!(json["checks"]["dis"], "not_configured");
     }
 
     #[test]
@@ -220,37 +193,5 @@ mod tests {
 
         assert_eq!(json["ok"], true);
         assert_eq!(json["checks"]["price_indexer"], "invalid_config");
-    }
-
-    #[test]
-    fn status_response_reports_valid_dis_config() {
-        let response = status_response(
-            &HttpStateTestBuilder::new(Config {
-                dis_base_url: Some(DIS_BASE_URL.to_string()),
-                ..Config::default()
-            })
-            .build(),
-            DatabaseCheck::Skipped,
-        );
-        let json = serde_json::to_value(response).unwrap();
-
-        assert_eq!(json["ok"], true);
-        assert_eq!(json["checks"]["dis"], "configured");
-    }
-
-    #[test]
-    fn status_response_reports_invalid_dis_config_without_failing_ok() {
-        let response = status_response(
-            &HttpStateTestBuilder::new(Config {
-                dis_base_url: Some("not a url".to_string()),
-                ..Config::default()
-            })
-            .build(),
-            DatabaseCheck::Skipped,
-        );
-        let json = serde_json::to_value(response).unwrap();
-
-        assert_eq!(json["ok"], true);
-        assert_eq!(json["checks"]["dis"], "invalid_config");
     }
 }

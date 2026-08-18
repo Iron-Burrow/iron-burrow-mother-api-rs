@@ -1,7 +1,7 @@
 ---
 status: draft
 owner: iron-burrow
-last_reviewed: 2026-08-06
+last_reviewed: 2026-08-18
 agent_edit_policy: update_when_relevant
 ---
 
@@ -9,11 +9,10 @@ agent_edit_policy: update_when_relevant
 
 ## Status and decision
 
-This draft replaces the former Mother-to-DIS direction for DeFi positions.
 When accepted and implemented, Mother API will own DeFi position discovery,
 protocol-specific resolution, normalization, and response composition. Bigwig
 will remain the controlled blockchain-read boundary, and Price Indexer will
-remain the pricing and FX boundary. DIS is not part of this capability.
+remain the pricing and FX boundary.
 
 Accepted [SPEC-029](SPEC-029-defi-protocol-realized-yield-lab-study.md)
 introduces the shared canonical protocol registry for a bounded browser Lab
@@ -73,7 +72,6 @@ registry scope and backed by a compiled Mother adapter.
 | Mother API | Public DTOs, authorization, quotas, account normalization, registry loading, compiled adapter selection, canonical-block orchestration, protocol calls and interpretation, normalized positions, totals, partial results, and observability. |
 | Bigwig | Controlled network RPC transport, canonical block reads, approved `eth_call`/batch execution, and transport/provider failures. |
 | Price Indexer | Asset prices, supported quote currencies, FX conversion, and price/FX evidence. |
-| DIS | No discovery, search, protocol reads, valuation, or response-composition responsibility for this capability. |
 
 Mother adapters must use only verified registry targets and compiled ABI and
 decoding behavior. A database row must never create executable support for an
@@ -399,9 +397,6 @@ public RPC availability.
    later accepted scope.
 5. Complete configuration tooling, observability, performance tests, fixtures,
    public-contract updates, OpenAPI, and release documentation.
-6. Remove the dormant Mother DIS client, configuration, and status wiring only
-   after no implemented capability depends on them; that removal is separate
-   runtime work and is not performed by this specification revision.
 
 ## 13. Public documentation on acceptance
 

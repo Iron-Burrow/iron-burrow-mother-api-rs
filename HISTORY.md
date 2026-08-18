@@ -474,3 +474,6 @@ implementation, and documentation changes.
 - Fixed legacy admin API-key issuance to persist `kind = 'legacy'`, matching
   the ownership schema after migration `0010`; added a database regression
   test for the issued key kind and its baseline capability grants.
+- Removed the deprecated DIS client, its configuration and deployment wiring,
+  and the `checks.dis` field from the `/v1/status` contract. Archived specs
+  and earlier history retain the retired integration's historical context.

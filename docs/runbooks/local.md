@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-08-07
+last_reviewed: 2026-08-18
 agent_edit_policy: update_when_relevant
 ---
 
@@ -50,7 +50,7 @@ Notes:
 
 - In local mode without Bigwig, keep `ERC20_TRANSFERS_ENABLED=false` so
   `/v1/erc20-transfers/search` is not exposed.
-- `PRICE_INDEXER_URL` and `DIS_BASE_URL` can stay unset or blank locally.
+- `PRICE_INDEXER_URL` can stay unset or blank locally.
 - Keep `DATABASE_URL` pointing at Compose Postgres:
   `postgres://postgres:postgres@ibdb-postgres:5432/ibdb`.
 

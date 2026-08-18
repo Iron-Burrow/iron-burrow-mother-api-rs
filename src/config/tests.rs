@@ -50,9 +50,6 @@ fn default_config_matches_public_contract() {
     assert_eq!(config.price_indexer_url, None);
     assert_eq!(config.price_ql_internal_token, None);
     assert_eq!(config.price_indexer_timeout_ms, 2000);
-    assert_eq!(config.dis_base_url, None);
-    assert_eq!(config.dis_request_timeout_ms, 5000);
-    assert_eq!(config.dis_retry_max_attempts, 2);
     assert_eq!(config.infra_gateway_url, None);
     assert_eq!(config.infra_gateway_token, None);
     assert_eq!(config.bigwig_report_outcome_token, None);
@@ -145,21 +142,6 @@ fn price_indexer_timeout_rejects_invalid_values() {
 }
 
 #[test]
-fn dis_retry_max_attempts_defaults_when_env_is_missing_or_empty() {
-    assert_eq!(
-        parse_positive_optional_u64_env("MISSING_DIS_RETRY_MAX_ATTEMPTS", 2).unwrap(),
-        2
-    );
-
-    std::env::set_var("EMPTY_DIS_RETRY_MAX_ATTEMPTS", "   ");
-    assert_eq!(
-        parse_positive_optional_u64_env("EMPTY_DIS_RETRY_MAX_ATTEMPTS", 2).unwrap(),
-        2
-    );
-    std::env::remove_var("EMPTY_DIS_RETRY_MAX_ATTEMPTS");
-}
-
-#[test]
 fn boolean_config_defaults_trims_and_parses_common_values() {
     assert!(!parse_optional_bool_env("MISSING_ERC20_TRANSFERS_ENABLED", false).unwrap());
 
@@ -192,54 +174,6 @@ fn boolean_config_rejects_invalid_values() {
     );
 
     std::env::remove_var("INVALID_ERC20_TRANSFERS_ENABLED");
-}
-
-#[test]
-fn dis_retry_max_attempts_rejects_zero_and_invalid_values() {
-    std::env::set_var("ZERO_DIS_RETRY_MAX_ATTEMPTS", "0");
-    std::env::set_var("INVALID_DIS_RETRY_MAX_ATTEMPTS", "soon");
-
-    assert_eq!(
-        parse_positive_optional_u64_env("ZERO_DIS_RETRY_MAX_ATTEMPTS", 2),
-        Err("0".to_string())
-    );
-    assert_eq!(
-        parse_positive_optional_u64_env("INVALID_DIS_RETRY_MAX_ATTEMPTS", 2),
-        Err("soon".to_string())
-    );
-
-    std::env::remove_var("ZERO_DIS_RETRY_MAX_ATTEMPTS");
-    std::env::remove_var("INVALID_DIS_RETRY_MAX_ATTEMPTS");
-}
-
-#[test]
-fn from_env_rejects_invalid_dis_timeout() {
-    let _guard = ENV_LOCK.lock().unwrap();
-    let _timeout_snapshot = EnvVarSnapshot::capture("DIS_REQUEST_TIMEOUT_MS");
-    let _retry_snapshot = EnvVarSnapshot::capture("DIS_RETRY_MAX_ATTEMPTS");
-    std::env::remove_var("DIS_RETRY_MAX_ATTEMPTS");
-    std::env::set_var("DIS_REQUEST_TIMEOUT_MS", "eventually");
-
-    assert_eq!(
-        Config::from_env(),
-        Err(ConfigError::InvalidDisRequestTimeout(
-            "eventually".to_string()
-        ))
-    );
-}
-
-#[test]
-fn from_env_rejects_zero_dis_retry_max_attempts() {
-    let _guard = ENV_LOCK.lock().unwrap();
-    let _timeout_snapshot = EnvVarSnapshot::capture("DIS_REQUEST_TIMEOUT_MS");
-    let _retry_snapshot = EnvVarSnapshot::capture("DIS_RETRY_MAX_ATTEMPTS");
-    std::env::remove_var("DIS_REQUEST_TIMEOUT_MS");
-    std::env::set_var("DIS_RETRY_MAX_ATTEMPTS", "0");
-
-    assert_eq!(
-        Config::from_env(),
-        Err(ConfigError::InvalidDisRetryMaxAttempts("0".to_string()))
-    );
 }
 
 #[test]

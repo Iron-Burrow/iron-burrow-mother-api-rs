@@ -1103,7 +1103,7 @@ async fn status_returns_default_informational_state() {
     assert_eq!(json["checks"]["app"], "ok");
     assert_eq!(json["checks"]["database"], "skipped");
     assert_eq!(json["checks"]["price_indexer"], "not_configured");
-    assert_eq!(json["checks"]["dis"], "not_configured");
+    assert_eq!(json["checks"].as_object().unwrap().len(), 4);
     assert_eq!(json["checks"]["evm_indexer"], "not_connected");
 }
 

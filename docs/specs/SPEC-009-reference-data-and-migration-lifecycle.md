@@ -1,7 +1,7 @@
 ---
 status: accepted
 owner: iron-burrow
-last_reviewed: 2026-07-30
+last_reviewed: 2026-08-18
 agent_edit_policy: update_when_relevant
 ---
 
@@ -286,7 +286,6 @@ Required reference data must not include:
 * audit events;
 * runtime observations;
 * price-indexer-owned data;
-* DIS-owned data;
 * Bigwig-owned data;
 * read-model-owned data.
 

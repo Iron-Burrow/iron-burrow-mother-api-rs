@@ -3,7 +3,6 @@ use std::sync::Arc;
 use sqlx::PgPool;
 
 use crate::adapters::bigwig::BigwigClient;
-use crate::adapters::dis::DisClient;
 use crate::adapters::http::rate_limit::ApiKeyMinuteLimiter;
 use crate::adapters::postgres::{
     AccountRepository, ApiKeyRepository, PortfolioSimulationRepository, WorkspaceRepository,
@@ -26,7 +25,6 @@ pub(crate) struct HttpState {
     pub(crate) portfolio_simulation_repository: Option<PortfolioSimulationRepository>,
     pub(crate) api_key_minute_limiter: ApiKeyMinuteLimiter,
     pub(crate) price_indexer_client: Option<PriceIndexerClient>,
-    pub(crate) dis_client: Option<DisClient>,
     #[allow(dead_code)]
     pub(crate) bigwig_client: Option<BigwigClient>,
 }
