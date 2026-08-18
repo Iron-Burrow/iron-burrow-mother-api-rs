@@ -25,12 +25,7 @@ use crate::{
         },
     },
     application::{
-        balances::{
-            catalog::CatalogBalanceTargetResolver,
-            quote::PriceQuoteClient,
-            result::{BalanceItemOutcome, BalanceQuoteOutcome, GetBalancesResult},
-            service::BalanceSnapshotService,
-        },
+        balances::result::{BalanceItemOutcome, BalanceQuoteOutcome, GetBalancesResult},
         erc20_transfers::service::{
             build_search_plan, execute_search_plan, Erc20TransferSearchInput,
         },
@@ -497,17 +492,7 @@ async fn capture_treasury_snapshot(
         Ok(value) => value,
         Err(_) => return invalid(),
     };
-    let result = match BalanceSnapshotService::new(
-        CatalogBalanceTargetResolver::new(state.canonical_registry.clone()),
-        state.bigwig_client.clone(),
-        state
-            .price_indexer_client
-            .clone()
-            .map(PriceQuoteClient::new),
-    )
-    .resolve(command)
-    .await
-    {
+    let result = match state.balance_service.resolve(command).await {
         Ok(value) => value,
         Err(_) => return unavailable(),
     };
@@ -873,16 +858,7 @@ async fn balance_view(
         Ok(command) => command,
         Err(_) => return invalid(),
     };
-    let result = BalanceSnapshotService::new(
-        CatalogBalanceTargetResolver::new(state.canonical_registry.clone()),
-        state.bigwig_client.clone(),
-        state
-            .price_indexer_client
-            .clone()
-            .map(PriceQuoteClient::new),
-    )
-    .resolve(command)
-    .await;
+    let result = state.balance_service.resolve(command).await;
     let detail = match result {
         Ok(value) => {
             let Some(repository) = state.workspace_repository.as_ref() else {

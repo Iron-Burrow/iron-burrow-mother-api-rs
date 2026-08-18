@@ -7,7 +7,7 @@ use crate::{
         postgres::{
             AccountRepository, ApiKeyRepository, PortfolioSimulationRepository, WorkspaceRepository,
         },
-        price_indexer::client::create_price_indexer_client,
+        price_indexer::{client::create_price_indexer_client, PriceIndexerBalanceQuoteReader},
     },
     config::Config,
     domain::{
@@ -53,6 +53,15 @@ where
         .map(PortfolioSimulationRepository::database);
     let price_indexer_client = create_price_indexer_client(&config);
     let bigwig_client = create_bigwig_client(&config);
+    let balance_service = crate::application::balances::service::BalanceSnapshotService::new(
+        crate::application::balances::catalog::CatalogBalanceTargetResolver::new(
+            canonical_registry.clone(),
+        ),
+        bigwig_client.clone(),
+        price_indexer_client
+            .clone()
+            .map(PriceIndexerBalanceQuoteReader::new),
+    );
 
     Ok(HttpState {
         config,
@@ -67,6 +76,7 @@ where
         api_key_minute_limiter: ApiKeyMinuteLimiter::default(),
         price_indexer_client,
         bigwig_client,
+        balance_service,
     })
 }
 

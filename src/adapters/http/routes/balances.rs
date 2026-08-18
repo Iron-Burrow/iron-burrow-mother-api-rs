@@ -5,23 +5,16 @@ use axum::{
     Json,
 };
 
+use crate::adapters::http::{
+    auth::{require_network_scopes, ApiKeyPrincipal},
+    dto::balances::{
+        requests::BulkBalanceRequest, requests::SingleBalanceRequest, BulkBalanceResponse,
+        SingleBalanceResponse,
+    },
+    error::ApiError,
+};
 use crate::adapters::http::{presenters::balances::BalancesResponsePresenter, state::HttpState};
 use crate::application::balances::command::GetBalancesCommand;
-use crate::application::balances::result::GetBalancesResult;
-use crate::{
-    adapters::http::{
-        auth::{require_network_scopes, ApiKeyPrincipal},
-        dto::balances::{
-            requests::BulkBalanceRequest, requests::SingleBalanceRequest, BulkBalanceResponse,
-            SingleBalanceResponse,
-        },
-        error::ApiError,
-    },
-    application::balances::{
-        catalog::CatalogBalanceTargetResolver, quote::PriceQuoteClient,
-        service::BalanceSnapshotService,
-    },
-};
 
 mod error;
 
@@ -86,17 +79,9 @@ pub async fn resolve_bulk_balances(
 async fn resolve_balances(
     state: &HttpState,
     command: GetBalancesCommand,
-) -> Result<GetBalancesResult, ApiError> {
-    let service = BalanceSnapshotService::new(
-        CatalogBalanceTargetResolver::new(state.canonical_registry.clone()),
-        state.bigwig_client.clone(),
-        state
-            .price_indexer_client
-            .clone()
-            .map(PriceQuoteClient::new),
-    );
-
-    service
+) -> Result<crate::application::balances::result::GetBalancesResult, ApiError> {
+    state
+        .balance_service
         .resolve(command)
         .await
         .map_err(balance_service_error_to_api_error)

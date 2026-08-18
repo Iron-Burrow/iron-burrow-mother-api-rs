@@ -7,10 +7,13 @@ use crate::adapters::http::rate_limit::ApiKeyMinuteLimiter;
 use crate::adapters::postgres::{
     AccountRepository, ApiKeyRepository, PortfolioSimulationRepository, WorkspaceRepository,
 };
-use crate::adapters::price_indexer::PriceIndexerClient;
 use crate::config::Config;
 use crate::domain::canonical_registry::CanonicalRegistry;
 use crate::domain::verified_protocol_registry::VerifiedProtocolRegistry;
+use crate::{
+    adapters::price_indexer::{PriceIndexerBalanceQuoteReader, PriceIndexerClient},
+    application::balances::service::BalanceSnapshotService,
+};
 
 #[derive(Clone, Debug)]
 pub(crate) struct HttpState {
@@ -27,6 +30,7 @@ pub(crate) struct HttpState {
     pub(crate) price_indexer_client: Option<PriceIndexerClient>,
     #[allow(dead_code)]
     pub(crate) bigwig_client: Option<BigwigClient>,
+    pub(crate) balance_service: BalanceSnapshotService<PriceIndexerBalanceQuoteReader>,
 }
 
 #[cfg(test)]
@@ -62,6 +66,23 @@ impl HttpStateTestBuilder {
     }
 
     pub(crate) fn build(self) -> HttpState {
-        self.state
+        let mut state = self.state;
+        state.rebuild_balance_service();
+        state
+    }
+}
+
+#[cfg(test)]
+impl HttpState {
+    fn rebuild_balance_service(&mut self) {
+        self.balance_service = BalanceSnapshotService::new(
+            crate::application::balances::catalog::CatalogBalanceTargetResolver::new(
+                self.canonical_registry.clone(),
+            ),
+            self.bigwig_client.clone(),
+            self.price_indexer_client
+                .clone()
+                .map(PriceIndexerBalanceQuoteReader::new),
+        );
     }
 }

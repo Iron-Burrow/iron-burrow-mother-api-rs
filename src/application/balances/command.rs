@@ -124,11 +124,7 @@ mod tests {
     use serde_json::{json, Value};
 
     use crate::test_utils::{errors::assert_public_error, http::post_raw};
-    use crate::{
-        adapters::{bigwig::client::BigwigClient, price_indexer::PriceIndexerClient},
-        config::Config,
-        test_utils::fixtures::router::balance_router,
-    };
+    use crate::{config::Config, test_utils::fixtures::router::balance_router};
 
     use super::*;
 
@@ -148,18 +144,13 @@ mod tests {
         .await
     }
 
-    fn balance_app(bigwig_url: Option<&str>, price_url: Option<&str>) -> Router {
-        let bigwig_client =
-            bigwig_url.map(|url| BigwigClient::new(url, "test-bigwig-token", 2_000).unwrap());
-        let price_indexer_client =
-            price_url.map(|url| PriceIndexerClient::new(url, "test-price-token", 2_000).unwrap());
-
-        balance_router(Config::default(), bigwig_client, price_indexer_client)
+    fn balance_app() -> Router {
+        balance_router(Config::default(), None, None)
     }
 
     #[tokio::test]
     async fn public_limits_reject_only_values_above_the_boundary() {
-        let app = balance_app(None, None);
+        let app = balance_app();
         let too_many_accounts = (0..=MAX_ACCOUNTS)
             .map(|index| {
                 json!({

@@ -1,6 +1,7 @@
 use std::{
     io::{Read, Write},
     net::TcpListener,
+    sync::{Arc, Mutex},
     thread,
 };
 
@@ -8,22 +9,78 @@ use reqwest::StatusCode;
 use serde_json::{json, Value};
 
 use super::*;
-use crate::{
-    adapters::bigwig::balances::BigwigRequestValidationCode,
-    application::balances::error::GetBalancesCommandError,
-    test_utils::fixtures::registry::embedded_canonical_registry,
+use crate::adapters::bigwig::balances::{
+    BigwigEvidenceNetwork, BigwigItemError, BigwigItemErrorCode, BigwigResolvedEvidence,
+    BigwigResolvedEvidenceKind,
 };
 use crate::{
-    adapters::bigwig::balances::{
-        BigwigEvidenceNetwork, BigwigItemError, BigwigItemErrorCode, BigwigResolvedEvidence,
-        BigwigResolvedEvidenceKind,
+    adapters::bigwig::balances::BigwigRequestValidationCode,
+    application::balances::{
+        error::GetBalancesCommandError,
+        quote::{LatestPriceQuotes, PriceQuoteError},
     },
-    adapters::price_indexer::PriceIndexerClient,
+    test_utils::fixtures::registry::embedded_canonical_registry,
 };
 
 const ACCOUNT_A: &str = "0x1111111111111111111111111111111111111111";
 const ACCOUNT_B: &str = "0x2222222222222222222222222222222222222222";
 const ACCOUNT_C: &str = "0x3333333333333333333333333333333333333333";
+type QuoteReaderCalls = Arc<Mutex<Vec<(Vec<String>, String)>>>;
+
+#[derive(Clone, Debug)]
+struct FakeQuoteReader {
+    result: Result<HashMap<String, PriceQuoteResolution>, PriceQuoteError>,
+    calls: QuoteReaderCalls,
+}
+
+impl FakeQuoteReader {
+    fn available(slugs: &[&str], quote_currency: &str, unit_price: &str) -> Self {
+        Self {
+            result: Ok(slugs
+                .iter()
+                .map(|slug| {
+                    (
+                        (*slug).to_string(),
+                        PriceQuoteResolution::Available {
+                            unit_price: unit_price.to_string(),
+                            quote_currency: quote_currency.to_string(),
+                            price_as_of: "2026-06-17T11:59:59Z".to_string(),
+                        },
+                    )
+                })
+                .collect()),
+            calls: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn failure(error: PriceQuoteError) -> Self {
+        Self {
+            result: Err(error),
+            calls: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn resolution(resolution: PriceQuoteResolution) -> Self {
+        Self {
+            result: Ok(HashMap::from([("usdc".to_string(), resolution)])),
+            calls: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+}
+
+impl LatestPriceQuotes for FakeQuoteReader {
+    async fn latest_quotes(
+        &self,
+        pricing_asset_slugs: &[String],
+        quote_currency: &str,
+    ) -> Result<HashMap<String, PriceQuoteResolution>, PriceQuoteError> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((pricing_asset_slugs.to_vec(), quote_currency.to_string()));
+        self.result.clone()
+    }
+}
 
 #[tokio::test]
 async fn groups_networks_concurrently_and_restores_caller_order() {
@@ -119,10 +176,8 @@ async fn batches_deduplicated_quotes_once_and_fans_them_out_in_caller_order() {
     let Some((bigwig_url, bigwig_server)) = spawn_dynamic_server(2) else {
         return;
     };
-    let Some((price_url, price_server)) = spawn_price_server(&["usdc", "ethereum"], "MXN", "2.50")
-    else {
-        return;
-    };
+    let price_reader = FakeQuoteReader::available(&["usdc", "ethereum"], "MXN", "2.50");
+    let price_calls = price_reader.calls.clone();
     let command = GetBalancesCommand::try_new(
         AsOf::Latest,
         vec![
@@ -134,23 +189,18 @@ async fn batches_deduplicated_quotes_once_and_fans_them_out_in_caller_order() {
     )
     .unwrap();
 
-    let result = service_with_quote(
-        Some(bigwig_client(&bigwig_url)),
-        Some(price_quote_client(&price_url)),
-    )
-    .resolve(command.clone())
-    .await
-    .unwrap();
-    bigwig_server.join().unwrap();
-    let price_request = price_server.join().unwrap();
-    let price_body = price_request
-        .split_once("\r\n\r\n")
-        .map(|(_, body)| serde_json::from_str::<Value>(body).unwrap())
+    let result = service_with_quote(Some(bigwig_client(&bigwig_url)), Some(price_reader))
+        .resolve(command.clone())
+        .await
         .unwrap();
-
-    assert!(price_request.starts_with("POST /prices/latest/batch "));
-    assert_eq!(price_body["slugs"], json!(["usdc", "ethereum"]));
-    assert_eq!(price_body["quoteCurrency"], "MXN");
+    bigwig_server.join().unwrap();
+    assert_eq!(
+        price_calls.lock().unwrap().as_slice(),
+        &[(
+            vec!["usdc".to_string(), "ethereum".to_string()],
+            "MXN".to_string()
+        )]
+    );
     assert_eq!(
         result
             .accounts
@@ -190,43 +240,91 @@ async fn batches_deduplicated_quotes_once_and_fans_them_out_in_caller_order() {
 }
 
 #[tokio::test]
+async fn fake_quote_reader_controls_application_quote_outcomes() {
+    let Some((bigwig_url, bigwig_server)) = spawn_dynamic_server(5) else {
+        return;
+    };
+    let command = || {
+        GetBalancesCommand::try_new(
+            AsOf::Latest,
+            vec![account("eth-mainnet", ACCOUNT_A, None)],
+            "USD".to_string(),
+            token_slugs(["usdc"]),
+        )
+        .unwrap()
+    };
+    let readers = [
+        FakeQuoteReader::available(&["usdc"], "USD", "1.00"),
+        FakeQuoteReader::resolution(PriceQuoteResolution::Unavailable),
+        FakeQuoteReader::resolution(PriceQuoteResolution::Unsupported),
+        FakeQuoteReader::failure(PriceQuoteError::ProviderUnavailable),
+        FakeQuoteReader::failure(PriceQuoteError::InternalError),
+    ];
+    let mut outcomes = Vec::new();
+
+    for reader in readers {
+        let result = service_with_quote(Some(bigwig_client(&bigwig_url)), Some(reader))
+            .resolve(command())
+            .await
+            .unwrap();
+        let BalanceItemOutcome::Resolved { quote, .. } = &result.accounts[0].items[0] else {
+            panic!("expected resolved balance item");
+        };
+        outcomes.push(quote.clone());
+    }
+    bigwig_server.join().unwrap();
+
+    assert!(matches!(outcomes[0], BalanceQuoteOutcome::Available { .. }));
+    assert_eq!(
+        outcomes[1],
+        BalanceQuoteOutcome::Unavailable {
+            code: BalanceItemErrorCode::PriceResolutionFailed,
+        }
+    );
+    assert_eq!(outcomes[2], BalanceQuoteOutcome::Unsupported);
+    assert_eq!(
+        outcomes[3],
+        BalanceQuoteOutcome::Unavailable {
+            code: BalanceItemErrorCode::PriceProviderUnavailable,
+        }
+    );
+    assert_eq!(
+        outcomes[4],
+        BalanceQuoteOutcome::Unavailable {
+            code: BalanceItemErrorCode::InternalError,
+        }
+    );
+}
+
+#[tokio::test]
 async fn historical_balance_flow_does_not_call_price_http_service() {
     let Some((bigwig_url, bigwig_server)) = spawn_dynamic_server(1) else {
         return;
     };
-    let Ok(price_listener) = TcpListener::bind("127.0.0.1:0") else {
-        return;
-    };
-    let price_url = format!("http://{}", price_listener.local_addr().unwrap());
+    let price_reader = FakeQuoteReader::available(&["ethereum"], "USD", "1.00");
+    let price_calls = price_reader.calls.clone();
 
-    let result = service_with_quote(
-        Some(bigwig_client(&bigwig_url)),
-        Some(price_quote_client(&price_url)),
-    )
-    .resolve(
-        GetBalancesCommand::try_new(
-            AsOf::BlockNumber {
-                block_number: "19000000".to_string(),
-            },
-            vec![account("eth-mainnet", ACCOUNT_A, None)],
-            "USD".to_string(),
-            token_slugs(["ethereum"]),
+    let result = service_with_quote(Some(bigwig_client(&bigwig_url)), Some(price_reader))
+        .resolve(
+            GetBalancesCommand::try_new(
+                AsOf::BlockNumber {
+                    block_number: "19000000".to_string(),
+                },
+                vec![account("eth-mainnet", ACCOUNT_A, None)],
+                "USD".to_string(),
+                token_slugs(["ethereum"]),
+            )
+            .unwrap(),
         )
-        .unwrap(),
-    )
-    .await
-    .unwrap();
+        .await
+        .unwrap();
 
     let requests = bigwig_server.join().unwrap();
     assert_eq!(
         requests[0]["as_of"],
         json!({"kind": "block_number", "block_number": "19000000"})
     );
-    price_listener.set_nonblocking(true).unwrap();
-    assert_eq!(
-        price_listener.accept().unwrap_err().kind(),
-        std::io::ErrorKind::WouldBlock
-    );
+    assert!(price_calls.lock().unwrap().is_empty());
     assert!(matches!(
         &result.accounts[0].items[0],
         BalanceItemOutcome::Resolved {
@@ -386,7 +484,7 @@ fn quote_provider_failures_preserve_all_resolved_raw_balances() {
             },
         ],
     }];
-    let results = enrich_account_results(accounts, Err(PriceQuoteClientError::ProviderUnavailable));
+    let results = enrich_account_results(accounts, Err(PriceQuoteError::ProviderUnavailable));
     let raw_amounts = results[0]
         .items
         .iter()
@@ -412,33 +510,24 @@ async fn unresolved_explicit_contracts_skip_quote_lookup_and_return_unsupported(
     let Some((bigwig_url, bigwig_server)) = spawn_dynamic_server(1) else {
         return;
     };
-    let Ok(price_listener) = TcpListener::bind("127.0.0.1:0") else {
-        return;
-    };
-    let price_url = format!("http://{}", price_listener.local_addr().unwrap());
+    let price_reader = FakeQuoteReader::available(&["usdc"], "USD", "1.00");
+    let price_calls = price_reader.calls.clone();
 
-    let result = service_with_quote(
-        Some(bigwig_client(&bigwig_url)),
-        Some(price_quote_client(&price_url)),
-    )
-    .resolve(
-        GetBalancesCommand::try_new(
-            AsOf::Latest,
-            vec![account("eth-mainnet", ACCOUNT_A, None)],
-            "USD".to_string(),
-            mixed_tokens(&[], &[contract]),
+    let result = service_with_quote(Some(bigwig_client(&bigwig_url)), Some(price_reader))
+        .resolve(
+            GetBalancesCommand::try_new(
+                AsOf::Latest,
+                vec![account("eth-mainnet", ACCOUNT_A, None)],
+                "USD".to_string(),
+                mixed_tokens(&[], &[contract]),
+            )
+            .unwrap(),
         )
-        .unwrap(),
-    )
-    .await
-    .unwrap();
+        .await
+        .unwrap();
 
     bigwig_server.join().unwrap();
-    price_listener.set_nonblocking(true).unwrap();
-    assert_eq!(
-        price_listener.accept().unwrap_err().kind(),
-        std::io::ErrorKind::WouldBlock
-    );
+    assert!(price_calls.lock().unwrap().is_empty());
     assert!(matches!(
         &result.accounts[0].items[0],
         BalanceItemOutcome::Resolved {
@@ -491,27 +580,23 @@ fn spawn_dynamic_server(request_count: usize) -> Option<(String, thread::JoinHan
     Some((base_url, handle))
 }
 
-fn service(client: Option<BigwigClient>) -> BalanceSnapshotService {
+fn service(client: Option<BigwigClient>) -> BalanceSnapshotService<FakeQuoteReader> {
     service_with_quote(client, None)
 }
 
 fn service_with_quote(
     client: Option<BigwigClient>,
-    price_quote_client: Option<PriceQuoteClient>,
-) -> BalanceSnapshotService {
+    price_quote_reader: Option<FakeQuoteReader>,
+) -> BalanceSnapshotService<FakeQuoteReader> {
     BalanceSnapshotService::new(
         CatalogBalanceTargetResolver::new(embedded_canonical_registry()),
         client,
-        price_quote_client,
+        price_quote_reader,
     )
 }
 
 fn bigwig_client(base_url: &str) -> BigwigClient {
     BigwigClient::new(base_url, "test-token", 2_000).unwrap()
-}
-
-fn price_quote_client(base_url: &str) -> PriceQuoteClient {
-    PriceQuoteClient::new(PriceIndexerClient::new(base_url, "test-token", 2_000).unwrap())
 }
 
 fn account(network_slug: &str, address: &str, client_ref: Option<&str>) -> OnchainAccount {
@@ -553,66 +638,6 @@ fn write_json_response(stream: &mut impl Write, status: StatusCode, body: Value)
             body
         );
     stream.write_all(response.as_bytes()).unwrap();
-}
-
-fn spawn_price_server(
-    slugs: &[&str],
-    quote_currency: &str,
-    unit_price: &str,
-) -> Option<(String, thread::JoinHandle<String>)> {
-    let listener = match TcpListener::bind("127.0.0.1:0") {
-        Ok(listener) => listener,
-        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => return None,
-        Err(error) => panic!("failed to bind price test server: {error}"),
-    };
-    let base_url = format!("http://{}", listener.local_addr().unwrap());
-    let slugs = slugs
-        .iter()
-        .map(|slug| slug.to_string())
-        .collect::<Vec<_>>();
-    let quote_currency = quote_currency.to_string();
-    let unit_price = unit_price.to_string();
-    let handle = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let request = read_http_request(&mut stream);
-        let results = slugs
-            .iter()
-            .map(|slug| {
-                json!({
-                    "requestedSlug": slug,
-                    "normalizedSlug": slug,
-                    "assetId": slug,
-                    "slug": slug,
-                    "name": slug,
-                    "status": "found",
-                    "freshnessStatus": "fresh",
-                    "price": {
-                        "assetId": slug,
-                        "slug": slug,
-                        "quoteCurrency": quote_currency.clone(),
-                        "price": unit_price.clone(),
-                        "sourceType": "test",
-                        "recordedAt": "2026-06-17T11:59:59Z",
-                        "freshnessStatus": "fresh"
-                    },
-                    "error": null
-                })
-            })
-            .collect::<Vec<_>>();
-        write_json_response(
-            &mut stream,
-            StatusCode::OK,
-            json!({
-                "quoteCurrency": quote_currency.clone(),
-                "requestedCount": slugs.len(),
-                "uniqueCount": slugs.len(),
-                "results": results
-            }),
-        );
-        request
-    });
-
-    Some((base_url, handle))
 }
 
 fn dynamic_response(request: &Value) -> Value {
@@ -690,13 +715,6 @@ fn read_http_request(stream: &mut impl Read) -> String {
     }
 
     String::from_utf8(request).unwrap()
-}
-
-fn request_body_json(request: &str) -> Value {
-    request
-        .split_once("\r\n\r\n")
-        .map(|(_, body)| serde_json::from_str::<Value>(body).unwrap())
-        .unwrap()
 }
 
 fn grouped_accounts(network_slug: &str, count: usize) -> GroupedAccounts {
@@ -844,25 +862,21 @@ async fn mixed_asset_and_explicit_contract_deduplicates_upstream_and_keeps_attri
     let Some((bigwig_url, bigwig_server)) = spawn_dynamic_server(1) else {
         return;
     };
-    let Some((price_url, price_server)) = spawn_price_server(&["usdc"], "USD", "1.00") else {
-        return;
-    };
+    let price_reader = FakeQuoteReader::available(&["usdc"], "USD", "1.00");
+    let price_calls = price_reader.calls.clone();
 
-    let result = service_with_quote(
-        Some(bigwig_client(&bigwig_url)),
-        Some(price_quote_client(&price_url)),
-    )
-    .resolve(
-        GetBalancesCommand::try_new(
-            AsOf::Latest,
-            vec![account("eth-mainnet", ACCOUNT_A, None)],
-            "USD".to_string(),
-            mixed_tokens(&["usdc"], &[contract]),
+    let result = service_with_quote(Some(bigwig_client(&bigwig_url)), Some(price_reader))
+        .resolve(
+            GetBalancesCommand::try_new(
+                AsOf::Latest,
+                vec![account("eth-mainnet", ACCOUNT_A, None)],
+                "USD".to_string(),
+                mixed_tokens(&["usdc"], &[contract]),
+            )
+            .unwrap(),
         )
-        .unwrap(),
-    )
-    .await
-    .unwrap();
+        .await
+        .unwrap();
 
     let requests = bigwig_server.join().unwrap();
     assert_eq!(requests[0]["tokens"].as_array().unwrap().len(), 1);
@@ -870,8 +884,10 @@ async fn mixed_asset_and_explicit_contract_deduplicates_upstream_and_keeps_attri
         requests[0]["tokens"],
         json!([{"kind": "erc20", "contract_address": contract}])
     );
-    let price_request = price_server.join().unwrap();
-    assert_eq!(request_body_json(&price_request)["slugs"], json!(["usdc"]));
+    assert_eq!(
+        price_calls.lock().unwrap().as_slice(),
+        &[(vec!["usdc".to_string()], "USD".to_string())]
+    );
     assert_eq!(result.accounts[0].items.len(), 2);
     assert!(matches!(
         &result.accounts[0].items[0],
@@ -929,11 +945,9 @@ async fn skips_unsupported_pairs_without_calling_bigwig() {
 
 #[tokio::test]
 async fn skipped_only_results_do_not_call_price_indexer() {
-    let Ok(listener) = TcpListener::bind("127.0.0.1:0") else {
-        return;
-    };
-    let base_url = format!("http://{}", listener.local_addr().unwrap());
-    let result = service_with_quote(None, Some(price_quote_client(&base_url)))
+    let price_reader = FakeQuoteReader::available(&["wrapped-bitcoin"], "USD", "1.00");
+    let price_calls = price_reader.calls.clone();
+    let result = service_with_quote(None, Some(price_reader))
         .resolve(
             GetBalancesCommand::try_new(
                 AsOf::Latest,
@@ -946,11 +960,7 @@ async fn skipped_only_results_do_not_call_price_indexer() {
         .await
         .unwrap();
 
-    listener.set_nonblocking(true).unwrap();
-    assert_eq!(
-        listener.accept().unwrap_err().kind(),
-        std::io::ErrorKind::WouldBlock
-    );
+    assert!(price_calls.lock().unwrap().is_empty());
     assert!(matches!(
         &result.accounts[0].items[0],
         BalanceItemOutcome::Skipped { .. }

@@ -37,7 +37,7 @@ use super::{
         ContractBalanceTargetResolution,
     },
     decimal::{format_amount, is_unsigned_integer, multiply_amount_by_price},
-    quote::{PriceQuoteClient, PriceQuoteClientError, PriceQuoteResolution},
+    quote::{LatestPriceQuotes, PriceQuoteError, PriceQuoteResolution},
 };
 
 const BIGWIG_MAX_ACCOUNTS: usize = 50;
@@ -45,22 +45,25 @@ const BIGWIG_MAX_TARGETS: usize = 20;
 const BIGWIG_MAX_ITEMS: usize = 1_000;
 
 #[derive(Clone, Debug)]
-pub struct BalanceSnapshotService {
+pub struct BalanceSnapshotService<Q> {
     catalog_resolver: CatalogBalanceTargetResolver,
     bigwig_client: Option<BigwigClient>,
-    price_quote_client: Option<PriceQuoteClient>,
+    price_quote_reader: Option<Q>,
 }
 
-impl BalanceSnapshotService {
+impl<Q> BalanceSnapshotService<Q>
+where
+    Q: LatestPriceQuotes,
+{
     pub fn new(
         catalog_resolver: CatalogBalanceTargetResolver,
         bigwig_client: Option<BigwigClient>,
-        price_quote_client: Option<PriceQuoteClient>,
+        price_quote_reader: Option<Q>,
     ) -> Self {
         Self {
             catalog_resolver,
             bigwig_client,
-            price_quote_client,
+            price_quote_reader,
         }
     }
 
@@ -118,13 +121,13 @@ impl BalanceSnapshotService {
         let quotes = if pricing_asset_slugs.is_empty() || request.as_of() != &AsOf::Latest {
             Ok(HashMap::new())
         } else {
-            match &self.price_quote_client {
-                Some(client) => {
-                    client
+            match &self.price_quote_reader {
+                Some(reader) => {
+                    reader
                         .latest_quotes(&pricing_asset_slugs, request.quote_currency())
                         .await
                 }
-                None => Err(PriceQuoteClientError::ProviderUnavailable),
+                None => Err(PriceQuoteError::ProviderUnavailable),
             }
         };
 
@@ -867,7 +870,7 @@ fn normalize_pricing_asset_slug(pricing_asset_slug: &str) -> String {
 
 fn enrich_account_results(
     accounts: Vec<RawBalancesAccountResult>,
-    quotes: Result<HashMap<String, PriceQuoteResolution>, PriceQuoteClientError>,
+    quotes: Result<HashMap<String, PriceQuoteResolution>, PriceQuoteError>,
 ) -> Vec<BalancesAccountResult> {
     accounts
         .into_iter()
@@ -885,7 +888,7 @@ fn enrich_account_results(
 
 fn enrich_item(
     item: RawBalanceItemOutcome,
-    quotes: &Result<HashMap<String, PriceQuoteResolution>, PriceQuoteClientError>,
+    quotes: &Result<HashMap<String, PriceQuoteResolution>, PriceQuoteError>,
 ) -> BalanceItemOutcome {
     match item {
         RawBalanceItemOutcome::Resolved { target, raw_amount } => {
@@ -901,12 +904,10 @@ fn enrich_item(
                         .unwrap_or(BalanceQuoteOutcome::Unavailable {
                             code: BalanceItemErrorCode::PriceResolutionFailed,
                         }),
-                    Err(PriceQuoteClientError::ProviderUnavailable) => {
-                        BalanceQuoteOutcome::Unavailable {
-                            code: BalanceItemErrorCode::PriceProviderUnavailable,
-                        }
-                    }
-                    Err(PriceQuoteClientError::InternalError) => BalanceQuoteOutcome::Unavailable {
+                    Err(PriceQuoteError::ProviderUnavailable) => BalanceQuoteOutcome::Unavailable {
+                        code: BalanceItemErrorCode::PriceProviderUnavailable,
+                    },
+                    Err(PriceQuoteError::InternalError) => BalanceQuoteOutcome::Unavailable {
                         code: BalanceItemErrorCode::InternalError,
                     },
                 },

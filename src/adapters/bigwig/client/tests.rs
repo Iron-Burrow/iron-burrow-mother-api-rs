@@ -21,7 +21,7 @@ use crate::{
 };
 use crate::{
     application::balances::{
-        catalog::CatalogBalanceTargetResolver, quote::PriceQuoteClient,
+        catalog::CatalogBalanceTargetResolver, quote::LatestPriceQuotes,
         service::BalanceSnapshotService,
     },
     test_utils::constants::INFRA_GATEWAY_URL,
@@ -234,17 +234,36 @@ fn create_client_returns_none_for_partial_or_invalid_bigwig_config() {
     }
 }
 
-fn service(client: Option<BigwigClient>) -> BalanceSnapshotService {
+#[derive(Clone, Debug)]
+struct NoopQuoteReader;
+
+impl LatestPriceQuotes for NoopQuoteReader {
+    async fn latest_quotes(
+        &self,
+        _pricing_asset_slugs: &[String],
+        _quote_currency: &str,
+    ) -> Result<
+        std::collections::HashMap<
+            String,
+            crate::application::balances::quote::PriceQuoteResolution,
+        >,
+        crate::application::balances::quote::PriceQuoteError,
+    > {
+        unreachable!("Bigwig adapter tests do not resolve prices")
+    }
+}
+
+fn service(client: Option<BigwigClient>) -> BalanceSnapshotService<NoopQuoteReader> {
     service_with_quote(client, None)
 }
 
 fn service_with_quote(
     client: Option<BigwigClient>,
-    price_quote_client: Option<PriceQuoteClient>,
-) -> BalanceSnapshotService {
+    price_quote_reader: Option<NoopQuoteReader>,
+) -> BalanceSnapshotService<NoopQuoteReader> {
     BalanceSnapshotService::new(
         CatalogBalanceTargetResolver::new(embedded_canonical_registry()),
         client,
-        price_quote_client,
+        price_quote_reader,
     )
 }
