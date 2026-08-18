@@ -32,40 +32,38 @@ pub(crate) struct HttpState {
 }
 
 #[cfg(test)]
-pub(crate) fn embedded_canonical_registry() -> Arc<CanonicalRegistry> {
-    Arc::new(
-        CanonicalRegistry::from_embedded_catalog()
-            .expect("embedded catalog should construct the canonical registry"),
-    )
+pub(crate) struct HttpStateTestBuilder {
+    state: HttpState,
 }
 
 #[cfg(test)]
-pub(crate) fn embedded_verified_protocol_registry() -> Arc<VerifiedProtocolRegistry> {
-    let canonical = embedded_canonical_registry();
-    Arc::new(
-        VerifiedProtocolRegistry::from_embedded(&canonical)
-            .expect("embedded protocol declarations should construct the registry"),
-    )
-}
-
-#[cfg(test)]
-impl HttpState {
-    #[allow(dead_code)]
+impl HttpStateTestBuilder {
     pub(crate) fn new(config: Config) -> Self {
-        crate::bootstrap::http::build_http_state(config)
-            .expect("HTTP state should be built from config")
+        Self {
+            state: crate::bootstrap::http::build_http_state(config)
+                .expect("HTTP state should be built from config"),
+        }
     }
 
-    pub(crate) fn for_tests(config: Config) -> Self {
-        Self::new(config)
+    pub(crate) fn with_api_key_repository(mut self, api_key_repository: ApiKeyRepository) -> Self {
+        self.state.api_key_repository = Some(api_key_repository);
+        self
     }
 
-    pub(crate) fn for_tests_with_bigwig_client(
-        config: Config,
-        bigwig_client: BigwigClient,
+    pub(crate) fn with_price_indexer_client(
+        mut self,
+        price_indexer_client: PriceIndexerClient,
     ) -> Self {
-        let mut state = Self::new(config);
-        state.bigwig_client = Some(bigwig_client);
-        state
+        self.state.price_indexer_client = Some(price_indexer_client);
+        self
+    }
+
+    pub(crate) fn with_bigwig_client(mut self, bigwig_client: BigwigClient) -> Self {
+        self.state.bigwig_client = Some(bigwig_client);
+        self
+    }
+
+    pub(crate) fn build(self) -> HttpState {
+        self.state
     }
 }

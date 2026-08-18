@@ -113,7 +113,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        adapters::http::state::HttpState,
+        adapters::http::state::HttpStateTestBuilder,
         config::Config,
         test_utils::constants::{DIS_BASE_URL, PRICE_INDEXER_URL},
     };
@@ -121,7 +121,7 @@ mod tests {
     #[test]
     fn status_response_reports_unreachable_database_without_live_postgres() {
         let response = status_response(
-            &HttpState::new(Config::default()),
+            &HttpStateTestBuilder::new(Config::default()).build(),
             DatabaseCheck::Unreachable,
         );
         let json = serde_json::to_value(response).unwrap();
@@ -150,7 +150,10 @@ mod tests {
 
     #[test]
     fn status_response_reports_missing_dis_config() {
-        let response = status_response(&HttpState::new(Config::default()), DatabaseCheck::Skipped);
+        let response = status_response(
+            &HttpStateTestBuilder::new(Config::default()).build(),
+            DatabaseCheck::Skipped,
+        );
         let json = serde_json::to_value(response).unwrap();
 
         assert_eq!(json["ok"], true);
@@ -159,7 +162,10 @@ mod tests {
 
     #[test]
     fn status_response_reports_missing_price_indexer_config() {
-        let response = status_response(&HttpState::new(Config::default()), DatabaseCheck::Skipped);
+        let response = status_response(
+            &HttpStateTestBuilder::new(Config::default()).build(),
+            DatabaseCheck::Skipped,
+        );
         let json = serde_json::to_value(response).unwrap();
 
         assert_eq!(json["ok"], true);
@@ -169,11 +175,12 @@ mod tests {
     #[test]
     fn status_response_reports_valid_price_indexer_config() {
         let response = status_response(
-            &HttpState::new(Config {
+            &HttpStateTestBuilder::new(Config {
                 price_indexer_url: Some(PRICE_INDEXER_URL.to_string()),
                 price_ql_internal_token: Some("test-token".to_string()),
                 ..Config::default()
-            }),
+            })
+            .build(),
             DatabaseCheck::Skipped,
         );
         let json = serde_json::to_value(response).unwrap();
@@ -185,11 +192,12 @@ mod tests {
     #[test]
     fn status_response_reports_invalid_price_indexer_config_without_failing_ok() {
         let response = status_response(
-            &HttpState::new(Config {
+            &HttpStateTestBuilder::new(Config {
                 price_indexer_url: Some("not a url".to_string()),
                 price_ql_internal_token: Some("test-token".to_string()),
                 ..Config::default()
-            }),
+            })
+            .build(),
             DatabaseCheck::Skipped,
         );
         let json = serde_json::to_value(response).unwrap();
@@ -201,10 +209,11 @@ mod tests {
     #[test]
     fn status_response_reports_incomplete_price_indexer_config_without_failing_ok() {
         let response = status_response(
-            &HttpState::new(Config {
+            &HttpStateTestBuilder::new(Config {
                 price_indexer_url: Some(PRICE_INDEXER_URL.to_string()),
                 ..Config::default()
-            }),
+            })
+            .build(),
             DatabaseCheck::Skipped,
         );
         let json = serde_json::to_value(response).unwrap();
@@ -216,10 +225,11 @@ mod tests {
     #[test]
     fn status_response_reports_valid_dis_config() {
         let response = status_response(
-            &HttpState::new(Config {
+            &HttpStateTestBuilder::new(Config {
                 dis_base_url: Some(DIS_BASE_URL.to_string()),
                 ..Config::default()
-            }),
+            })
+            .build(),
             DatabaseCheck::Skipped,
         );
         let json = serde_json::to_value(response).unwrap();
@@ -231,10 +241,11 @@ mod tests {
     #[test]
     fn status_response_reports_invalid_dis_config_without_failing_ok() {
         let response = status_response(
-            &HttpState::new(Config {
+            &HttpStateTestBuilder::new(Config {
                 dis_base_url: Some("not a url".to_string()),
                 ..Config::default()
-            }),
+            })
+            .build(),
             DatabaseCheck::Skipped,
         );
         let json = serde_json::to_value(response).unwrap();

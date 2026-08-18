@@ -1,6 +1,5 @@
 use std::sync::Mutex;
 
-use crate::adapters::http::state::embedded_canonical_registry;
 use crate::application::erc20_transfers::service::{
     build_search_plan, search_erc20_transfers, Erc20TransferExtractionError,
     Erc20TransferExtractionRequest, Erc20TransferExtractionResult, Erc20TransferExtractionRow,
@@ -9,6 +8,7 @@ use crate::application::erc20_transfers::service::{
 };
 use crate::domain::onchain_time::{onchain_window::BlockWindow, onchain_window::OnchainWindow};
 use crate::domain::transfers::transfer_direction::TransferDirection;
+use crate::test_utils::fixtures::registry::embedded_canonical_registry;
 
 const TEST_MAX_TOKEN_FILTERS: u64 = 20;
 

@@ -331,7 +331,10 @@ mod tests {
     #[test]
     fn production_protocol_resolution_has_no_historical_postgres_path() {
         for source in [
-            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/state.rs")),
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/bootstrap/http.rs"
+            )),
             include_str!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/src/application/defi_realized_yield.rs"

@@ -154,8 +154,8 @@ impl From<&CanonicalAsset> for Recommendation {
 mod tests {
     use super::*;
     use crate::{
-        adapters::http::state::embedded_canonical_registry,
         application::assets::resolve::query::parse_query,
+        test_utils::fixtures::registry::embedded_canonical_registry,
     };
 
     fn service() -> ResolveService {

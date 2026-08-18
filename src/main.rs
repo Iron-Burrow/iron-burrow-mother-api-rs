@@ -11,7 +11,6 @@ mod domain;
 mod infra;
 #[allow(dead_code)]
 mod openapi;
-mod state;
 
 #[cfg(test)]
 mod test_utils;

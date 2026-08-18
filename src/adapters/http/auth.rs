@@ -449,7 +449,7 @@ mod tests {
     use super::*;
     use crate::{
         adapters::{
-            http::state::{embedded_canonical_registry, embedded_verified_protocol_registry},
+            http::state::HttpStateTestBuilder,
             postgres::{
                 api_keys::{ApiKeyAuthorizationGrants, ApiKeyPolicy, InMemoryApiKeyUsageSnapshot},
                 ApiKeyRepository,
@@ -752,25 +752,12 @@ mod tests {
     }
 
     fn state_with_repository(api_key_repository: ApiKeyRepository) -> HttpState {
-        HttpState {
-            config: Config {
-                public_api_surface: PublicApiSurface::Beta,
-                ..Config::default()
-            },
-            version: env!("CARGO_PKG_VERSION"),
-            canonical_registry: embedded_canonical_registry(),
-            verified_protocol_registry: embedded_verified_protocol_registry(),
-            database_pool: None,
-            api_key_repository: Some(api_key_repository),
-            account_repository: None,
-            workspace_repository: None,
-            portfolio_simulation_repository: None,
-            api_key_minute_limiter: crate::adapters::http::rate_limit::ApiKeyMinuteLimiter::default(
-            ),
-            price_indexer_client: None,
-            dis_client: None,
-            bigwig_client: None,
-        }
+        HttpStateTestBuilder::new(Config {
+            public_api_surface: PublicApiSurface::Beta,
+            ..Config::default()
+        })
+        .with_api_key_repository(api_key_repository)
+        .build()
     }
 
     fn active_lookup() -> ApiKeyLookup {

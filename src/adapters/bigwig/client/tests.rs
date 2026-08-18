@@ -9,15 +9,15 @@ use serde_json::{json, Value};
 
 use super::*;
 use crate::{
-    adapters::http::state::embedded_canonical_registry,
-    application::balances::result::BalanceItemOutcome,
-};
-use crate::{
     application::balances::command::GetBalancesCommand,
     domain::{accounts::OnchainAccount, assets::token_selector::TokenSelector},
 };
 use crate::{
     application::balances::error::BalanceItemErrorCode, domain::onchain_time::as_of::AsOf,
+};
+use crate::{
+    application::balances::result::BalanceItemOutcome,
+    test_utils::fixtures::registry::embedded_canonical_registry,
 };
 use crate::{
     application::balances::{

@@ -123,16 +123,11 @@ mod tests {
     use axum::{http::StatusCode, Router};
     use serde_json::{json, Value};
 
-    use crate::adapters::http::state::{
-        embedded_canonical_registry, embedded_verified_protocol_registry, HttpState,
-    };
     use crate::test_utils::{errors::assert_public_error, http::post_raw};
     use crate::{
-        adapters::{
-            bigwig::client::BigwigClient, http::router::build_router,
-            price_indexer::PriceIndexerClient,
-        },
+        adapters::{bigwig::client::BigwigClient, price_indexer::PriceIndexerClient},
         config::Config,
+        test_utils::fixtures::router::balance_router,
     };
 
     use super::*;
@@ -159,22 +154,7 @@ mod tests {
         let price_indexer_client =
             price_url.map(|url| PriceIndexerClient::new(url, "test-price-token", 2_000).unwrap());
 
-        build_router(HttpState {
-            config: Config::default(),
-            version: env!("CARGO_PKG_VERSION"),
-            canonical_registry: embedded_canonical_registry(),
-            verified_protocol_registry: embedded_verified_protocol_registry(),
-            database_pool: None,
-            api_key_repository: None,
-            account_repository: None,
-            workspace_repository: None,
-            portfolio_simulation_repository: None,
-            api_key_minute_limiter: crate::adapters::http::rate_limit::ApiKeyMinuteLimiter::default(
-            ),
-            price_indexer_client,
-            dis_client: None,
-            bigwig_client,
-        })
+        balance_router(Config::default(), bigwig_client, price_indexer_client)
     }
 
     #[tokio::test]
