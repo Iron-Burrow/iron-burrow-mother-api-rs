@@ -304,8 +304,8 @@ mod tests {
         let mut value: serde_json::Value = serde_json::from_str(EMBEDDED_PROTOCOLS_JSON).unwrap();
         value["protocols"][0]["family"] = serde_json::json!("   ");
 
-        let error = VerifiedProtocolRegistry::from_json(&value.to_string(), &canonical)
-            .unwrap_err();
+        let error =
+            VerifiedProtocolRegistry::from_json(&value.to_string(), &canonical).unwrap_err();
 
         assert_eq!(
             error.to_string(),
@@ -319,8 +319,8 @@ mod tests {
         let mut value: serde_json::Value = serde_json::from_str(EMBEDDED_PROTOCOLS_JSON).unwrap();
         value["protocols"][0]["enabled"] = serde_json::json!(false);
 
-        let error = VerifiedProtocolRegistry::from_json(&value.to_string(), &canonical)
-            .unwrap_err();
+        let error =
+            VerifiedProtocolRegistry::from_json(&value.to_string(), &canonical).unwrap_err();
 
         assert_eq!(
             error.to_string(),

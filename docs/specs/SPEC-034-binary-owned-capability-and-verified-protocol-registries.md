@@ -1,7 +1,7 @@
 ---
 status: accepted
 owner: iron-burrow
-last_reviewed: 2026-08-17
+last_reviewed: 2026-08-18
 agent_edit_policy: update_when_relevant
 ---
 

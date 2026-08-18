@@ -464,3 +464,13 @@ implementation, and documentation changes.
 - Preserved the released `0009_legacy_api_key_capabilities.sql` migration and
   renumbered the later DeFi protocol registry migration to `0017`, restoring
   a valid SQLx migration sequence for fresh and upgraded databases.
+
+## 2026-08-18
+
+- Completed the SPEC-034 release verification: embedded registry tests,
+  Docker-backed Postgres regressions, production-image migration lifecycle,
+  and Beta API-key authorization smoke checks pass against fresh disposable
+  databases.
+- Fixed legacy admin API-key issuance to persist `kind = 'legacy'`, matching
+  the ownership schema after migration `0010`; added a database regression
+  test for the issued key kind and its baseline capability grants.

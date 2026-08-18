@@ -1,4 +1,6 @@
-use crate::adapters::postgres::api_keys::{DailyAcceptedOutcome, UsageResponseClass};
+use crate::adapters::postgres::api_keys::{
+    DailyAcceptedOutcome, IssueApiKeyInput, UsageResponseClass,
+};
 use crate::adapters::postgres::ApiKeyRepository;
 use crate::domain::capabilities::{Capability, CapabilityGrant, NetworkScope};
 use crate::test_utils::postgres::migrated_pool;
@@ -1990,6 +1992,48 @@ async fn capability_grants_are_persisted_at_owner_and_key_boundaries() {
 
     assert_eq!(grants.owner_grants, vec![expected.clone()]);
     assert_eq!(grants.key_grants, vec![expected]);
+
+    delete_api_consumer_test_rows(&pool, &consumer_slug).await;
+}
+
+#[tokio::test]
+async fn administrator_issued_key_is_legacy_and_receives_legacy_baseline_grants() {
+    let Some(pool) = migrated_pool().await else {
+        return;
+    };
+
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let consumer_slug = format!("issued-{suffix}");
+    let issued = ApiKeyRepository::database(pool.clone())
+        .issue_api_key(IssueApiKeyInput {
+            consumer_slug: consumer_slug.clone(),
+            display_name: "Issued Test Consumer".to_string(),
+            category: "internal".to_string(),
+            label: "Issued Test Key".to_string(),
+            key_prefix: format!("issued_{suffix}"),
+            key_hash: vec![71_u8; 32],
+            requests_per_minute: 60,
+            requests_per_day: 500,
+            expires_at: None,
+        })
+        .await
+        .unwrap();
+
+    let kind = sqlx::query_scalar::<_, String>("select kind from mother_api.api_key where id = $1")
+        .bind(issued.api_key_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let grants = sqlx::query_scalar::<_, String>(
+        "select capability_id from mother_api.api_key_capability_grant where api_key_id = $1 order by capability_id",
+    )
+    .bind(issued.api_key_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    assert_eq!(kind, "legacy");
+    assert_eq!(grants, vec!["balances.read", "transfers.read"]);
 
     delete_api_consumer_test_rows(&pool, &consumer_slug).await;
 }

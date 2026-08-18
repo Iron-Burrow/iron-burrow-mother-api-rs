@@ -1088,12 +1088,13 @@ async fn insert_issued_key(
         r#"
         insert into mother_api.api_key (
             consumer_id,
+            kind,
             label,
             key_prefix,
             key_hash,
             expires_at
         )
-        values ($1, $2, $3, $4, $5::timestamptz)
+        values ($1, 'legacy', $2, $3, $4, $5::timestamptz)
         returning
             id as api_key_id,
             key_prefix,
