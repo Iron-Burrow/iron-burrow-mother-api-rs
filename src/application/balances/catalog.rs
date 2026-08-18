@@ -179,8 +179,9 @@ pub enum ContractBalanceTargetResolution {
 
 #[cfg(test)]
 mod tests {
+    use crate::adapters::http::state::embedded_canonical_registry;
+
     use super::*;
-    use crate::state::embedded_canonical_registry;
 
     #[tokio::test]
     async fn resolves_catalog_targets_without_postgres() {

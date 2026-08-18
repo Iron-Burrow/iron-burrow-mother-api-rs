@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 
+use crate::adapters::http::state::embedded_canonical_registry;
 use crate::application::erc20_transfers::service::{
     build_search_plan, search_erc20_transfers, Erc20TransferExtractionError,
     Erc20TransferExtractionRequest, Erc20TransferExtractionResult, Erc20TransferExtractionRow,
@@ -22,7 +23,7 @@ async fn search_resolves_tokens_before_calling_extractor() {
 
     let result = search_erc20_transfers(
         input,
-        crate::state::embedded_canonical_registry(),
+        embedded_canonical_registry(),
         TEST_MAX_TOKEN_FILTERS,
         &extractor,
     )
@@ -58,7 +59,7 @@ async fn resolution_failure_does_not_call_extractor() {
 
     let error = search_erc20_transfers(
         input,
-        crate::state::embedded_canonical_registry(),
+        embedded_canonical_registry(),
         TEST_MAX_TOKEN_FILTERS,
         &extractor,
     )
@@ -78,14 +79,9 @@ async fn max_token_filter_enforcement_happens_before_extraction() {
         vec!["0x1111111111111111111111111111111111111111".to_string()],
     );
 
-    let error = search_erc20_transfers(
-        input,
-        crate::state::embedded_canonical_registry(),
-        1,
-        &extractor,
-    )
-    .await
-    .unwrap_err();
+    let error = search_erc20_transfers(input, embedded_canonical_registry(), 1, &extractor)
+        .await
+        .unwrap_err();
 
     assert!(matches!(
         error,
@@ -105,7 +101,7 @@ async fn empty_token_filters_preserve_unfiltered_extraction() {
 
     search_erc20_transfers(
         input,
-        crate::state::embedded_canonical_registry(),
+        embedded_canonical_registry(),
         TEST_MAX_TOKEN_FILTERS,
         &extractor,
     )
@@ -125,13 +121,9 @@ async fn executable_request_keeps_public_filters_outside_extraction_intent() {
         vec!["0x1111111111111111111111111111111111111111".to_string()],
     );
 
-    let plan = build_search_plan(
-        input,
-        crate::state::embedded_canonical_registry(),
-        TEST_MAX_TOKEN_FILTERS,
-    )
-    .await
-    .unwrap();
+    let plan = build_search_plan(input, embedded_canonical_registry(), TEST_MAX_TOKEN_FILTERS)
+        .await
+        .unwrap();
 
     assert_eq!(plan.requested_token_filters.asset_slugs, ["usdc"]);
     assert_eq!(
@@ -154,7 +146,7 @@ async fn explicit_known_contract_filter_gets_catalog_metadata() {
 
     let result = search_erc20_transfers(
         input,
-        crate::state::embedded_canonical_registry(),
+        embedded_canonical_registry(),
         TEST_MAX_TOKEN_FILTERS,
         &extractor,
     )
@@ -194,7 +186,7 @@ async fn unfiltered_known_row_token_gets_catalog_metadata() {
 
     let result = search_erc20_transfers(
         input,
-        crate::state::embedded_canonical_registry(),
+        embedded_canonical_registry(),
         TEST_MAX_TOKEN_FILTERS,
         &extractor,
     )
@@ -237,7 +229,7 @@ async fn extractor_errors_map_to_pr4_search_errors() {
 
         let error = search_erc20_transfers(
             input,
-            crate::state::embedded_canonical_registry(),
+            embedded_canonical_registry(),
             TEST_MAX_TOKEN_FILTERS,
             &extractor,
         )

@@ -2,7 +2,7 @@ use axum::{extract::State, Json};
 use serde::Serialize;
 use sqlx::PgPool;
 
-use crate::state::AppState;
+use crate::adapters::http::state::HttpState;
 
 const SERVICE_NAME: &str = "iron-burrow-mother-api";
 const MASCOT_NAME: &str = "Capitan Sousa";
@@ -49,7 +49,7 @@ impl DatabaseCheck {
     }
 }
 
-pub async fn status(State(state): State<AppState>) -> Json<StatusResponse> {
+pub async fn status(State(state): State<HttpState>) -> Json<StatusResponse> {
     let database = check_database(state.database_pool.as_ref()).await;
 
     Json(status_response(&state, database))
@@ -66,7 +66,7 @@ async fn check_database(pool: Option<&PgPool>) -> DatabaseCheck {
     }
 }
 
-fn status_response(state: &AppState, database: DatabaseCheck) -> StatusResponse {
+fn status_response(state: &HttpState, database: DatabaseCheck) -> StatusResponse {
     StatusResponse {
         ok: database.allows_ok(),
         service: SERVICE_NAME,
@@ -84,7 +84,7 @@ fn status_response(state: &AppState, database: DatabaseCheck) -> StatusResponse 
     }
 }
 
-fn price_indexer_check(state: &AppState) -> &'static str {
+fn price_indexer_check(state: &HttpState) -> &'static str {
     match (
         state.config.price_indexer_url.as_ref(),
         state.config.price_ql_internal_token.as_ref(),
@@ -96,7 +96,7 @@ fn price_indexer_check(state: &AppState) -> &'static str {
     }
 }
 
-fn dis_check(state: &AppState) -> &'static str {
+fn dis_check(state: &HttpState) -> &'static str {
     match (
         state.config.dis_base_url.as_ref(),
         state.dis_client.as_ref(),
@@ -113,6 +113,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        adapters::http::state::HttpState,
         config::Config,
         test_utils::constants::{DIS_BASE_URL, PRICE_INDEXER_URL},
     };
@@ -120,7 +121,7 @@ mod tests {
     #[test]
     fn status_response_reports_unreachable_database_without_live_postgres() {
         let response = status_response(
-            &AppState::new(Config::default()),
+            &HttpState::new(Config::default()),
             DatabaseCheck::Unreachable,
         );
         let json = serde_json::to_value(response).unwrap();
@@ -149,7 +150,7 @@ mod tests {
 
     #[test]
     fn status_response_reports_missing_dis_config() {
-        let response = status_response(&AppState::new(Config::default()), DatabaseCheck::Skipped);
+        let response = status_response(&HttpState::new(Config::default()), DatabaseCheck::Skipped);
         let json = serde_json::to_value(response).unwrap();
 
         assert_eq!(json["ok"], true);
@@ -158,7 +159,7 @@ mod tests {
 
     #[test]
     fn status_response_reports_missing_price_indexer_config() {
-        let response = status_response(&AppState::new(Config::default()), DatabaseCheck::Skipped);
+        let response = status_response(&HttpState::new(Config::default()), DatabaseCheck::Skipped);
         let json = serde_json::to_value(response).unwrap();
 
         assert_eq!(json["ok"], true);
@@ -168,7 +169,7 @@ mod tests {
     #[test]
     fn status_response_reports_valid_price_indexer_config() {
         let response = status_response(
-            &AppState::new(Config {
+            &HttpState::new(Config {
                 price_indexer_url: Some(PRICE_INDEXER_URL.to_string()),
                 price_ql_internal_token: Some("test-token".to_string()),
                 ..Config::default()
@@ -184,7 +185,7 @@ mod tests {
     #[test]
     fn status_response_reports_invalid_price_indexer_config_without_failing_ok() {
         let response = status_response(
-            &AppState::new(Config {
+            &HttpState::new(Config {
                 price_indexer_url: Some("not a url".to_string()),
                 price_ql_internal_token: Some("test-token".to_string()),
                 ..Config::default()
@@ -200,7 +201,7 @@ mod tests {
     #[test]
     fn status_response_reports_incomplete_price_indexer_config_without_failing_ok() {
         let response = status_response(
-            &AppState::new(Config {
+            &HttpState::new(Config {
                 price_indexer_url: Some(PRICE_INDEXER_URL.to_string()),
                 ..Config::default()
             }),
@@ -215,7 +216,7 @@ mod tests {
     #[test]
     fn status_response_reports_valid_dis_config() {
         let response = status_response(
-            &AppState::new(Config {
+            &HttpState::new(Config {
                 dis_base_url: Some(DIS_BASE_URL.to_string()),
                 ..Config::default()
             }),
@@ -230,7 +231,7 @@ mod tests {
     #[test]
     fn status_response_reports_invalid_dis_config_without_failing_ok() {
         let response = status_response(
-            &AppState::new(Config {
+            &HttpState::new(Config {
                 dis_base_url: Some("not a url".to_string()),
                 ..Config::default()
             }),

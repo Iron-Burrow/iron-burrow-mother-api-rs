@@ -6,7 +6,12 @@ use std::{
 use axum::{http::StatusCode, response::IntoResponse, Router};
 use serde_json::{json, Value};
 
-use crate::application::balances::error::BalanceSnapshotServiceError;
+use crate::{
+    adapters::http::state::{
+        embedded_canonical_registry, embedded_verified_protocol_registry, HttpState,
+    },
+    application::balances::error::BalanceSnapshotServiceError,
+};
 use crate::{
     adapters::{
         bigwig::client::BigwigClient,
@@ -994,7 +999,7 @@ async fn same_address_on_different_networks_is_not_a_duplicate() {
 
 #[tokio::test]
 async fn embedded_catalog_resolves_without_a_database_repository() {
-    let app = build_router(AppState::new(Config::default()));
+    let app = build_router(HttpState::new(Config::default()));
     let (status, response) = post_json(
         app,
         "/v1/balances",
@@ -1033,11 +1038,11 @@ fn balance_app(bigwig_url: Option<&str>, price_url: Option<&str>) -> Router {
     let price_indexer_client =
         price_url.map(|url| PriceIndexerClient::new(url, "test-price-token", 2_000).unwrap());
 
-    build_router(AppState {
+    build_router(HttpState {
         config: Config::default(),
         version: env!("CARGO_PKG_VERSION"),
-        canonical_registry: crate::state::embedded_canonical_registry(),
-        verified_protocol_registry: crate::state::embedded_verified_protocol_registry(),
+        canonical_registry: embedded_canonical_registry(),
+        verified_protocol_registry: embedded_verified_protocol_registry(),
         database_pool: None,
         api_key_repository: None,
         account_repository: None,

@@ -8,24 +8,31 @@ use axum::{
 };
 use tracing::warn;
 
-use crate::adapters::http::dto::{
-    accounts::OnchainAccountResponse,
-    assets::token_selector::{
-        ResolvedTokenSelectorRequest, TokenFilterResolutionDTO, TokenFilterSourceDTO,
-        TokenSelectorRequest,
-    },
-    erc20_transfers::{
-        requests::Erc20TransferSearchRequest,
-        response::{
-            Erc20TransferAmount, Erc20TransferRow, Erc20TransferSearchLimits,
-            Erc20TransferSearchResponse, Erc20TransferToken,
-        },
-    },
-    onchain_time::onchain_window::OnchainWindowDTO,
-    transfers::transfer_direction::TransferDirectionDTO,
-};
 use crate::adapters::http::json_body::parse_json_object_body;
 use crate::adapters::http::validation::ensure_json_content_type;
+use crate::adapters::http::{
+    auth::{require_network_scopes, ApiKeyPrincipal},
+    error::ApiError,
+};
+use crate::adapters::http::{
+    dto::{
+        accounts::OnchainAccountResponse,
+        assets::token_selector::{
+            ResolvedTokenSelectorRequest, TokenFilterResolutionDTO, TokenFilterSourceDTO,
+            TokenSelectorRequest,
+        },
+        erc20_transfers::{
+            requests::Erc20TransferSearchRequest,
+            response::{
+                Erc20TransferAmount, Erc20TransferRow, Erc20TransferSearchLimits,
+                Erc20TransferSearchResponse, Erc20TransferToken,
+            },
+        },
+        onchain_time::onchain_window::OnchainWindowDTO,
+        transfers::transfer_direction::TransferDirectionDTO,
+    },
+    state::HttpState,
+};
 use crate::application::balances::decimal::format_amount;
 use crate::application::erc20_transfers::service::{
     build_search_plan, execute_search_plan, Erc20TransferCatalogResolutionIssue,
@@ -35,18 +42,11 @@ use crate::application::erc20_transfers::service::{
 };
 use crate::domain::onchain_time::onchain_window::OnchainWindow;
 use crate::domain::transfers::transfer_direction::TransferDirection;
-use crate::{
-    adapters::http::{
-        auth::{require_network_scopes, ApiKeyPrincipal},
-        error::ApiError,
-    },
-    state::AppState,
-};
 
 const ERC20_TRANSFER_SEARCH_MAX_ROWS: u64 = 5_000;
 
 pub async fn search_erc20_transfers(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     principal: Option<Extension<ApiKeyPrincipal>>,
     headers: HeaderMap,
     body: Bytes,

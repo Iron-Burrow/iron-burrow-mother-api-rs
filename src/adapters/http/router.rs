@@ -25,14 +25,14 @@ use crate::{
             resolve::assets_resolve,
             status::status,
         },
+        state::HttpState,
         web,
     },
     config::PublicApiSurface,
-    state::AppState,
 };
 
-pub fn build_router(state: AppState) -> Router {
-    let beta_auth_enabled = state.config.public_api_surface == PublicApiSurface::Beta;
+pub fn build_router(state: HttpState) -> Router {
+    let beta_auth_enabled: bool = state.config.public_api_surface == PublicApiSurface::Beta;
     let mut single_balance_route = post(resolve_single_balance);
     let mut bulk_balance_route = post(resolve_bulk_balances);
 
@@ -111,7 +111,7 @@ pub fn build_router(state: AppState) -> Router {
     router.layer(TraceLayer::new_for_http()).with_state(state)
 }
 
-fn alpha_v1_routes() -> Router<AppState> {
+fn alpha_v1_routes() -> Router<HttpState> {
     Router::new()
         .route("/status", get(status))
         .route("/assets", get(list_assets))
@@ -128,7 +128,7 @@ fn alpha_v1_routes() -> Router<AppState> {
 }
 
 async fn unmatched_route(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     method: Method,
     uri: Uri,
     headers: HeaderMap,
@@ -171,7 +171,7 @@ async fn unmatched_route(
     StatusCode::NOT_FOUND.into_response()
 }
 
-fn unmatched_status(state: &AppState, method: &Method, path: &str) -> StatusCode {
+fn unmatched_status(state: &HttpState, method: &Method, path: &str) -> StatusCode {
     if state.config.public_api_surface == PublicApiSurface::Beta
         && is_known_disabled_beta_route(method, path)
     {

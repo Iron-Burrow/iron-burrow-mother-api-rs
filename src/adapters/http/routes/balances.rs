@@ -5,7 +5,7 @@ use axum::{
     Json,
 };
 
-use crate::adapters::http::presenters::balances::BalancesResponsePresenter;
+use crate::adapters::http::{presenters::balances::BalancesResponsePresenter, state::HttpState};
 use crate::application::balances::command::GetBalancesCommand;
 use crate::application::balances::result::GetBalancesResult;
 use crate::{
@@ -21,7 +21,6 @@ use crate::{
         catalog::CatalogBalanceTargetResolver, quote::PriceQuoteClient,
         service::BalanceSnapshotService,
     },
-    state::AppState,
 };
 
 mod error;
@@ -29,7 +28,7 @@ mod error;
 use error::{balance_assembler_error_to_api_error, balance_service_error_to_api_error};
 
 pub async fn resolve_single_balance(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     principal: Option<Extension<ApiKeyPrincipal>>,
     headers: HeaderMap,
     body: Bytes,
@@ -58,7 +57,7 @@ pub async fn resolve_single_balance(
 }
 
 pub async fn resolve_bulk_balances(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     principal: Option<Extension<ApiKeyPrincipal>>,
     headers: HeaderMap,
     body: Bytes,
@@ -85,7 +84,7 @@ pub async fn resolve_bulk_balances(
 }
 
 async fn resolve_balances(
-    state: &AppState,
+    state: &HttpState,
     command: GetBalancesCommand,
 ) -> Result<GetBalancesResult, ApiError> {
     let service = BalanceSnapshotService::new(

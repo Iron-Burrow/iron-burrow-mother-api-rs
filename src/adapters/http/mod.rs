@@ -7,6 +7,7 @@ pub(crate) mod presenters;
 pub(crate) mod rate_limit;
 pub(crate) mod router;
 pub(crate) mod routes;
+pub(crate) mod state;
 pub(crate) mod types;
 pub(crate) mod validation;
 pub(crate) mod web;

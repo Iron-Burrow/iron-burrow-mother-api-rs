@@ -4,13 +4,14 @@ use tokio::net::TcpListener;
 use tracing::{info, warn};
 
 use crate::adapters::http::router::build_router;
+use crate::adapters::http::state::HttpState;
+use crate::bootstrap::http::{build_http_state, BootstrapError};
 use crate::config::Config;
-use crate::state::{AppState, AppStateError};
 
 pub(crate) async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_env()?;
     let address = config.socket_addr()?;
-    serve_with(config, address, AppState::try_new, TcpListener::bind).await
+    serve_with(config, address, build_http_state, TcpListener::bind).await
 }
 
 async fn serve_with<BuildState, BindListener, BindFuture>(
@@ -20,7 +21,7 @@ async fn serve_with<BuildState, BindListener, BindFuture>(
     bind_listener: BindListener,
 ) -> Result<(), Box<dyn Error>>
 where
-    BuildState: FnOnce(Config) -> Result<AppState, AppStateError>,
+    BuildState: FnOnce(Config) -> Result<HttpState, BootstrapError>,
     BindListener: FnOnce(SocketAddr) -> BindFuture,
     BindFuture: Future<Output = Result<TcpListener, io::Error>>,
 {
@@ -80,6 +81,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::bootstrap::http::build_http_state_with_registry_for_test;
     use crate::domain::canonical_registry::CanonicalRegistryError;
 
     #[tokio::test]
@@ -92,7 +94,7 @@ mod tests {
             Config::default(),
             address,
             |_| {
-                AppState::try_new_with_registry(Config::default(), || {
+                build_http_state_with_registry_for_test(Config::default(), || {
                     Err(CanonicalRegistryError::Invalid(
                         "invalid fixture catalog".to_string(),
                     ))

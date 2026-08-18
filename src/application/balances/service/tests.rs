@@ -9,15 +9,17 @@ use serde_json::{json, Value};
 
 use super::*;
 use crate::{
-    adapters::bigwig::balances::BigwigRequestValidationCode,
-    application::balances::error::GetBalancesCommandError,
-};
-use crate::{
     adapters::bigwig::balances::{
         BigwigEvidenceNetwork, BigwigItemError, BigwigItemErrorCode, BigwigResolvedEvidence,
         BigwigResolvedEvidenceKind,
     },
     adapters::price_indexer::PriceIndexerClient,
+};
+use crate::{
+    adapters::{
+        bigwig::balances::BigwigRequestValidationCode, http::state::embedded_canonical_registry,
+    },
+    application::balances::error::GetBalancesCommandError,
 };
 
 const ACCOUNT_A: &str = "0x1111111111111111111111111111111111111111";
@@ -499,7 +501,7 @@ fn service_with_quote(
     price_quote_client: Option<PriceQuoteClient>,
 ) -> BalanceSnapshotService {
     BalanceSnapshotService::new(
-        CatalogBalanceTargetResolver::new(crate::state::embedded_canonical_registry()),
+        CatalogBalanceTargetResolver::new(embedded_canonical_registry()),
         client,
         price_quote_client,
     )

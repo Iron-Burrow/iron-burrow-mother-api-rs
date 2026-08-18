@@ -17,6 +17,7 @@ use crate::{
             auth::{require_treasury_api_key, require_workspace_activity_api_key, ApiKeyPrincipal},
             dto::onchain_time::as_of::AsOfRequest,
             error::ApiError,
+            state::HttpState,
             web::{self, BrowserPrincipal},
         },
         postgres::workspaces::{
@@ -45,10 +46,9 @@ use crate::{
         },
         transfers::transfer_direction::TransferDirection,
     },
-    state::AppState,
 };
 
-pub(crate) fn routes(state: AppState) -> Router<AppState> {
+pub(crate) fn routes(state: HttpState) -> Router<HttpState> {
     Router::new()
         .route("/workspaces", get(list_workspaces).post(create_workspace))
         .route("/workspaces/{workspace_id}", get(workspace_detail))
@@ -108,7 +108,7 @@ pub(crate) fn routes(state: AppState) -> Router<AppState> {
         ))
 }
 
-fn service(state: &AppState) -> Option<WorkspaceService> {
+fn service(state: &HttpState) -> Option<WorkspaceService> {
     state
         .workspace_repository
         .clone()
@@ -125,7 +125,7 @@ fn authenticated(principal: BrowserPrincipal) -> Option<(uuid::Uuid, Vec<u8>)> {
     }
 }
 fn csrf_valid(
-    state: &AppState,
+    state: &HttpState,
     headers: &HeaderMap,
     expected_hash: &[u8],
     submitted: &str,
@@ -158,7 +158,7 @@ fn workspace_error(error: WorkspaceServiceError) -> Response {
 }
 
 async fn list_workspaces(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
 ) -> Response {
@@ -185,7 +185,7 @@ struct WorkspaceForm {
     csrf: String,
 }
 async fn create_workspace(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
     Form(form): Form<WorkspaceForm>,
@@ -211,7 +211,7 @@ async fn create_workspace(
 }
 
 async fn workspace_detail(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
     Path(workspace_id): Path<String>,
@@ -286,7 +286,7 @@ async fn activity_events(
     Ok((events, next_before))
 }
 async fn activity_view(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Extension(principal): Extension<BrowserPrincipal>,
     Path(workspace_id): Path<String>,
     Query(query): Query<ActivityQuery>,
@@ -331,7 +331,7 @@ struct ActivityJsonResponse {
     next_before: Option<String>,
 }
 async fn activity_json(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Extension(principal): Extension<ApiKeyPrincipal>,
     Path(workspace_id): Path<String>,
     Query(query): Query<ActivityQuery>,
@@ -388,7 +388,7 @@ struct TreasuryForm {
 }
 
 async fn treasury_view(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Extension(principal): Extension<BrowserPrincipal>,
     Path(workspace_id): Path<String>,
 ) -> Response {
@@ -420,7 +420,7 @@ async fn treasury_view(
 }
 
 async fn capture_treasury_snapshot(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
     Path(workspace_id): Path<String>,
@@ -533,7 +533,7 @@ async fn capture_treasury_snapshot(
 }
 
 async fn treasury_json(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Extension(principal): Extension<ApiKeyPrincipal>,
     Path(workspace_id): Path<String>,
 ) -> Response {
@@ -580,7 +580,7 @@ struct NameForm {
     csrf: String,
 }
 async fn rename_workspace(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
     Path(workspace_id): Path<String>,
@@ -607,7 +607,7 @@ struct CsrfForm {
     csrf: String,
 }
 async fn archive_workspace(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
     Path(workspace_id): Path<String>,
@@ -616,7 +616,7 @@ async fn archive_workspace(
     set_archive(state, headers, principal, workspace_id, form.csrf, true).await
 }
 async fn restore_workspace(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
     Path(workspace_id): Path<String>,
@@ -625,7 +625,7 @@ async fn restore_workspace(
     set_archive(state, headers, principal, workspace_id, form.csrf, false).await
 }
 async fn set_archive(
-    state: AppState,
+    state: HttpState,
     headers: HeaderMap,
     principal: BrowserPrincipal,
     workspace_id: String,
@@ -656,7 +656,7 @@ struct AddressForm {
     csrf: String,
 }
 async fn add_address(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
     Path(workspace_id): Path<String>,
@@ -691,7 +691,7 @@ async fn add_address(
 }
 
 async fn member_detail(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
     Path((workspace_id, member_id)): Path<(String, String)>,
@@ -726,7 +726,7 @@ struct LabelForm {
     csrf: String,
 }
 async fn add_label(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
     Path((workspace_id, member_id)): Path<(String, String)>,
@@ -744,7 +744,7 @@ async fn add_label(
     .await
 }
 async fn remove_label(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
     Path((workspace_id, member_id)): Path<(String, String)>,
@@ -762,7 +762,7 @@ async fn remove_label(
     .await
 }
 async fn mutate_label(
-    state: AppState,
+    state: HttpState,
     headers: HeaderMap,
     principal: BrowserPrincipal,
     workspace_id: String,
@@ -810,7 +810,7 @@ struct BalanceQuery {
     quote_currency: Option<String>,
 }
 async fn balance_view(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Extension(principal): Extension<BrowserPrincipal>,
     Path((workspace_id, member_id)): Path<(String, String)>,
     Query(query): Query<BalanceQuery>,
@@ -932,7 +932,7 @@ struct TransferQuery {
     contract_addresses: Option<String>,
 }
 async fn transfer_view(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Extension(principal): Extension<BrowserPrincipal>,
     Path((workspace_id, member_id)): Path<(String, String)>,
     Query(query): Query<TransferQuery>,

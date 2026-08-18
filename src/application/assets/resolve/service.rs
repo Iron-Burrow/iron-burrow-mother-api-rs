@@ -153,8 +153,10 @@ impl From<&CanonicalAsset> for Recommendation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::assets::resolve::query::parse_query;
-    use crate::state::embedded_canonical_registry;
+    use crate::{
+        adapters::http::state::embedded_canonical_registry,
+        application::assets::resolve::query::parse_query,
+    };
 
     fn service() -> ResolveService {
         ResolveService::new(embedded_canonical_registry())

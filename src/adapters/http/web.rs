@@ -19,9 +19,8 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
-    adapters::postgres::accounts::SignupOutcome,
+    adapters::{http::state::HttpState, postgres::accounts::SignupOutcome},
     domain::{api_keys::RawApiKey, passwords},
-    state::AppState,
 };
 
 const HTML_CONTENT_TYPE: &str = "text/html; charset=utf-8";
@@ -39,13 +38,13 @@ pub(crate) enum BrowserPrincipal {
     },
 }
 
-pub(crate) fn routes(state: AppState) -> Router<AppState> {
+pub(crate) fn routes(state: HttpState) -> Router<HttpState> {
     html_routes(state.clone())
         .merge(super::workspaces::routes(state.clone()))
         .merge(super::data_lab::routes(state))
 }
 
-fn html_routes(state: AppState) -> Router<AppState> {
+fn html_routes(state: HttpState) -> Router<HttpState> {
     Router::new()
         .route("/", get(home))
         .route("/scan", get(scan))
@@ -62,7 +61,7 @@ fn html_routes(state: AppState) -> Router<AppState> {
         ))
 }
 pub(crate) async fn attach_browser_context(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     mut request: Request,
     next: Next,
 ) -> Response {
@@ -103,7 +102,7 @@ async fn scan_network(
     })
 }
 
-async fn access(State(state): State<AppState>) -> Response {
+async fn access(State(state): State<HttpState>) -> Response {
     let intent = match create_token() {
         Some(token) => match state.account_repository.as_ref() {
             Some(repository) if repository.create_demo_intent(&hash(&token)).await.is_ok() => {
@@ -116,7 +115,7 @@ async fn access(State(state): State<AppState>) -> Response {
     access_response(intent)
 }
 
-async fn docs(State(state): State<AppState>) -> Response {
+async fn docs(State(state): State<HttpState>) -> Response {
     html_response(DocsTemplate {
         openapi_url: format!(
             "{}/openapi.json",
@@ -138,7 +137,7 @@ struct AccountForm {
     csrf: String,
 }
 async fn signup_submit(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
     Form(form): Form<AccountForm>,
@@ -197,7 +196,7 @@ async fn signup_submit(
     }
 }
 async fn login_submit(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
     Form(form): Form<AccountForm>,
@@ -302,7 +301,7 @@ fn invalid_credentials_response() -> Response {
     response
 }
 
-fn entry_csrf_valid(state: &AppState, headers: &HeaderMap, submitted: &str) -> bool {
+fn entry_csrf_valid(state: &HttpState, headers: &HeaderMap, submitted: &str) -> bool {
     same_origin(headers, &state.config.public_web_base_url)
         && cookie_value(headers, CSRF_COOKIE) == Some(submitted)
 }
@@ -323,7 +322,7 @@ struct DemoForm {
     intent: String,
 }
 async fn issue_demo(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Form(form): Form<DemoForm>,
 ) -> Response {
@@ -363,7 +362,7 @@ struct LogoutForm {
     csrf: String,
 }
 async fn logout(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
     Form(form): Form<LogoutForm>,
@@ -402,7 +401,7 @@ async fn logout(
 }
 
 pub(crate) async fn openapi_document(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
 ) -> Json<utoipa::openapi::OpenApi> {
     Json(crate::openapi::document(&state.config))
 }

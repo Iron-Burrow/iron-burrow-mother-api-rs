@@ -11,6 +11,7 @@ use fastnum::{decimal::Context, D512};
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::adapters::http::state::HttpState;
 use crate::{
     adapters::{
         http::{
@@ -35,10 +36,9 @@ use crate::{
         Service as PortfolioSimulationService,
     },
     domain::capabilities::Capability,
-    state::AppState,
 };
 
-pub(crate) fn routes(state: AppState) -> Router<AppState> {
+pub(crate) fn routes(state: HttpState) -> Router<HttpState> {
     Router::new()
         .route("/catalog/assets", get(assets_view))
         .route("/catalog/assets/{slug}", get(asset_view))
@@ -91,7 +91,7 @@ pub(crate) fn routes(state: AppState) -> Router<AppState> {
         ))
 }
 
-fn realized_yield_service(state: &AppState) -> Option<RealizedYieldService> {
+fn realized_yield_service(state: &HttpState) -> Option<RealizedYieldService> {
     Some(RealizedYieldService::new(
         state.verified_protocol_registry.clone(),
         state.bigwig_client.clone()?,
@@ -99,7 +99,7 @@ fn realized_yield_service(state: &AppState) -> Option<RealizedYieldService> {
     ))
 }
 
-fn portfolio_simulation_service(state: &AppState) -> PortfolioSimulationService {
+fn portfolio_simulation_service(state: &HttpState) -> PortfolioSimulationService {
     PortfolioSimulationService::new(
         state.price_indexer_client.clone(),
         state.verified_protocol_registry.clone(),
@@ -108,7 +108,7 @@ fn portfolio_simulation_service(state: &AppState) -> PortfolioSimulationService 
 }
 
 fn csrf_valid(
-    state: &AppState,
+    state: &HttpState,
     headers: &HeaderMap,
     expected_hash: &[u8],
     submitted: &str,
@@ -142,14 +142,14 @@ async fn browser_account(
         Err(_) => Err(StatusCode::SERVICE_UNAVAILABLE.into_response()),
     }
 }
-fn assets(state: &AppState) -> Option<AssetsService> {
+fn assets(state: &HttpState) -> Option<AssetsService> {
     Some(AssetsService::new(
         state.canonical_registry.clone(),
         state.price_indexer_client.clone(),
     ))
 }
 async fn assets_view(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Extension(principal): Extension<BrowserPrincipal>,
 ) -> Response {
     if let Err(response) = browser_account(
@@ -173,7 +173,7 @@ async fn assets_view(
     }
 }
 async fn asset_view(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Extension(principal): Extension<BrowserPrincipal>,
     Path(slug): Path<String>,
 ) -> Response {
@@ -198,7 +198,7 @@ async fn asset_view(
     }
 }
 async fn assets_json(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Extension(_principal): Extension<ApiKeyPrincipal>,
 ) -> Response {
     let Some(service) = assets(&state) else {
@@ -207,7 +207,7 @@ async fn assets_json(
     private_json(service.list_assets(Some("100")).await)
 }
 async fn asset_json(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Extension(_principal): Extension<ApiKeyPrincipal>,
     Path(slug): Path<String>,
 ) -> Response {
@@ -232,7 +232,7 @@ fn enrichment(slug: String) -> AssetEnrichmentQuery {
     }
 }
 async fn price_view(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Extension(principal): Extension<BrowserPrincipal>,
     Path(slug): Path<String>,
 ) -> Response {
@@ -260,7 +260,7 @@ async fn price_view(
     }
 }
 async fn price_json(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Extension(_principal): Extension<ApiKeyPrincipal>,
     Path(slug): Path<String>,
 ) -> Response {
@@ -274,7 +274,7 @@ async fn price_json(
     )
 }
 async fn lab_view(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Extension(principal): Extension<BrowserPrincipal>,
 ) -> Response {
     if let Err(response) = browser_account(
@@ -293,7 +293,7 @@ async fn lab_view(
 }
 
 async fn realized_yield_view(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
 ) -> Response {
@@ -318,7 +318,7 @@ async fn realized_yield_view(
 }
 
 async fn portfolio_simulation_view(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
 ) -> Response {
@@ -353,7 +353,7 @@ struct PortfolioSimulationForm {
 }
 
 async fn portfolio_simulation_submit(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
     Form(form): Form<PortfolioSimulationForm>,
@@ -422,7 +422,7 @@ async fn portfolio_simulation_submit(
 }
 
 async fn portfolio_simulation_result_view(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
     Path(run_id): Path<String>,
@@ -498,7 +498,7 @@ struct RealizedYieldForm {
 }
 
 async fn realized_yield_submit(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     headers: HeaderMap,
     Extension(principal): Extension<BrowserPrincipal>,
     Form(form): Form<RealizedYieldForm>,

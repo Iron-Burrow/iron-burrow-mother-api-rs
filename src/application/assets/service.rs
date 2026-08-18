@@ -704,8 +704,9 @@ fn enrichment_sources(include: &[PriceEnrichmentInclude]) -> Vec<&'static str> {
 
 #[cfg(test)]
 mod tests {
+    use crate::adapters::http::state::embedded_canonical_registry;
+
     use super::*;
-    use crate::state::embedded_canonical_registry;
 
     fn service() -> AssetsService {
         AssetsService::new(embedded_canonical_registry(), None)

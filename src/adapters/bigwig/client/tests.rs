@@ -8,7 +8,10 @@ use reqwest::StatusCode;
 use serde_json::{json, Value};
 
 use super::*;
-use crate::application::balances::result::BalanceItemOutcome;
+use crate::{
+    adapters::http::state::embedded_canonical_registry,
+    application::balances::result::BalanceItemOutcome,
+};
 use crate::{
     application::balances::command::GetBalancesCommand,
     domain::{accounts::OnchainAccount, assets::token_selector::TokenSelector},
@@ -240,7 +243,7 @@ fn service_with_quote(
     price_quote_client: Option<PriceQuoteClient>,
 ) -> BalanceSnapshotService {
     BalanceSnapshotService::new(
-        CatalogBalanceTargetResolver::new(crate::state::embedded_canonical_registry()),
+        CatalogBalanceTargetResolver::new(embedded_canonical_registry()),
         client,
         price_quote_client,
     )

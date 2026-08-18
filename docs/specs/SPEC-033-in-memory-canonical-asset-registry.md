@@ -55,7 +55,7 @@ This specification does not:
 
 `CanonicalRegistry` is a typed, immutable application value constructed from
 the same catalog bytes embedded with `include_str!`. Construction parses and
-validates the full catalog before `AppState` is available and before the HTTP
+validates the full catalog before `HttpState` is available and before the HTTP
 listener is bound. It returns a clear startup error for malformed JSON or any
 invalid declaration; it must never produce a partially populated registry.
 
@@ -111,7 +111,7 @@ request may query or mutate a catalog store.
 
 ### Application wiring and compatibility
 
-`AppState::try_new` must create one shared registry independent of
+`HttpState::try_new` must create one shared registry independent of
 `database_pool`. The state and application services receive that registry for
 canonical lookups. Routes that also need PostgreSQL retain their existing
 optional repositories for mutable state, authentication, authorization,
@@ -144,7 +144,7 @@ compatibility data and are not read by this slice.
 
 ### PR 2 - Startup ownership and reference-data narrowing
 
-- Construct the registry in `AppState::try_new` before dependent application
+- Construct the registry in `HttpState::try_new` before dependent application
   state and before server startup.
 - Define a sanitized startup error path for an invalid embedded catalog; test
   that listener construction is not reached on failure.

@@ -13,6 +13,7 @@ use crate::{
             auth::ApiKeyPrincipal,
             error::ApiError,
             json_body::parse_json_object_body,
+            state::HttpState,
             validation::{ensure_json_content_type, reject_unknown_fields},
         },
         postgres::{
@@ -21,14 +22,13 @@ use crate::{
         },
     },
     application::async_reports::{lookup, validate_input, validate_report},
-    state::AppState,
 };
 
 const MAX_REPORT_BYTES: usize = 1024 * 1024;
 const IDEMPOTENCY_KEY: HeaderName = HeaderName::from_static("idempotency-key");
 
 pub async fn create_report(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Extension(principal): Extension<ApiKeyPrincipal>,
     Path(report_type): Path<String>,
     headers: HeaderMap,
@@ -100,7 +100,7 @@ pub async fn create_report(
 }
 
 pub async fn get_report(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Extension(principal): Extension<ApiKeyPrincipal>,
     Path(report_id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
@@ -114,7 +114,7 @@ pub async fn get_report(
 }
 
 pub async fn complete_report(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Path(report_id): Path<String>,
     headers: HeaderMap,
     body: Bytes,
@@ -166,7 +166,7 @@ pub async fn complete_report(
 }
 
 pub async fn fail_report(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Path(report_id): Path<String>,
     headers: HeaderMap,
     body: Bytes,
@@ -198,7 +198,7 @@ pub async fn fail_report(
     Err(ApiError::idempotency_conflict())
 }
 
-fn repository(state: &AppState) -> Result<AsyncReportRepository, ApiError> {
+fn repository(state: &HttpState) -> Result<AsyncReportRepository, ApiError> {
     state
         .database_pool
         .clone()

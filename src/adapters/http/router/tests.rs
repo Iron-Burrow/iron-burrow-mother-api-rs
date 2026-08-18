@@ -19,14 +19,18 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 use super::*;
-use crate::state::AppState;
 use crate::{
-    adapters::http::rate_limit::ApiKeyMinuteLimiter,
-    adapters::postgres::{
-        api_keys::{ApiKeyAuthorizationGrants, ApiKeyLookup},
-        ApiKeyRepository,
+    adapters::{
+        http::{
+            rate_limit::ApiKeyMinuteLimiter,
+            state::{embedded_canonical_registry, embedded_verified_protocol_registry, HttpState},
+        },
+        postgres::{
+            api_keys::{ApiKeyAuthorizationGrants, ApiKeyLookup},
+            ApiKeyRepository,
+        },
+        price_indexer::PriceIndexerClient,
     },
-    adapters::price_indexer::PriceIndexerClient,
     config::{Config, PublicApiSurface},
     domain::{
         api_keys::hash_presented_api_key,
@@ -40,7 +44,7 @@ const TEST_API_KEY: &str =
 const TEST_API_KEY_PREFIX: &str = "ib_live_0123456789abcdef";
 
 fn test_app() -> Router {
-    build_router(AppState::for_tests(Config::default()))
+    build_router(HttpState::for_tests(Config::default()))
 }
 
 fn beta_config() -> Config {
@@ -51,11 +55,11 @@ fn beta_config() -> Config {
 }
 
 fn beta_app_with_api_key_repository(api_key_repository: Option<ApiKeyRepository>) -> Router {
-    build_router(AppState {
+    build_router(HttpState {
         config: beta_config(),
         version: env!("CARGO_PKG_VERSION"),
-        canonical_registry: crate::state::embedded_canonical_registry(),
-        verified_protocol_registry: crate::state::embedded_verified_protocol_registry(),
+        canonical_registry: embedded_canonical_registry(),
+        verified_protocol_registry: embedded_verified_protocol_registry(),
         database_pool: None,
         api_key_repository,
         account_repository: None,
@@ -69,7 +73,7 @@ fn beta_app_with_api_key_repository(api_key_repository: Option<ApiKeyRepository>
 }
 
 fn async_reports_callback_app() -> Router {
-    build_router(AppState::for_tests(Config {
+    build_router(HttpState::for_tests(Config {
         public_api_surface: PublicApiSurface::Beta,
         async_reports_enabled: true,
         bigwig_report_outcome_token: Some("bigwig-outcome-token".to_string()),
@@ -89,11 +93,11 @@ fn test_app_with_price_indexer(price_indexer_url: &str, timeout_ms: u64) -> Rout
     let price_indexer_client =
         PriceIndexerClient::new(price_indexer_url, "test-token", timeout_ms).unwrap();
 
-    build_router(AppState {
+    build_router(HttpState {
         config: Config::default(),
         version: env!("CARGO_PKG_VERSION"),
-        canonical_registry: crate::state::embedded_canonical_registry(),
-        verified_protocol_registry: crate::state::embedded_verified_protocol_registry(),
+        canonical_registry: embedded_canonical_registry(),
+        verified_protocol_registry: embedded_verified_protocol_registry(),
         database_pool: None,
         api_key_repository: None,
         account_repository: None,
@@ -254,7 +258,7 @@ async fn homepage_and_docs_link_only_to_available_web_and_api_surfaces() {
 
 #[tokio::test]
 async fn docs_link_to_the_configured_machine_api_origin() {
-    let app = build_router(AppState::new(Config {
+    let app = build_router(HttpState::new(Config {
         public_api_base_url: "https://api.example.test/".to_string(),
         ..Config::default()
     }));
@@ -379,7 +383,7 @@ async fn api_openapi_document_reflects_the_enabled_transfer_route() {
     .unwrap();
     assert!(disabled_json["paths"]["/v1/erc20-transfers/search"].is_null());
 
-    let enabled = build_router(AppState::new(Config {
+    let enabled = build_router(HttpState::new(Config {
         erc20_transfers_enabled: true,
         ..Config::default()
     }))
@@ -441,7 +445,7 @@ async fn static_assets_are_bounded_and_have_an_explicit_cache_policy() {
 
 #[tokio::test]
 async fn beta_surface_keeps_balance_and_health_routes_active() {
-    let app = build_router(AppState::new(beta_config()));
+    let app = build_router(HttpState::new(beta_config()));
 
     let health_response = app
         .clone()
@@ -488,7 +492,7 @@ async fn beta_surface_keeps_balance_and_health_routes_active() {
 
 #[tokio::test]
 async fn beta_surface_keeps_transfer_search_feature_gated() {
-    let disabled_response = build_router(AppState::new(beta_config()))
+    let disabled_response = build_router(HttpState::new(beta_config()))
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -502,7 +506,7 @@ async fn beta_surface_keeps_transfer_search_feature_gated() {
 
     assert_eq!(disabled_response.status(), StatusCode::NOT_FOUND);
 
-    let enabled_response = build_router(AppState::new(Config {
+    let enabled_response = build_router(HttpState::new(Config {
         public_api_surface: PublicApiSurface::Beta,
         erc20_transfers_enabled: true,
         ..Config::default()
@@ -693,15 +697,15 @@ async fn beta_route_capabilities_preserve_balance_access_and_restrict_transfer_a
         Default::default(),
         std::collections::HashMap::from([(lookup.api_key_id, balance_only_grants)]),
     );
-    let app = build_router(AppState {
+    let app = build_router(HttpState {
         config: Config {
             public_api_surface: PublicApiSurface::Beta,
             erc20_transfers_enabled: true,
             ..Config::default()
         },
         version: env!("CARGO_PKG_VERSION"),
-        canonical_registry: crate::state::embedded_canonical_registry(),
-        verified_protocol_registry: crate::state::embedded_verified_protocol_registry(),
+        canonical_registry: embedded_canonical_registry(),
+        verified_protocol_registry: embedded_verified_protocol_registry(),
         database_pool: None,
         api_key_repository: Some(repository),
         account_repository: None,
@@ -745,7 +749,7 @@ async fn beta_route_capabilities_preserve_balance_access_and_restrict_transfer_a
 
 #[tokio::test]
 async fn beta_surface_returns_endpoint_disabled_for_known_non_beta_routes() {
-    let app = build_router(AppState::new(beta_config()));
+    let app = build_router(HttpState::new(beta_config()));
 
     for uri in [
         "/v1/status",
@@ -779,7 +783,7 @@ async fn beta_surface_returns_endpoint_disabled_for_known_non_beta_routes() {
 
 #[tokio::test]
 async fn removed_prediction_routes_are_unmatched_in_alpha_and_beta() {
-    for app in [test_app(), build_router(AppState::new(beta_config()))] {
+    for app in [test_app(), build_router(HttpState::new(beta_config()))] {
         for uri in [
             "/v1/predictions/fifa-world-cup/winner",
             "/v1/predictions/fifa-world-cup/mexico",
@@ -801,7 +805,7 @@ async fn removed_prediction_routes_are_unmatched_in_alpha_and_beta() {
 
 #[tokio::test]
 async fn beta_surface_treats_head_as_disabled_for_known_get_routes() {
-    let response = build_router(AppState::new(beta_config()))
+    let response = build_router(HttpState::new(beta_config()))
         .oneshot(
             Request::builder()
                 .method("HEAD")
@@ -824,7 +828,7 @@ async fn beta_surface_treats_head_as_disabled_for_known_get_routes() {
 
 #[tokio::test]
 async fn beta_surface_preserves_not_found_for_unknown_routes() {
-    let app = build_router(AppState::new(beta_config()));
+    let app = build_router(HttpState::new(beta_config()));
 
     for uri in ["/v1/not-a-route", "/definitely-not-a-route"] {
         let response = app
@@ -998,7 +1002,7 @@ async fn async_report_callback_token_protects_persisted_reports() {
         .await
         .unwrap();
 
-    let app = build_router(AppState::new(Config {
+    let app = build_router(HttpState::new(Config {
         public_api_surface: PublicApiSurface::Beta,
         database_url: Some(database_url),
         async_reports_enabled: true,
@@ -1059,7 +1063,7 @@ async fn async_report_callback_token_protects_persisted_reports() {
 
 #[tokio::test]
 async fn health_returns_stable_contract() {
-    let app = build_router(AppState::new(Config::default()));
+    let app = build_router(HttpState::new(Config::default()));
 
     let response = app
         .oneshot(
@@ -1086,7 +1090,7 @@ async fn health_returns_stable_contract() {
 
 #[tokio::test]
 async fn status_returns_default_informational_state() {
-    let app = build_router(AppState::new(Config::default()));
+    let app = build_router(HttpState::new(Config::default()));
 
     let response = app
         .oneshot(
@@ -1219,7 +1223,7 @@ async fn assets_rejects_invalid_limit() {
 
 #[tokio::test]
 async fn assets_resolve_without_a_database() {
-    let response = build_router(AppState::new(Config::default()))
+    let response = build_router(HttpState::new(Config::default()))
         .oneshot(
             Request::builder()
                 .uri("/v1/assets")
@@ -1668,7 +1672,7 @@ async fn asset_detail_reports_not_found_for_unknown_slug() {
 
 #[tokio::test]
 async fn asset_detail_resolves_without_a_database() {
-    let response = build_router(AppState::new(Config::default()))
+    let response = build_router(HttpState::new(Config::default()))
         .oneshot(
             Request::builder()
                 .uri("/v1/assets/bitcoin")
@@ -1800,7 +1804,7 @@ async fn price_trend_signal_defaults_and_omits_granularity() {
 #[tokio::test]
 async fn price_signal_routes_report_missing_price_indexer_config() {
     let (status, json) = app_json(
-        build_router(AppState::new(Config::default())),
+        build_router(HttpState::new(Config::default())),
         "/v1/assets/bitcoin/signal/price-stats",
     )
     .await;
@@ -2065,7 +2069,7 @@ async fn resolve_requires_query() {
 
 #[tokio::test]
 async fn resolve_resolves_without_a_database() {
-    let response = build_router(AppState::new(Config::default()))
+    let response = build_router(HttpState::new(Config::default()))
         .oneshot(
             Request::builder()
                 .uri("/v1/assets/resolve?q=usdc")

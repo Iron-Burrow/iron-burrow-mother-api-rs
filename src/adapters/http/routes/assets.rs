@@ -7,12 +7,12 @@ use tracing::warn;
 
 use crate::{
     adapters::http::error::ApiError,
+    adapters::http::state::HttpState,
     adapters::price_indexer::{PriceIndexerClient, PriceSignalError, PriceSignalRequest},
     application::assets::service::{
         AssetEnrichmentParams, AssetEnrichmentQuery, AssetResponse, AssetsResponse, AssetsService,
         AssetsServiceError, PriceEnrichmentInclude,
     },
-    state::AppState,
 };
 
 const DEFAULT_QUOTE_CURRENCY: &str = "USD";
@@ -67,7 +67,7 @@ impl PriceSignalResponse {
 }
 
 pub async fn list_assets(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Query(params): Query<AssetsQuery>,
 ) -> Result<Json<AssetsResponse>, ApiError> {
     let service = AssetsService::new(
@@ -83,7 +83,7 @@ pub async fn list_assets(
 }
 
 pub async fn get_asset(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Path(slug): Path<String>,
     Query(params): Query<AssetDetailQuery>,
 ) -> Result<Json<AssetResponse>, ApiError> {
@@ -102,7 +102,7 @@ pub async fn get_asset(
 }
 
 pub async fn get_price_stats_signal(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Path(slug): Path<String>,
     Query(params): Query<PriceSignalQuery>,
 ) -> Result<Json<PriceSignalResponse>, ApiError> {
@@ -120,7 +120,7 @@ pub async fn get_price_stats_signal(
 }
 
 pub async fn get_price_trend_signal(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     Path(slug): Path<String>,
     Query(params): Query<PriceSignalQuery>,
 ) -> Result<Json<PriceSignalResponse>, ApiError> {

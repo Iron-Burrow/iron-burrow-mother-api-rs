@@ -1,6 +1,7 @@
 mod adapters;
 mod admin;
 mod application;
+mod bootstrap;
 mod cli;
 mod common;
 #[allow(dead_code)]

@@ -7,6 +7,7 @@ use axum::{
 use tracing::warn;
 use uuid::Uuid;
 
+use crate::adapters::http::state::HttpState;
 use crate::{
     adapters::{
         http::error::ApiError,
@@ -21,7 +22,6 @@ use crate::{
             AuthorizationRequest, Capability,
         },
     },
-    state::AppState,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -38,7 +38,7 @@ pub(crate) struct ApiKeyPrincipal {
 }
 
 pub(crate) async fn require_api_key(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     request: Request,
     next: Next,
 ) -> Response {
@@ -46,56 +46,56 @@ pub(crate) async fn require_api_key(
 }
 
 pub(crate) async fn require_transfer_api_key(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     request: Request,
     next: Next,
 ) -> Response {
     require_api_key_for(Capability::Erc20TransfersRead, state, request, next).await
 }
 pub(crate) async fn require_workspace_activity_api_key(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     request: Request,
     next: Next,
 ) -> Response {
     require_api_key_for(Capability::WorkspaceActivityRead, state, request, next).await
 }
 pub(crate) async fn require_treasury_api_key(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     request: Request,
     next: Next,
 ) -> Response {
     require_api_key_for(Capability::TreasuryRead, state, request, next).await
 }
 pub(crate) async fn require_catalog_api_key(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     request: Request,
     next: Next,
 ) -> Response {
     require_api_key_for(Capability::CatalogRead, state, request, next).await
 }
 pub(crate) async fn require_prices_api_key(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     request: Request,
     next: Next,
 ) -> Response {
     require_api_key_for(Capability::PricesRead, state, request, next).await
 }
 pub(crate) async fn require_lab_api_key(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     request: Request,
     next: Next,
 ) -> Response {
     require_api_key_for(Capability::LabRead, state, request, next).await
 }
 pub(crate) async fn require_reports_read_api_key(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     request: Request,
     next: Next,
 ) -> Response {
     require_api_key_for(Capability::ReportsRead, state, request, next).await
 }
 pub(crate) async fn require_reports_write_api_key(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     request: Request,
     next: Next,
 ) -> Response {
@@ -103,7 +103,7 @@ pub(crate) async fn require_reports_write_api_key(
 }
 
 pub(crate) async fn require_bigwig_report_outcome_token(
-    State(state): State<AppState>,
+    State(state): State<HttpState>,
     request: Request,
     next: Next,
 ) -> Response {
@@ -145,7 +145,7 @@ fn constant_time_eq(expected: &[u8], presented: &[u8]) -> bool {
 }
 
 pub(crate) async fn require_network_scopes(
-    state: &AppState,
+    state: &HttpState,
     principal: Option<&ApiKeyPrincipal>,
     capability: Capability,
     network_slugs: &[String],
@@ -183,7 +183,7 @@ pub(crate) async fn require_network_scopes(
 
 async fn require_api_key_for(
     required_capability: Capability,
-    state: AppState,
+    state: HttpState,
     mut request: Request,
     next: Next,
 ) -> Response {
@@ -350,7 +350,7 @@ async fn record_response_class(
 }
 
 async fn authenticate(
-    state: &AppState,
+    state: &HttpState,
     headers: &axum::http::HeaderMap,
 ) -> Result<ApiKeyPrincipal, AuthError> {
     let presented_key = bearer_credential(headers)?;
@@ -448,9 +448,12 @@ mod tests {
 
     use super::*;
     use crate::{
-        adapters::postgres::{
-            api_keys::{ApiKeyAuthorizationGrants, ApiKeyPolicy, InMemoryApiKeyUsageSnapshot},
-            ApiKeyRepository,
+        adapters::{
+            http::state::{embedded_canonical_registry, embedded_verified_protocol_registry},
+            postgres::{
+                api_keys::{ApiKeyAuthorizationGrants, ApiKeyPolicy, InMemoryApiKeyUsageSnapshot},
+                ApiKeyRepository,
+            },
         },
         config::{Config, PublicApiSurface},
         domain::{
@@ -740,7 +743,7 @@ mod tests {
         )
     }
 
-    fn state_with_lookup(lookup: ApiKeyLookup) -> AppState {
+    fn state_with_lookup(lookup: ApiKeyLookup) -> HttpState {
         state_with_repository(ApiKeyRepository::in_memory(vec![(
             TEST_PREFIX.to_string(),
             hash_presented_api_key(TEST_KEY).to_vec(),
@@ -748,15 +751,15 @@ mod tests {
         )]))
     }
 
-    fn state_with_repository(api_key_repository: ApiKeyRepository) -> AppState {
-        AppState {
+    fn state_with_repository(api_key_repository: ApiKeyRepository) -> HttpState {
+        HttpState {
             config: Config {
                 public_api_surface: PublicApiSurface::Beta,
                 ..Config::default()
             },
             version: env!("CARGO_PKG_VERSION"),
-            canonical_registry: crate::state::embedded_canonical_registry(),
-            verified_protocol_registry: crate::state::embedded_verified_protocol_registry(),
+            canonical_registry: embedded_canonical_registry(),
+            verified_protocol_registry: embedded_verified_protocol_registry(),
             database_pool: None,
             api_key_repository: Some(api_key_repository),
             account_repository: None,
