@@ -260,19 +260,29 @@ async fn fake_quote_reader_controls_application_quote_outcomes() {
         FakeQuoteReader::failure(PriceQuoteError::ProviderUnavailable),
         FakeQuoteReader::failure(PriceQuoteError::InternalError),
     ];
-    let mut outcomes = Vec::new();
+    let mut calls = tokio::task::JoinSet::new();
 
-    for reader in readers {
-        let result = service_with_quote(Some(bigwig_client(&bigwig_url)), Some(reader))
-            .resolve(command())
-            .await
-            .unwrap();
+    for (index, reader) in readers.into_iter().enumerate() {
+        let service = service_with_quote(Some(bigwig_client(&bigwig_url)), Some(reader));
+        let command = command();
+        calls.spawn(async move { (index, service.resolve(command).await) });
+    }
+
+    let mut outcomes = vec![None; calls.len()];
+    while let Some(call) = calls.join_next().await {
+        let (index, result) = call.unwrap();
+        let result = result.unwrap();
         let BalanceItemOutcome::Resolved { quote, .. } = &result.accounts[0].items[0] else {
             panic!("expected resolved balance item");
         };
-        outcomes.push(quote.clone());
+        outcomes[index] = Some(quote.clone());
     }
     bigwig_server.join().unwrap();
+
+    let outcomes = outcomes
+        .into_iter()
+        .map(|outcome| outcome.expect("every quote outcome must be collected"))
+        .collect::<Vec<_>>();
 
     assert!(matches!(outcomes[0], BalanceQuoteOutcome::Available { .. }));
     assert_eq!(
