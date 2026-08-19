@@ -46,17 +46,11 @@ impl WorkspaceBalanceResolutionPlanner {
             }
 
             let mut members = members;
-            members.sort_by(|left, right| {
+            members.sort_by_cached_key(|member| {
                 (
-                    left.network_slug.as_str(),
-                    left.address.to_ascii_lowercase(),
-                    left.public_id.as_str(),
+                    member.address.to_ascii_lowercase(),
+                    member.public_id.as_str(),
                 )
-                    .cmp(&(
-                        right.network_slug.as_str(),
-                        right.address.to_ascii_lowercase(),
-                        right.public_id.as_str(),
-                    ))
             });
 
             for asset_chunk in asset_slugs.chunks(MAX_TOKENS) {
