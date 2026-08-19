@@ -11,6 +11,8 @@ use crate::{
     domain::validation::is_evm_address,
 };
 
+pub(crate) mod portfolio;
+
 pub(crate) const MAX_WORKSPACE_ADDRESSES: usize = 100;
 pub(crate) const MAX_ADDRESS_LABELS: usize = 20;
 
