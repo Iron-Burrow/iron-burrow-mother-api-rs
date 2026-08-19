@@ -1,5 +1,5 @@
 ---
-status: draft
+status: accepted
 owner: iron-burrow
 last_reviewed: 2026-08-19
 agent_edit_policy: update_when_relevant
@@ -45,7 +45,7 @@ Treasury Snapshot persistence remains a separate explicit capability.
 
 ## 2. Repository Alignment
 
-This draft builds on, and does not alter:
+This specification builds on, and does not alter:
 
 * [RFC-003](../rfcs/RFC-003%20-%20Mother%20API%20El%20Vasco%20Architecture.md) and [ADR-001](../adr/ADR-001-human-and-machine-domain-strategy.md) for the shared Mother application boundary and private human-web delivery surface;
 * [SPEC-020](SPEC-020-workspace-scoped-balance-and-transfer-views.md) for account-owned, selected-member balance views, which this draft composes but does not replace;
@@ -223,6 +223,8 @@ Askama templates MUST NOT independently resolve balances, aggregate assets, or c
 
 ### 8.1 Initial Asset Coverage
 
+**Accepted decision:** Initial coverage is the canonical registry boundary.
+
 The initial portfolio coverage is the canonical registry boundary. For each Workspace member, Mother MUST resolve every active canonical asset that has an active `asset_chain_map` for that member's `network_slug`. It MUST NOT scan a wallet for unknown ERC-20s or discover random, unsupported, or meme assets.
 
 An active canonical asset without an active mapping on a member's network is not in that member's expected resolution set. Its absence MUST NOT make the portfolio partial.
@@ -346,6 +348,8 @@ Assets whose canonical identity cannot safely be established MUST NOT be merged 
 ---
 
 ## 11. Valuation and Quote Currency
+
+**Accepted decision:** USD is the sole initial quote currency and is fixed for every Current Workspace Portfolio.
 
 The first implementation uses USD only:
 

@@ -65,12 +65,21 @@ A Current Workspace Portfolio is a planned, ephemeral observation of the
 registered sources in one Workspace. Reading it must not create historical
 state.
 
-The first composition is the latest wallet-balance observation for Workspace
-member addresses. For each member network, it covers only active canonical
-assets with an active mapping on that network; it does not discover arbitrary
-wallet tokens. It uses fixed USD valuation and must preserve source, network,
-balance and quote evidence, valuation availability, and partial-result
-truthfulness.
+The following initial portfolio decisions are accepted in
+[SPEC-036](../specs/SPEC-036-current-workspace-portfolio.md):
+
+* **Asset coverage:** the first composition is the latest wallet-balance
+  observation for Workspace member addresses. For each member network, it
+  covers every active canonical asset with an active mapping on that network;
+  it does not discover arbitrary wallet tokens. An active canonical asset
+  without a mapping on a member's network is not an expected component.
+* **Quote currency:** valuation is fixed in USD. It is neither caller-selectable
+  nor Workspace-configurable, and known value is composed from the existing
+  USD quote outcomes for individual contributions rather than from a new
+  portfolio-level quote.
+
+The observation must preserve source, network, balance and quote evidence,
+valuation availability, and partial-result truthfulness.
 
 Aave account positions and NEAR validator positions are not part of the
 current portfolio capability. They remain future possibilities only after
