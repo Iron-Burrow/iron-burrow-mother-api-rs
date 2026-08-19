@@ -65,9 +65,12 @@ A Current Workspace Portfolio is a planned, ephemeral observation of the
 registered sources in one Workspace. Reading it must not create historical
 state.
 
-The first possible composition is the latest supported wallet-balance
-observation for Workspace member addresses. It must preserve source, network,
-evidence, valuation availability, and partial-result truthfulness.
+The first composition is the latest wallet-balance observation for Workspace
+member addresses. For each member network, it covers only active canonical
+assets with an active mapping on that network; it does not discover arbitrary
+wallet tokens. It uses fixed USD valuation and must preserve source, network,
+balance and quote evidence, valuation availability, and partial-result
+truthfulness.
 
 Aave account positions and NEAR validator positions are not part of the
 current portfolio capability. They remain future possibilities only after
@@ -143,8 +146,6 @@ Mother’s responsibility.
 
 ## Open product decisions
 
-- Should the first Current Workspace Portfolio expose a single quote currency,
-  and how should the product present partial valuation?
 - After a supported position capability exists, which position categories may
   participate in a Workspace portfolio without double counting wallet and
   protocol exposure?
