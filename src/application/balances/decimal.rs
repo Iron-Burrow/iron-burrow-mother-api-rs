@@ -44,6 +44,24 @@ pub fn multiply_amount_by_price(
     Ok(format_scaled_digits(product, scale))
 }
 
+/// Adds two non-negative decimal strings exactly, retaining the greater input
+/// scale. This is deliberately string based so portfolio composition never
+/// converts on-chain amounts or valuations through floating point.
+pub fn add_unsigned_decimals(left: &str, right: &str) -> Result<String, DecimalError> {
+    let left = parse_unsigned_decimal(left)?;
+    let right = parse_unsigned_decimal(right)?;
+    let scale = left.scale.max(right.scale);
+    let mut left_digits = left.digits;
+    let mut right_digits = right.digits;
+    left_digits.push_str(&"0".repeat(scale - left.scale));
+    right_digits.push_str(&"0".repeat(scale - right.scale));
+
+    Ok(format_scaled_digits(
+        add_integer_digits(&left_digits, &right_digits),
+        scale,
+    ))
+}
+
 struct ParsedDecimal {
     digits: String,
     scale: usize,
@@ -127,6 +145,33 @@ fn multiply_integer_digits(left: &str, right: &str) -> String {
         .collect()
 }
 
+fn add_integer_digits(left: &str, right: &str) -> String {
+    let left = left.as_bytes();
+    let right = right.as_bytes();
+    let mut digits = Vec::with_capacity(left.len().max(right.len()) + 1);
+    let mut carry = 0u8;
+    let mut offset = 0usize;
+
+    while offset < left.len() || offset < right.len() || carry != 0 {
+        let left_digit = (offset < left.len())
+            .then(|| left[left.len() - offset - 1] - b'0')
+            .unwrap_or(0);
+        let right_digit = (offset < right.len())
+            .then(|| right[right.len() - offset - 1] - b'0')
+            .unwrap_or(0);
+        let sum = left_digit + right_digit + carry;
+        digits.push(sum % 10);
+        carry = sum / 10;
+        offset += 1;
+    }
+
+    digits
+        .into_iter()
+        .rev()
+        .map(|digit| char::from(b'0' + digit))
+        .collect()
+}
+
 fn format_scaled_digits(digits: String, scale: usize) -> String {
     if scale == 0 {
         return digits;
@@ -188,6 +233,19 @@ mod tests {
             )
             .unwrap(),
             "254973811238254813427840.000000000000000000"
+        );
+    }
+
+    #[test]
+    fn adds_decimal_values_without_losing_precision_or_scale() {
+        assert_eq!(add_unsigned_decimals("1.20", "2.003").unwrap(), "3.203");
+        assert_eq!(
+            add_unsigned_decimals("999.999", "0.001").unwrap(),
+            "1000.000"
+        );
+        assert_eq!(
+            add_unsigned_decimals("999999999999999999999999", "1").unwrap(),
+            "1000000000000000000000000"
         );
     }
 
