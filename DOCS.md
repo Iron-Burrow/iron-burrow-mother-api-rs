@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-08-18
+last_reviewed: 2026-08-19
 agent_edit_policy: update_when_relevant
 ---
 
@@ -25,6 +25,9 @@ Mother API recognizes the following kinds of documents:
 - **Contracts**: the promised public and internal surface of Mother API,
   captured in `CONTRACTS.md`. Contracts are binding promises, not
   aspirations.
+- **Product documents**: draft product intent under [docs/product/](docs/product/).
+  They describe user journeys and product boundaries, while RFCs and specs
+  retain architectural and implementation decisions.
 - **Decisions (ADRs)**: accepted architectural decisions stored under
   [docs/adr/](docs/adr/). Decisions are durable and only superseded by newer
   ADRs.
@@ -91,6 +94,7 @@ CONTRACTS.md                      Public and internal contract promises
 docs/rfcs/                        Proposals and design discussions
 docs/specs/                       Accepted/draft implementation specs
 docs/adr/                         Accepted architectural decisions
+docs/product/                     Draft product intent and boundaries
 docs/archive/                     Historical memory
 ```
 

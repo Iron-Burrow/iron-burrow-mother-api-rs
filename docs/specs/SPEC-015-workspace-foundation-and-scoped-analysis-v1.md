@@ -1,7 +1,7 @@
 ---
 status: draft
 owner: iron-burrow
-last_reviewed: 2026-07-30
+last_reviewed: 2026-08-19
 agent_edit_policy: update_when_relevant
 ---
 
@@ -18,6 +18,7 @@ end-to-end Data Lab slice.
 
 - Workspace domain terminology and ownership invariants.
 - Relationship between `IBAccount` and Workspace.
+- Initial personal Workspace creation during IBAccount signup.
 - Workspace lifecycle states and minimum fields.
 - Watch-only address membership registration.
 - Workspace labels.
@@ -66,6 +67,10 @@ integrity:
 
 - An `IBAccount` may own multiple Workspaces.
 - A Workspace has exactly one owner `IBAccount` in v1.
+- A newly created IBAccount receives one active initial Workspace named
+  `Personal Workspace` in the same transaction as account creation. This is
+  an onboarding convenience, not a preferred-Workspace field or a
+  single-Workspace restriction.
 - Workspace ownership transfer is deferred.
 - Organization ownership and shared Workspace membership are deferred.
 

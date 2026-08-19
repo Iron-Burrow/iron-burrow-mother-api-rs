@@ -1,7 +1,7 @@
 ---
 status: draft
 owner: iron-burrow
-last_reviewed: 2026-08-07
+last_reviewed: 2026-08-19
 agent_edit_policy: update_when_relevant
 ---
 
@@ -42,9 +42,11 @@ authorization and account-ownership foundation.
   Mother trims and ASCII-lowercases email, keeps the existing 254-character
   and basic-address validation, requires a 12–128-character password without
   composition rules, and returns a non-enumerating failure for duplicates.
-  It creates an active `ib_account`, a pending/unverified identity, its
-  baseline account and Lab capability grants, and a session, then redirects to
-  `/lab`.
+  It creates an active `ib_account`, one active initial `Personal Workspace`,
+  a pending/unverified identity, its baseline account and Lab capability
+  grants, and a session in one transaction, then redirects to `/lab`. The
+  initial Workspace does not restrict later Workspace creation or establish a
+  preferred-Workspace setting.
 - `POST /login` has the same origin/CSRF requirement. Missing, malformed,
   unknown, passwordless-legacy, disabled, suspended, closed, and wrong-password
   states all render the same `401` invalid-credentials response. Unknown and
@@ -98,9 +100,9 @@ authorization and account-ownership foundation.
 ## Acceptance criteria
 
 - Unit tests cover password bounds, Argon2id verification and rehash decision.
-- Postgres tests cover immediate active-account creation, uniqueness, grants,
-  session rotation/expiry/revocation, account suspension, and disabled
-  identities.
+- Postgres tests cover immediate active-account and initial-Workspace creation,
+  uniqueness, grants, session rotation/expiry/revocation, account suspension,
+  and disabled identities.
 - HTTP tests cover no-store form rendering, exact cookie flags, CSRF and
   same-origin rejection, generic login failure, `/lab` redirect, and removal
   of `/verify-email`.

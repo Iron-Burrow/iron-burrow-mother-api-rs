@@ -8,6 +8,7 @@ const SESSION_ABSOLUTE_TTL_SECONDS: i64 = 8 * 60 * 60;
 const SESSION_IDLE_TTL_SECONDS: i64 = 30 * 60;
 const DEMO_INTENT_TTL_SECONDS: i64 = 10 * 60;
 const DEMO_KEY_TTL_SECONDS: i64 = 24 * 60 * 60;
+const INITIAL_WORKSPACE_NAME: &str = "Personal Workspace";
 
 #[derive(Clone, Debug)]
 pub(crate) struct AccountRepository(pub(crate) PgPool);
@@ -80,6 +81,7 @@ impl AccountRepository {
         sqlx::query("insert into mother_api.account_identity (id, ib_account_id, email_normalized, email_lookup_hash, password_hash) values ($1, $2, $3, $4, $5)")
             .bind(identity_id).bind(account_id).bind(email_normalized).bind(email_lookup_hash).bind(password_hash).execute(&mut *tx).await.map_err(RepositoryError::new)?;
         grant_baseline_capabilities(&mut tx, account_id).await?;
+        create_initial_workspace(&mut tx, account_id).await?;
         create_session(&mut tx, account_id, identity_id, session_hash, csrf_hash).await?;
         tx.commit().await.map_err(RepositoryError::new)?;
         Ok(SignupOutcome::Created)
@@ -141,7 +143,7 @@ impl AccountRepository {
         session_hash: &[u8],
     ) -> Result<Option<BrowserSessionLookup>, RepositoryError> {
         let row = sqlx::query_as::<_, SessionRow>(
-            "update mother_api.browser_session session set last_seen_at = now(), idle_expires_at = least(session.expires_at, now() + make_interval(secs => $2)) from mother_api.ib_account account join mother_api.account_identity identity on identity.id = session.account_identity_id where session.ib_account_id = account.id and session.session_hash = $1 and session.revoked_at is null and session.expires_at > now() and session.idle_expires_at > now() and account.status = 'active' and identity.status <> 'disabled' returning session.ib_account_id, account.public_id, session.csrf_hash",
+            "update mother_api.browser_session session set last_seen_at = now(), idle_expires_at = least(session.expires_at, now() + make_interval(secs => $2)) from mother_api.ib_account account, mother_api.account_identity identity where session.ib_account_id = account.id and identity.id = session.account_identity_id and session.session_hash = $1 and session.revoked_at is null and session.expires_at > now() and session.idle_expires_at > now() and account.status = 'active' and identity.status <> 'disabled' returning session.ib_account_id, account.public_id, session.csrf_hash",
         ).bind(session_hash).bind(SESSION_IDLE_TTL_SECONDS).fetch_optional(&self.0).await.map_err(RepositoryError::new)?;
         Ok(row.map(Into::into))
     }
@@ -220,6 +222,37 @@ async fn grant_baseline_capabilities(
     Ok(())
 }
 
+async fn create_initial_workspace(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    account_id: Uuid,
+) -> Result<(), RepositoryError> {
+    let workspace_id = Uuid::new_v4();
+    let workspace_public_id = format!("wsp_{}", workspace_id.simple());
+    sqlx::query(
+        "insert into mother_api.workspace (id, public_id, owner_ib_account_id, name) values ($1, $2, $3, $4)",
+    )
+    .bind(workspace_id)
+    .bind(&workspace_public_id)
+    .bind(account_id)
+    .bind(INITIAL_WORKSPACE_NAME)
+    .execute(&mut **tx)
+    .await
+    .map_err(RepositoryError::new)?;
+
+    let event_id = Uuid::new_v4();
+    sqlx::query(
+        "insert into mother_api.workspace_activity_event (id, public_id, workspace_id, event_type, actor_kind, payload_version, payload) values ($1, $2, $3, 'workspace.created', 'browser_session', 1, $4)",
+    )
+    .bind(event_id)
+    .bind(format!("wae_{}", event_id.simple()))
+    .bind(workspace_id)
+    .bind(serde_json::json!({"workspace": {"name": INITIAL_WORKSPACE_NAME, "description": null}}))
+    .execute(&mut **tx)
+    .await
+    .map_err(RepositoryError::new)?;
+    Ok(())
+}
+
 async fn create_session(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     account_id: Uuid,
@@ -278,13 +311,35 @@ mod tests {
     use crate::{domain::passwords, test_utils::postgres::migrated_pool};
 
     async fn remove_identity(pool: &PgPool, lookup_hash: &[u8]) {
-        sqlx::query(
-            "delete from mother_api.ib_account where id in (select ib_account_id from mother_api.account_identity where email_lookup_hash = $1)",
+        let Some(account_id) = sqlx::query_scalar::<_, Uuid>(
+            "select ib_account_id from mother_api.account_identity where email_lookup_hash = $1",
         )
         .bind(lookup_hash)
-        .execute(pool)
+        .fetch_optional(pool)
         .await
-        .unwrap();
+        .unwrap() else {
+            return;
+        };
+        sqlx::query("delete from mother_api.browser_session where ib_account_id = $1")
+            .bind(account_id)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("delete from mother_api.workspace where owner_ib_account_id = $1")
+            .bind(account_id)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("delete from mother_api.account_identity where email_lookup_hash = $1")
+            .bind(lookup_hash)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("delete from mother_api.ib_account where id = $1")
+            .bind(account_id)
+            .execute(pool)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -324,8 +379,8 @@ mod tests {
             SignupOutcome::AlreadyRegistered
         );
 
-        let row = sqlx::query_as::<_, (Uuid, String, Option<String>, Option<String>, i64)>(
-            "select account.id, account.status, identity.password_hash, identity.verified_at::text, (select count(*) from mother_api.ib_account_capability_grant capability_grant where capability_grant.ib_account_id = account.id) from mother_api.ib_account account join mother_api.account_identity identity on identity.ib_account_id = account.id where identity.email_lookup_hash = $1",
+        let row = sqlx::query_as::<_, (Uuid, String, Option<String>, Option<String>, i64, i64, String)>(
+            "select account.id, account.status, identity.password_hash, identity.verified_at::text, (select count(*) from mother_api.ib_account_capability_grant capability_grant where capability_grant.ib_account_id = account.id), (select count(*) from mother_api.workspace workspace where workspace.owner_ib_account_id = account.id), (select workspace.name from mother_api.workspace workspace where workspace.owner_ib_account_id = account.id) from mother_api.ib_account account join mother_api.account_identity identity on identity.ib_account_id = account.id where identity.email_lookup_hash = $1",
         )
         .bind(lookup_hash.as_slice())
         .fetch_one(&pool)
@@ -335,6 +390,8 @@ mod tests {
         assert_eq!(row.2.as_deref(), Some(password_hash.as_str()));
         assert_eq!(row.3, None);
         assert_eq!(row.4, 9);
+        assert_eq!(row.5, 1);
+        assert_eq!(row.6, INITIAL_WORKSPACE_NAME);
         assert!(repository
             .find_session(&[1_u8; 32])
             .await
