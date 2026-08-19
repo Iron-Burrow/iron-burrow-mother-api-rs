@@ -330,6 +330,25 @@ impl CanonicalRegistry {
             .collect()
     }
 
+    pub(crate) fn active_asset_slugs_mapped_to_network(&self, network_slug: &str) -> Vec<String> {
+        let Some(network) = self
+            .network_by_slug(network_slug)
+            .filter(|network| is_active(&network.status))
+        else {
+            return Vec::new();
+        };
+
+        self.active_asset_indexes
+            .iter()
+            .map(|index| &self.assets[*index])
+            .filter(|asset| {
+                self.mapping(&asset.slug, &network.slug)
+                    .is_some_and(|mapping| is_active(&mapping.status))
+            })
+            .map(|asset| asset.slug.clone())
+            .collect()
+    }
+
     pub(crate) fn asset_detail(&self, slug: &str) -> Option<CanonicalAssetDetail<'_>> {
         let asset_index = *self.asset_by_slug.get(&slug.to_ascii_lowercase())?;
         let asset = &self.assets[asset_index];
@@ -747,11 +766,14 @@ fn is_active(status: &str) -> bool {
 }
 
 fn asset_order(left: &CanonicalAsset, right: &CanonicalAsset) -> std::cmp::Ordering {
-    left.sort_order.cmp(&right.sort_order).then_with(|| {
-        left.symbol
-            .to_ascii_lowercase()
-            .cmp(&right.symbol.to_ascii_lowercase())
-    })
+    left.sort_order
+        .cmp(&right.sort_order)
+        .then_with(|| {
+            left.symbol
+                .to_ascii_lowercase()
+                .cmp(&right.symbol.to_ascii_lowercase())
+        })
+        .then_with(|| left.slug.cmp(&right.slug))
 }
 
 fn mapping_order(
@@ -895,6 +917,40 @@ mod tests {
         );
         assert!(registry.find_confident_asset("inactive").is_none());
         assert!(registry.asset_detail("inactive-ordering").is_none());
+    }
+
+    #[test]
+    fn mapped_asset_slugs_use_canonical_order_and_exclude_inactive_mappings() {
+        let mut catalog = minimal_catalog("mapped-ordering");
+        let network_slug = catalog.networks[0].slug.clone();
+
+        let mut earlier_slug = asset("another-mapped-ordering");
+        earlier_slug.symbol = "TST".to_string();
+        earlier_slug.sort_order = 10;
+        let mut earlier_mapping = catalog.asset_chain_maps[0].clone();
+        earlier_mapping.asset_slug = earlier_slug.slug.clone();
+        earlier_mapping.deployment_address =
+            Some("0x2222222222222222222222222222222222222222".to_string());
+        catalog.assets.push(earlier_slug);
+        catalog.asset_chain_maps.push(earlier_mapping);
+
+        let inactive_asset = asset("inactive-mapped-ordering");
+        let mut inactive_mapping = catalog.asset_chain_maps[0].clone();
+        inactive_mapping.asset_slug = inactive_asset.slug.clone();
+        inactive_mapping.deployment_address =
+            Some("0x3333333333333333333333333333333333333333".to_string());
+        inactive_mapping.status = "inactive".to_string();
+        catalog.assets.push(inactive_asset);
+        catalog.asset_chain_maps.push(inactive_mapping);
+
+        let registry = CanonicalRegistry::from_catalog(catalog).unwrap();
+        assert_eq!(
+            registry.active_asset_slugs_mapped_to_network(&network_slug),
+            vec![
+                "another-mapped-ordering".to_string(),
+                "test-asset-mapped-ordering".to_string(),
+            ]
+        );
     }
 
     #[test]
