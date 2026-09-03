@@ -1,7 +1,7 @@
 ---
 status: draft
 owner: iron-burrow
-last_reviewed: 2026-08-19
+last_reviewed: 2026-09-03
 agent_edit_policy: update_when_relevant
 ---
 
@@ -29,14 +29,14 @@ Mother already provides:
   mainnet;
 - private member-address label sets;
 - selected-address balance and transfer views;
+- current wallet-only USD portfolio observations with member provenance;
 - manual, immutable Workspace Treasury Snapshots of selected balance
   observations; and
 - private Workspace activity and snapshot-history views.
 
 A newly created IBAccount receives one initial `Personal Workspace`.
-There is no Workspace-level Current Portfolio view, no portfolio-source
-record, no Aave account-position capability, no NEAR validator capability,
-and no automatic snapshot scheduling.
+There is no portfolio-source record, Aave account-position capability, NEAR
+validator capability, or automatic snapshot scheduling.
 
 ## Product concepts
 
@@ -61,7 +61,7 @@ configuration.
 
 ### Current Workspace Portfolio
 
-A Current Workspace Portfolio is a planned, ephemeral observation of the
+A Current Workspace Portfolio is an ephemeral observation of the
 registered sources in one Workspace. Reading it must not create historical
 state.
 
@@ -107,12 +107,12 @@ Included today:
 - private IBAccount and Workspace ownership;
 - watch-only Ethereum-mainnet and Base-mainnet member addresses;
 - private address labels;
+- a current Workspace-level wallet portfolio observation in fixed USD;
 - selected-address balance and transfer views; and
 - manual immutable treasury snapshot history.
 
 Planned, subject to focused specifications:
 
-- a current Workspace-level wallet portfolio observation;
 - explicit capture of that observation as a Treasury Snapshot; and
 - later, composition of supported discovered protocol positions.
 

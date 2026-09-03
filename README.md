@@ -1,7 +1,7 @@
 ---
 status: active
 owner: iron-burrow
-last_reviewed: 2026-08-17
+last_reviewed: 2026-09-03
 agent_edit_policy: update_when_relevant
 ---
 
@@ -87,8 +87,8 @@ shapes.
 
 `https://www.ironburrow.com` serves the public Iron Burrow homepage, Scan
 holding pages, API-access information, and `/docs` for the human-readable API
-guide. Authenticated Data Lab catalog, price, Lab, and Workspace treasury
-snapshot presenters run in the same Mother API binary; they are evolving web
+guide. Authenticated Data Lab catalog, price, Lab, and Workspace portfolio and
+treasury snapshot presenters run in the same Mother API binary; they are evolving web
 product transports, not `/v1` operations. The web entry is not a second
 frontend service or another version of the public machine API.
 
@@ -104,8 +104,9 @@ also a browser-only research surface, not a `/v1` compatibility promise.
 contract. `app.ironburrow.com` is not configured. The web entry includes
 email/password account entry with server-side browser sessions, a constrained anonymous demo-key flow, and
 account-owned Workspaces at `/workspaces`. Workspaces hold watch-only Ethereum
-or Base addresses with labels, selected-address balance or transfer views, and
-an append-only activity/evidence timeline. Account-owned API keys can export
+or Base addresses with labels, a current wallet-only USD portfolio observation,
+selected-address balance or transfer views, and an append-only activity/evidence
+timeline. Account-owned API keys can export
 their Workspace timeline at `/workspaces/{workspace_id}/activity.json`; this
 is an evolving web-product transport, not a `/v1` endpoint. Workspaces are not
 a browser key-management or Scan explorer surface. A human product capability will not

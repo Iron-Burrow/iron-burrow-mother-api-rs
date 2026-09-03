@@ -477,3 +477,11 @@ implementation, and documentation changes.
 - Removed the deprecated DIS client, its configuration and deployment wiring,
   and the `checks.dis` field from the `/v1/status` contract. Archived specs
   and earlier history retain the retired integration's historical context.
+
+## 2026-09-03
+
+- Completed SPEC-036 PR 5: added the private, account-owned Current Workspace
+  Portfolio page at `/workspaces/{workspace_id}/portfolio`. It composes the
+  existing ephemeral wallet-balance observation in fixed USD without adding a
+  `/v1` operation, JSON export, migration, Treasury Snapshot, or Workspace
+  activity event.

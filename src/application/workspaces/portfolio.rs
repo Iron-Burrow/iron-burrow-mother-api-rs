@@ -25,6 +25,26 @@ pub(crate) enum PortfolioObservationStatus {
     Unavailable,
 }
 
+impl PortfolioObservationStatus {
+    /// Human-readable status for the private Workspace presentation. This is
+    /// deliberately display-only: status composition remains in the resolver.
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Complete => "complete",
+            Self::Partial => "partial",
+            Self::Unavailable => "unavailable",
+        }
+    }
+
+    pub(crate) fn is_partial(self) -> bool {
+        matches!(self, Self::Partial)
+    }
+
+    pub(crate) fn is_unavailable(self) -> bool {
+        matches!(self, Self::Unavailable)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CurrentWorkspacePortfolio {
     pub(crate) workspace: Workspace,
@@ -60,6 +80,65 @@ pub(crate) struct PortfolioContribution {
     pub(crate) labels: Vec<String>,
     pub(crate) evidence: Option<BalanceEvidence>,
     pub(crate) outcome: PortfolioContributionOutcome,
+}
+
+impl CurrentWorkspacePortfolio {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.members.is_empty()
+    }
+}
+
+impl PortfolioContribution {
+    /// The canonical identity selected by the existing balance command. A
+    /// contribution always originates from that command, including failures.
+    pub(crate) fn asset_slug(&self) -> &str {
+        contribution_asset_slug(self).unwrap_or("unknown")
+    }
+
+    pub(crate) fn amount(&self) -> Option<&str> {
+        resolved_amount(self)
+    }
+
+    pub(crate) fn known_value(&self) -> Option<&str> {
+        available_usd_quote_value(self)
+    }
+
+    /// A user-safe explanation of a missing balance or USD valuation. It does
+    /// not expose provider errors or introduce a second outcome model.
+    pub(crate) fn omission_message(&self) -> Option<&'static str> {
+        match &self.outcome {
+            PortfolioContributionOutcome::CommandUnavailable { .. }
+            | PortfolioContributionOutcome::Balance(BalanceItemOutcome::Failed { .. }) => {
+                Some("Balance observation is unavailable.")
+            }
+            PortfolioContributionOutcome::Balance(BalanceItemOutcome::Skipped { .. }) => {
+                Some("This asset is not supported on the member network.")
+            }
+            PortfolioContributionOutcome::Balance(BalanceItemOutcome::Resolved {
+                amount: None,
+                ..
+            }) => Some("Balance amount is unavailable."),
+            PortfolioContributionOutcome::Balance(BalanceItemOutcome::Resolved {
+                quote: BalanceQuoteOutcome::Available { .. },
+                ..
+            }) => None,
+            PortfolioContributionOutcome::Balance(BalanceItemOutcome::Resolved { .. }) => {
+                Some("USD valuation is unavailable.")
+            }
+        }
+    }
+
+    pub(crate) fn observed_at(&self) -> Option<&str> {
+        self.evidence
+            .as_ref()
+            .map(|evidence| evidence.observed_at.as_str())
+    }
+
+    pub(crate) fn block_number(&self) -> Option<&str> {
+        self.evidence
+            .as_ref()
+            .map(|evidence| evidence.block_number.as_str())
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
