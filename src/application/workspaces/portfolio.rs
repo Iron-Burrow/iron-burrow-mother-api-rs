@@ -89,6 +89,20 @@ pub(crate) struct WorkspacePortfolioResolver<Q> {
     balance_service: BalanceSnapshotService<Q>,
 }
 
+/// The application-level portfolio resolution boundary used by private
+/// Workspace orchestration. Keeping this small interface separate from the
+/// browser boundary lets that boundary prove authorization before it starts
+/// any balance or quote resolution.
+#[allow(async_fn_in_trait)]
+#[allow(dead_code)] // PR 5 connects the private browser route to this boundary.
+pub(crate) trait WorkspacePortfolioResolution {
+    async fn resolve_workspace_portfolio(
+        &self,
+        workspace: Workspace,
+        members: Vec<WorkspaceMemberAddress>,
+    ) -> Result<CurrentWorkspacePortfolio, WorkspacePortfolioResolverError>;
+}
+
 impl<Q> WorkspacePortfolioResolver<Q>
 where
     Q: LatestPriceQuotes,
@@ -291,6 +305,19 @@ where
         }
 
         Ok(())
+    }
+}
+
+impl<Q> WorkspacePortfolioResolution for WorkspacePortfolioResolver<Q>
+where
+    Q: LatestPriceQuotes,
+{
+    async fn resolve_workspace_portfolio(
+        &self,
+        workspace: Workspace,
+        members: Vec<WorkspaceMemberAddress>,
+    ) -> Result<CurrentWorkspacePortfolio, WorkspacePortfolioResolverError> {
+        self.resolve(workspace, members).await
     }
 }
 
