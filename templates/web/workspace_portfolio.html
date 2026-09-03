@@ -1,0 +1,67 @@
+{% extends "web/base.html" %}
+{% block title %}{{ portfolio.workspace.name }} portfolio — Iron Burrow{% endblock %}
+{% block content %}
+<p><a href="/workspaces/{{ portfolio.workspace.public_id }}">Back to {{ portfolio.workspace.name }}</a></p>
+<h1>{{ portfolio.workspace.name }} portfolio</h1>
+<p>Quote currency: {{ portfolio.quote_currency }}.</p>
+
+{% if portfolio.is_empty() %}
+<p>Known value: {{ portfolio.known_value }} {{ portfolio.quote_currency }}.</p>
+<p>No watch-only addresses are registered in this Workspace yet.</p>
+<p><a href="/workspaces/{{ portfolio.workspace.public_id }}">Add your first address</a> to observe its current supported wallet balances.</p>
+{% else %}
+  {% if portfolio.valuation_status.is_unavailable() %}
+  <p role="alert">Current portfolio data is unavailable. Mother could not produce a meaningful current portfolio observation.</p>
+  {% else if portfolio.valuation_status.is_partial() %}
+  <p role="alert">Portfolio observation is partial. Known value covers only contributions with an available USD valuation; it is not the complete Workspace value.</p>
+  <p>Known value: {{ portfolio.known_value }} {{ portfolio.quote_currency }}.</p>
+  {% else %}
+  <p>Known value: {{ portfolio.known_value }} {{ portfolio.quote_currency }}.</p>
+  {% endif %}
+
+  <h2>Aggregated assets</h2>
+  <ul>
+  {% for asset in portfolio.assets %}
+    <li>
+      <h3>{{ asset.asset_slug }}</h3>
+      {% if let Some(total_amount) = asset.total_amount %}<p>Total amount: {{ total_amount }}</p>{% else %}<p>Aggregate amount unavailable because one or more contributions could not be resolved.</p>{% endif %}
+      <p>Known value: {{ asset.known_value }} {{ portfolio.quote_currency }} ({{ asset.valuation_status.label() }}).</p>
+      <ul>
+      {% for contribution in asset.contributions %}
+        <li>{{ contribution.network_slug }} {{ contribution.address }}{% if !contribution.labels.is_empty() %} — labels: {% for label in contribution.labels %}{{ label }}{% if !loop.last %}, {% endif %}{% endfor %}{% endif %}
+          {% if let Some(amount) = contribution.amount() %}; amount: {{ amount }}{% endif %}
+          {% if let Some(value) = contribution.known_value() %}; known value: {{ value }} {{ portfolio.quote_currency }}{% endif %}
+          {% if let Some(message) = contribution.omission_message() %}; {{ message }}{% endif %}
+        </li>
+      {% endfor %}
+      </ul>
+    </li>
+  {% else %}
+    <li>No supported asset balances are currently available.</li>
+  {% endfor %}
+  </ul>
+
+  <h2>Member observations</h2>
+  <ul>
+  {% for member in portfolio.members %}
+    <li>
+      <h3>{{ member.member.network_slug }} {{ member.member.address }} ({{ member.observation_status.label() }})</h3>
+      {% if !member.member.labels.is_empty() %}<p>Labels: {% for label in member.member.labels %}{{ label }}{% if !loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+      <ul>
+      {% for contribution in member.contributions %}
+        <li>{{ contribution.asset_slug() }}
+          {% if let Some(amount) = contribution.amount() %}; amount: {{ amount }}{% endif %}
+          {% if let Some(value) = contribution.known_value() %}; known value: {{ value }} {{ portfolio.quote_currency }}{% endif %}
+          {% if let Some(observed_at) = contribution.observed_at() %}; observed {{ observed_at }}{% endif %}
+          {% if let Some(block_number) = contribution.block_number() %} at block {{ block_number }}{% endif %}
+          {% if let Some(message) = contribution.omission_message() %}; {{ message }}{% endif %}
+        </li>
+      {% else %}
+        <li>No supported asset observations are required for this member.</li>
+      {% endfor %}
+      </ul>
+    </li>
+  {% endfor %}
+  </ul>
+{% endif %}
+{% endblock %}

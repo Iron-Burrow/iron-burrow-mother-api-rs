@@ -1,7 +1,7 @@
 ---
 status: contract
 owner: iron-burrow
-last_reviewed: 2026-08-18
+last_reviewed: 2026-09-03
 agent_edit_policy: update_only_if_contract_changes
 ---
 
@@ -43,6 +43,7 @@ flows below are deliberate human-web contracts.
 | `POST` | `/logout` | `text/html; charset=utf-8` | Invalidates the current browser session. |
 | `GET`/`POST` | `/workspaces` | `text/html; charset=utf-8` | Signed-in account Workspace list and creation. |
 | `GET` | `/workspaces/{workspace_id}`, `/workspaces/{workspace_id}/activity` | `text/html; charset=utf-8` | Signed-in account-owned Workspace and append-only activity/evidence timeline. |
+| `GET` | `/workspaces/{workspace_id}/portfolio` | `text/html; charset=utf-8` | Signed-in account-owned current wallet portfolio observation in fixed USD; ephemeral and not a snapshot or export. |
 | `POST` | `/workspaces/{workspace_id}/rename`, `/workspaces/{workspace_id}/archive`, `/workspaces/{workspace_id}/restore` | `text/html; charset=utf-8` | CSRF-protected Workspace lifecycle actions. |
 | `POST` | `/workspaces/{workspace_id}/addresses` | `text/html; charset=utf-8` | Registers a watch-only EVM address. |
 | `GET`/`POST` | `/workspaces/{workspace_id}/addresses/{member_id}/*` | `text/html; charset=utf-8` | Account-owned address labels plus scoped balance and transfer views. |

@@ -326,17 +326,21 @@ async fn retired_and_future_human_routes_are_unmatched() {
 
 #[tokio::test]
 async fn workspace_routes_require_an_authenticated_browser_session() {
-    let response = test_app()
-        .oneshot(
-            Request::builder()
-                .uri("/workspaces")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(response.headers().get("location").unwrap(), "/login");
+    for uri in [
+        "/workspaces",
+        "/workspaces/wsp_00000000000000000000000000000000/portfolio",
+    ] {
+        let response = test_app()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER, "{uri}");
+        assert_eq!(
+            response.headers().get("location").unwrap(),
+            "/login",
+            "{uri}"
+        );
+    }
 }
 
 #[tokio::test]

@@ -34,7 +34,7 @@ use crate::{
         workspaces::{
             portfolio::{
                 CurrentWorkspacePortfolio, WorkspaceBalanceResolutionPlanner,
-                WorkspacePortfolioResolution,
+                WorkspacePortfolioResolution, WorkspacePortfolioResolver,
             },
             WorkspaceService, WorkspaceServiceError,
         },
@@ -55,6 +55,7 @@ pub(crate) fn routes(state: HttpState) -> Router<HttpState> {
     Router::new()
         .route("/workspaces", get(list_workspaces).post(create_workspace))
         .route("/workspaces/{workspace_id}", get(workspace_detail))
+        .route("/workspaces/{workspace_id}/portfolio", get(portfolio_view))
         .route("/workspaces/{workspace_id}/activity", get(activity_view))
         .route("/workspaces/{workspace_id}/treasury", get(treasury_view))
         .route(
@@ -322,6 +323,47 @@ async fn workspace_detail(
             csrf,
         }),
         Err(_) => unavailable(),
+    }
+}
+
+async fn portfolio_view(
+    State(state): State<HttpState>,
+    Extension(principal): Extension<BrowserPrincipal>,
+    Path(workspace_id): Path<String>,
+) -> Response {
+    let Some((account_id, _)) = authenticated(principal) else {
+        return Redirect::to("/login").into_response();
+    };
+    let (Some(service), Some(accounts)) = (service(&state), state.account_repository.as_ref())
+    else {
+        return unavailable();
+    };
+    let resolver = WorkspacePortfolioResolver::new(
+        state.canonical_registry.clone(),
+        state.balance_service.clone(),
+    );
+
+    portfolio_response(
+        resolve_workspace_portfolio(
+            &service,
+            accounts,
+            state.canonical_registry.clone(),
+            &resolver,
+            account_id,
+            &workspace_id,
+        )
+        .await,
+    )
+}
+
+fn portfolio_response(
+    result: Result<CurrentWorkspacePortfolio, WorkspacePortfolioAccessError>,
+) -> Response {
+    match result {
+        Ok(portfolio) => web::private_html_response(WorkspacePortfolioTemplate { portfolio }),
+        Err(WorkspacePortfolioAccessError::NotFound) => not_found(),
+        Err(WorkspacePortfolioAccessError::Forbidden) => StatusCode::FORBIDDEN.into_response(),
+        Err(WorkspacePortfolioAccessError::Unavailable) => unavailable(),
     }
 }
 
@@ -1210,6 +1252,11 @@ struct WorkspaceDetailTemplate {
     csrf: String,
 }
 #[derive(Template)]
+#[template(path = "web/workspace_portfolio.html")]
+struct WorkspacePortfolioTemplate {
+    portfolio: CurrentWorkspacePortfolio,
+}
+#[derive(Template)]
 #[template(path = "web/workspace_activity.html")]
 struct ActivityTemplate {
     workspace: Workspace,
@@ -1245,7 +1292,8 @@ mod tests {
         time::SystemTime,
     };
 
-    use axum::http::{HeaderMap, StatusCode};
+    use askama::Template;
+    use axum::http::{header::CACHE_CONTROL, HeaderMap, StatusCode};
     use sqlx::PgPool;
     use uuid::Uuid;
 
@@ -1255,23 +1303,104 @@ mod tests {
             workspaces::{Workspace, WorkspaceMemberAddress},
             AccountRepository, WorkspaceRepository,
         },
-        application::workspaces::{
-            portfolio::{
-                CurrentWorkspacePortfolio, PortfolioObservationStatus,
-                WorkspacePortfolioResolution, WorkspacePortfolioResolverError,
+        application::{
+            balances::result::{
+                BalanceEvidence, BalanceItemOutcome, BalanceQuoteOutcome, BalanceTokenSelector,
+                ResolvedBalanceTarget,
             },
-            WorkspaceInputError, WorkspaceService,
+            workspaces::{
+                portfolio::{
+                    AggregatedAssetObservation, CurrentWorkspacePortfolio,
+                    MemberPortfolioObservation, PortfolioContribution,
+                    PortfolioContributionOutcome, PortfolioObservationStatus,
+                    WorkspacePortfolioResolution, WorkspacePortfolioResolverError,
+                },
+                WorkspaceInputError, WorkspaceService,
+            },
         },
+        domain::assets::balance_catalog::BalanceTargetKind,
         test_utils::{fixtures::registry::embedded_canonical_registry, postgres::migrated_pool},
     };
 
     use super::{
         activity_page, is_event_id, non_empty, page_csrf_token, portfolio_resolution_networks,
-        resolve_workspace_portfolio, split_values, workspace_error, ActivityQuery,
-        WorkspacePortfolioAccessError, WorkspaceServiceError,
+        portfolio_response, resolve_workspace_portfolio, split_values, workspace_error,
+        ActivityQuery, WorkspaceDetailTemplate, WorkspacePortfolioAccessError,
+        WorkspacePortfolioTemplate, WorkspaceServiceError,
     };
 
     type PortfolioResolutionCall = (Workspace, Vec<WorkspaceMemberAddress>);
+
+    fn template_workspace() -> Workspace {
+        Workspace {
+            id: Uuid::new_v4(),
+            public_id: "wsp_portfolio".to_string(),
+            name: "Portfolio Workspace".to_string(),
+            description: None,
+            status: "active".to_string(),
+        }
+    }
+
+    fn template_member() -> WorkspaceMemberAddress {
+        WorkspaceMemberAddress {
+            id: Uuid::new_v4(),
+            public_id: "wma_portfolio".to_string(),
+            network_slug: "eth-mainnet".to_string(),
+            address: "0x1111111111111111111111111111111111111111".to_string(),
+            client_ref: None,
+            labels: vec!["Treasury".to_string()],
+        }
+    }
+
+    fn resolved_usdc_contribution(quote: BalanceQuoteOutcome) -> PortfolioContribution {
+        PortfolioContribution {
+            member_id: "wma_portfolio".to_string(),
+            network_slug: "eth-mainnet".to_string(),
+            address: "0x1111111111111111111111111111111111111111".to_string(),
+            labels: vec!["Treasury".to_string()],
+            evidence: Some(BalanceEvidence {
+                network_slug: "eth-mainnet".to_string(),
+                observed_at: "2026-09-03T00:00:00Z".to_string(),
+                block_number: "123".to_string(),
+                block_hash: "0xabc".to_string(),
+                block_timestamp: "2026-09-03T00:00:00Z".to_string(),
+            }),
+            outcome: PortfolioContributionOutcome::Balance(BalanceItemOutcome::Resolved {
+                target: ResolvedBalanceTarget {
+                    selector: BalanceTokenSelector::AssetSlug("usdc".to_string()),
+                    network_slug: "eth-mainnet".to_string(),
+                    chain_id: 1,
+                    asset_slug: Some("usdc".to_string()),
+                    symbol: Some("USDC".to_string()),
+                    name: Some("USD Coin".to_string()),
+                    decimals: Some(6),
+                    pricing_asset_slug: Some("usdc".to_string()),
+                    kind: BalanceTargetKind::Erc20 {
+                        contract_address: "0x2222222222222222222222222222222222222222".to_string(),
+                    },
+                },
+                raw_amount: "2500000".to_string(),
+                amount: Some("2.5".to_string()),
+                quote,
+            }),
+        }
+    }
+
+    fn template_portfolio(
+        valuation_status: PortfolioObservationStatus,
+        members: Vec<MemberPortfolioObservation>,
+        assets: Vec<AggregatedAssetObservation>,
+    ) -> CurrentWorkspacePortfolio {
+        CurrentWorkspacePortfolio {
+            workspace: template_workspace(),
+            resolved_at: SystemTime::UNIX_EPOCH,
+            quote_currency: "USD".to_string(),
+            members,
+            assets,
+            known_value: "5".to_string(),
+            valuation_status,
+        }
+    }
 
     #[derive(Clone, Default)]
     struct RecordingPortfolioResolver {
@@ -1429,6 +1558,170 @@ mod tests {
         let response = workspace_error(WorkspaceServiceError::Repository(RepositoryError::test()));
 
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[test]
+    fn workspace_detail_links_to_the_current_portfolio() {
+        let rendered = WorkspaceDetailTemplate {
+            workspace: template_workspace(),
+            members: Vec::new(),
+            csrf: "csrf".to_string(),
+        }
+        .render()
+        .unwrap();
+
+        assert!(rendered.contains("href=\"/workspaces/wsp_portfolio/portfolio\""));
+    }
+
+    #[test]
+    fn portfolio_template_renders_an_empty_workspace_invitation() {
+        let mut portfolio =
+            template_portfolio(PortfolioObservationStatus::Complete, Vec::new(), Vec::new());
+        portfolio.known_value = "0".to_string();
+        let rendered = WorkspacePortfolioTemplate { portfolio }.render().unwrap();
+
+        assert!(rendered.contains("Known value: 0 USD."));
+        assert!(rendered.contains("No watch-only addresses are registered"));
+        assert!(rendered.contains("Add your first address"));
+    }
+
+    #[test]
+    fn portfolio_template_renders_aggregate_value_and_member_provenance() {
+        let contribution = resolved_usdc_contribution(BalanceQuoteOutcome::Available {
+            currency: "USD".to_string(),
+            unit_price: "2".to_string(),
+            value: "5".to_string(),
+            price_as_of: "2026-09-03T00:00:00Z".to_string(),
+        });
+        let rendered = WorkspacePortfolioTemplate {
+            portfolio: template_portfolio(
+                PortfolioObservationStatus::Complete,
+                vec![MemberPortfolioObservation {
+                    member: template_member(),
+                    contributions: vec![contribution.clone()],
+                    observation_status: PortfolioObservationStatus::Complete,
+                }],
+                vec![AggregatedAssetObservation {
+                    asset_slug: "usdc".to_string(),
+                    total_amount: Some("2.5".to_string()),
+                    known_value: "5".to_string(),
+                    contributions: vec![contribution],
+                    valuation_status: PortfolioObservationStatus::Complete,
+                }],
+            ),
+        }
+        .render()
+        .unwrap();
+
+        assert!(rendered.contains("Known value: 5 USD."));
+        assert!(rendered.contains("<h3>usdc</h3>"));
+        assert!(rendered.contains("Total amount: 2.5"));
+        assert!(rendered.contains("eth-mainnet 0x1111111111111111111111111111111111111111"));
+        assert!(rendered.contains("labels: Treasury"));
+        assert!(rendered.contains("observed 2026-09-03T00:00:00Z"));
+        assert!(rendered.contains("at block 123"));
+    }
+
+    #[test]
+    fn portfolio_template_qualifies_partial_and_unavailable_observations() {
+        let partial_contribution = resolved_usdc_contribution(BalanceQuoteOutcome::Unavailable {
+            code:
+                crate::application::balances::error::BalanceItemErrorCode::PriceProviderUnavailable,
+        });
+        let partial = WorkspacePortfolioTemplate {
+            portfolio: template_portfolio(
+                PortfolioObservationStatus::Partial,
+                vec![MemberPortfolioObservation {
+                    member: template_member(),
+                    contributions: vec![partial_contribution.clone()],
+                    observation_status: PortfolioObservationStatus::Partial,
+                }],
+                vec![AggregatedAssetObservation {
+                    asset_slug: "usdc".to_string(),
+                    total_amount: Some("2.5".to_string()),
+                    known_value: "0".to_string(),
+                    contributions: vec![partial_contribution],
+                    valuation_status: PortfolioObservationStatus::Partial,
+                }],
+            ),
+        }
+        .render()
+        .unwrap();
+        assert!(partial.contains("Portfolio observation is partial."));
+        assert!(partial.contains("USD valuation is unavailable."));
+        assert!(partial.contains("it is not the complete Workspace value"));
+
+        let unavailable_contribution = PortfolioContribution {
+            member_id: "wma_portfolio".to_string(),
+            network_slug: "eth-mainnet".to_string(),
+            address: "0x1111111111111111111111111111111111111111".to_string(),
+            labels: Vec::new(),
+            evidence: None,
+            outcome: PortfolioContributionOutcome::CommandUnavailable {
+                asset_slug: "usdc".to_string(),
+            },
+        };
+        let unavailable = WorkspacePortfolioTemplate {
+            portfolio: template_portfolio(
+                PortfolioObservationStatus::Unavailable,
+                vec![MemberPortfolioObservation {
+                    member: template_member(),
+                    contributions: vec![unavailable_contribution],
+                    observation_status: PortfolioObservationStatus::Unavailable,
+                }],
+                Vec::new(),
+            ),
+        }
+        .render()
+        .unwrap();
+        assert!(unavailable.contains("Current portfolio data is unavailable."));
+        assert!(unavailable.contains("Balance observation is unavailable."));
+        assert!(!unavailable.contains("Known value: 5 USD."));
+    }
+
+    #[test]
+    fn portfolio_template_response_is_private_and_no_store() {
+        let response =
+            crate::adapters::http::web::private_html_response(WorkspacePortfolioTemplate {
+                portfolio: template_portfolio(
+                    PortfolioObservationStatus::Complete,
+                    Vec::new(),
+                    Vec::new(),
+                ),
+            });
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(CACHE_CONTROL).unwrap(),
+            "private, no-store"
+        );
+    }
+
+    #[test]
+    fn portfolio_result_mapping_preserves_private_page_and_existing_errors() {
+        let success = portfolio_response(Ok(template_portfolio(
+            PortfolioObservationStatus::Complete,
+            Vec::new(),
+            Vec::new(),
+        )));
+        assert_eq!(success.status(), StatusCode::OK);
+        assert_eq!(
+            success.headers().get(CACHE_CONTROL).unwrap(),
+            "private, no-store"
+        );
+
+        assert_eq!(
+            portfolio_response(Err(WorkspacePortfolioAccessError::NotFound)).status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            portfolio_response(Err(WorkspacePortfolioAccessError::Forbidden)).status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            portfolio_response(Err(WorkspacePortfolioAccessError::Unavailable)).status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
     }
 
     #[test]
