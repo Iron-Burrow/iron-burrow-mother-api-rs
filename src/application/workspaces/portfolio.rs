@@ -392,7 +392,9 @@ fn balance_status(contributions: &[PortfolioContribution]) -> PortfolioObservati
         })
         .count();
 
-    if resolved == 0 {
+    if contributions.is_empty() {
+        PortfolioObservationStatus::Complete
+    } else if resolved == 0 {
         PortfolioObservationStatus::Unavailable
     } else if resolved == contributions.len() {
         PortfolioObservationStatus::Complete
@@ -954,6 +956,28 @@ mod tests {
         assert_eq!(portfolio.known_value, "0");
         assert!(portfolio.members.is_empty());
         assert!(portfolio.assets.is_empty());
+    }
+
+    #[test]
+    fn marks_members_with_no_planned_balance_commands_complete() {
+        let member = member(
+            "eth-mainnet",
+            "0x1111111111111111111111111111111111111111",
+            "wma_eth",
+        );
+        let portfolio = compose(vec![member], &[], Vec::new());
+
+        assert_eq!(
+            portfolio.valuation_status,
+            PortfolioObservationStatus::Complete
+        );
+        assert_eq!(portfolio.known_value, "0");
+        assert!(portfolio.assets.is_empty());
+        assert_eq!(
+            portfolio.members[0].observation_status,
+            PortfolioObservationStatus::Complete
+        );
+        assert!(portfolio.members[0].contributions.is_empty());
     }
 
     #[tokio::test]
