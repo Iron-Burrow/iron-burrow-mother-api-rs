@@ -1,3 +1,5 @@
+use std::{collections::BTreeSet, sync::Arc};
+
 use askama::Template;
 use axum::{
     extract::{Extension, Form, Path, Query, State},
@@ -29,7 +31,13 @@ use crate::{
         erc20_transfers::service::{
             build_search_plan, execute_search_plan, Erc20TransferSearchInput,
         },
-        workspaces::{WorkspaceService, WorkspaceServiceError},
+        workspaces::{
+            portfolio::{
+                CurrentWorkspacePortfolio, WorkspaceBalanceResolutionPlanner,
+                WorkspacePortfolioResolution,
+            },
+            WorkspaceService, WorkspaceServiceError,
+        },
     },
     domain::{
         accounts::OnchainAccount,
@@ -150,6 +158,79 @@ fn workspace_error(error: WorkspaceServiceError) -> Response {
         WorkspaceServiceError::Input(_) => invalid(),
         WorkspaceServiceError::Repository(_) => unavailable(),
     }
+}
+
+#[allow(dead_code)] // PR 5 exposes this private browser-flow seam through its portfolio route.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WorkspacePortfolioAccessError {
+    NotFound,
+    Forbidden,
+    Unavailable,
+}
+
+/// Resolves an owned Workspace portfolio only after every network that the
+/// deterministic planner would query is authorized. PR 5 will expose this
+/// helper through the private portfolio page; keeping it route-free here
+/// preserves the PR 4 boundary.
+#[allow(dead_code)] // PR 5 invokes this after browser-session authentication.
+async fn resolve_workspace_portfolio<R>(
+    service: &WorkspaceService,
+    accounts: &crate::adapters::postgres::AccountRepository,
+    registry: Arc<crate::domain::canonical_registry::CanonicalRegistry>,
+    resolver: &R,
+    account_id: uuid::Uuid,
+    workspace_id: &str,
+) -> Result<CurrentWorkspacePortfolio, WorkspacePortfolioAccessError>
+where
+    R: WorkspacePortfolioResolution,
+{
+    let workspace = service
+        .find(account_id, workspace_id)
+        .await
+        .map_err(|_| WorkspacePortfolioAccessError::Unavailable)?
+        .ok_or(WorkspacePortfolioAccessError::NotFound)?;
+    let members = service
+        .members(workspace.id)
+        .await
+        .map_err(|_| WorkspacePortfolioAccessError::Unavailable)?;
+    let required_networks = portfolio_resolution_networks(registry, &members)
+        .map_err(|_| WorkspacePortfolioAccessError::Unavailable)?;
+
+    for network_slug in required_networks {
+        match allowed(
+            accounts,
+            account_id,
+            Capability::BalancesRead,
+            &network_slug,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => return Err(WorkspacePortfolioAccessError::Forbidden),
+            Err(()) => return Err(WorkspacePortfolioAccessError::Unavailable),
+        }
+    }
+
+    resolver
+        .resolve_workspace_portfolio(workspace, members)
+        .await
+        .map_err(|_| WorkspacePortfolioAccessError::Unavailable)
+}
+
+#[allow(dead_code)] // Called by the deferred PR 5 portfolio route through its coordinator.
+fn portfolio_resolution_networks(
+    registry: Arc<crate::domain::canonical_registry::CanonicalRegistry>,
+    members: &[WorkspaceMemberAddress],
+) -> Result<Vec<String>, crate::application::balances::error::GetBalancesCommandError> {
+    let planner = WorkspaceBalanceResolutionPlanner::new(registry);
+    let commands = planner.plan(members)?;
+    Ok(commands
+        .iter()
+        .flat_map(|command| command.accounts().iter())
+        .map(|account| account.network_slug.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect())
 }
 
 async fn list_workspaces(
@@ -1151,16 +1232,160 @@ struct TreasuryTemplate {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        sync::{Arc, Mutex},
+        time::SystemTime,
+    };
+
     use axum::http::{HeaderMap, StatusCode};
+    use sqlx::PgPool;
+    use uuid::Uuid;
 
     use crate::{
-        adapters::postgres::errors::RepositoryError, application::workspaces::WorkspaceInputError,
+        adapters::postgres::{
+            errors::RepositoryError,
+            workspaces::{Workspace, WorkspaceMemberAddress},
+            AccountRepository, WorkspaceRepository,
+        },
+        application::workspaces::{
+            portfolio::{
+                CurrentWorkspacePortfolio, PortfolioObservationStatus,
+                WorkspacePortfolioResolution, WorkspacePortfolioResolverError,
+            },
+            WorkspaceInputError, WorkspaceService,
+        },
+        test_utils::{fixtures::registry::embedded_canonical_registry, postgres::migrated_pool},
     };
 
     use super::{
-        activity_page, is_event_id, non_empty, page_csrf_token, split_values, workspace_error,
-        ActivityQuery, WorkspaceServiceError,
+        activity_page, is_event_id, non_empty, page_csrf_token, portfolio_resolution_networks,
+        resolve_workspace_portfolio, split_values, workspace_error, ActivityQuery,
+        WorkspacePortfolioAccessError, WorkspaceServiceError,
     };
+
+    type PortfolioResolutionCall = (Workspace, Vec<WorkspaceMemberAddress>);
+
+    #[derive(Clone, Default)]
+    struct RecordingPortfolioResolver {
+        calls: Arc<Mutex<Vec<PortfolioResolutionCall>>>,
+        fail: bool,
+    }
+
+    impl RecordingPortfolioResolver {
+        fn call_count(&self) -> usize {
+            self.calls.lock().unwrap().len()
+        }
+
+        fn members(&self) -> Vec<WorkspaceMemberAddress> {
+            self.calls.lock().unwrap()[0].1.clone()
+        }
+    }
+
+    impl WorkspacePortfolioResolution for RecordingPortfolioResolver {
+        async fn resolve_workspace_portfolio(
+            &self,
+            workspace: Workspace,
+            members: Vec<WorkspaceMemberAddress>,
+        ) -> Result<CurrentWorkspacePortfolio, WorkspacePortfolioResolverError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((workspace.clone(), members.clone()));
+            if self.fail {
+                return Err(WorkspacePortfolioResolverError::InvalidDecimal);
+            }
+            Ok(CurrentWorkspacePortfolio {
+                workspace,
+                resolved_at: SystemTime::UNIX_EPOCH,
+                quote_currency: "USD".to_string(),
+                members: Vec::new(),
+                assets: Vec::new(),
+                known_value: "0".to_string(),
+                valuation_status: PortfolioObservationStatus::Complete,
+            })
+        }
+    }
+
+    async fn create_account(pool: &PgPool) -> Uuid {
+        let account_id = Uuid::new_v4();
+        sqlx::query("insert into mother_api.ib_account (id, public_id) values ($1, $2)")
+            .bind(account_id)
+            .bind(format!("iba_{}", account_id.simple()))
+            .execute(pool)
+            .await
+            .unwrap();
+        account_id
+    }
+
+    async fn create_workspace(pool: &PgPool, account_id: Uuid) -> (WorkspaceService, Workspace) {
+        let service = WorkspaceService::new(WorkspaceRepository::database(pool.clone()));
+        let workspace = service
+            .create(account_id, "Portfolio authorization", None)
+            .await
+            .unwrap();
+        (service, workspace)
+    }
+
+    async fn grant_balances_read(pool: &PgPool, account_id: Uuid, network_slug: &str) {
+        sqlx::query("insert into mother_api.ib_account_capability_grant (ib_account_id, capability_id, network_scope) values ($1, 'balances.read', $2)")
+            .bind(account_id)
+            .bind(network_slug)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    async fn remove_account(pool: &PgPool, account_id: Uuid) {
+        let workspace_ids = sqlx::query_scalar::<_, Uuid>(
+            "select id from mother_api.workspace where owner_ib_account_id = $1",
+        )
+        .bind(account_id)
+        .fetch_all(pool)
+        .await
+        .unwrap();
+        for workspace_id in workspace_ids {
+            sqlx::query("delete from mother_api.workspace_member_address_label where member_address_id in (select id from mother_api.workspace_member_address where workspace_id = $1)")
+                .bind(workspace_id)
+                .execute(pool)
+                .await
+                .unwrap();
+            sqlx::query("delete from mother_api.workspace_member_address where workspace_id = $1")
+                .bind(workspace_id)
+                .execute(pool)
+                .await
+                .unwrap();
+            sqlx::query("delete from mother_api.workspace where id = $1")
+                .bind(workspace_id)
+                .execute(pool)
+                .await
+                .unwrap();
+        }
+        sqlx::query("delete from mother_api.ib_account where id = $1")
+            .bind(account_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    async fn activity_count(pool: &PgPool, workspace_id: Uuid) -> i64 {
+        sqlx::query_scalar(
+            "select count(*) from mother_api.workspace_activity_event where workspace_id = $1",
+        )
+        .bind(workspace_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    async fn snapshot_count(pool: &PgPool, workspace_id: Uuid) -> i64 {
+        sqlx::query_scalar(
+            "select count(*) from mother_api.workspace_treasury_snapshot where workspace_id = $1",
+        )
+        .bind(workspace_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
 
     #[test]
     fn optional_form_fields_drop_blank_values() {
@@ -1211,5 +1436,267 @@ mod tests {
             before: None,
         })
         .is_err());
+    }
+
+    #[test]
+    fn portfolio_resolution_networks_are_sorted_and_deduplicated() {
+        let members = vec![
+            WorkspaceMemberAddress {
+                id: Uuid::new_v4(),
+                public_id: "wma_b".to_string(),
+                network_slug: "base-mainnet".to_string(),
+                address: "0x2222222222222222222222222222222222222222".to_string(),
+                client_ref: None,
+                labels: Vec::new(),
+            },
+            WorkspaceMemberAddress {
+                id: Uuid::new_v4(),
+                public_id: "wma_e1".to_string(),
+                network_slug: "eth-mainnet".to_string(),
+                address: "0x1111111111111111111111111111111111111111".to_string(),
+                client_ref: None,
+                labels: Vec::new(),
+            },
+            WorkspaceMemberAddress {
+                id: Uuid::new_v4(),
+                public_id: "wma_e2".to_string(),
+                network_slug: "eth-mainnet".to_string(),
+                address: "0x3333333333333333333333333333333333333333".to_string(),
+                client_ref: None,
+                labels: Vec::new(),
+            },
+        ];
+
+        assert_eq!(
+            portfolio_resolution_networks(embedded_canonical_registry(), &members).unwrap(),
+            vec!["base-mainnet", "eth-mainnet"]
+        );
+    }
+
+    #[tokio::test]
+    async fn portfolio_resolution_authorizes_all_networks_before_invoking_the_resolver() {
+        let Some(pool) = migrated_pool().await else {
+            return;
+        };
+        let account_id = create_account(&pool).await;
+        let (service, workspace) = create_workspace(&pool, account_id).await;
+        service
+            .add_member(
+                &workspace,
+                "eth-mainnet",
+                "0x1111111111111111111111111111111111111111",
+                None,
+            )
+            .await
+            .unwrap();
+        service
+            .add_member(
+                &workspace,
+                "base-mainnet",
+                "0x2222222222222222222222222222222222222222",
+                None,
+            )
+            .await
+            .unwrap();
+        grant_balances_read(&pool, account_id, "eth-mainnet").await;
+        let resolver = RecordingPortfolioResolver::default();
+        let accounts = AccountRepository::database(pool.clone());
+
+        let result = resolve_workspace_portfolio(
+            &service,
+            &accounts,
+            embedded_canonical_registry(),
+            &resolver,
+            account_id,
+            &workspace.public_id,
+        )
+        .await;
+
+        assert_eq!(result, Err(WorkspacePortfolioAccessError::Forbidden));
+        assert_eq!(resolver.call_count(), 0);
+        remove_account(&pool, account_id).await;
+    }
+
+    #[tokio::test]
+    async fn portfolio_resolution_allows_an_owner_and_preserves_duplicate_network_members() {
+        let Some(pool) = migrated_pool().await else {
+            return;
+        };
+        let account_id = create_account(&pool).await;
+        let (service, workspace) = create_workspace(&pool, account_id).await;
+        service
+            .add_member(
+                &workspace,
+                "eth-mainnet",
+                "0x1111111111111111111111111111111111111111",
+                None,
+            )
+            .await
+            .unwrap();
+        service
+            .add_member(
+                &workspace,
+                "base-mainnet",
+                "0x3333333333333333333333333333333333333333",
+                None,
+            )
+            .await
+            .unwrap();
+        grant_balances_read(&pool, account_id, "base-mainnet").await;
+        service
+            .add_member(
+                &workspace,
+                "eth-mainnet",
+                "0x2222222222222222222222222222222222222222",
+                None,
+            )
+            .await
+            .unwrap();
+        grant_balances_read(&pool, account_id, "eth-mainnet").await;
+        let resolver = RecordingPortfolioResolver::default();
+        let accounts = AccountRepository::database(pool.clone());
+
+        let result = resolve_workspace_portfolio(
+            &service,
+            &accounts,
+            embedded_canonical_registry(),
+            &resolver,
+            account_id,
+            &workspace.public_id,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(resolver.call_count(), 1);
+        assert_eq!(resolver.members().len(), 3);
+        remove_account(&pool, account_id).await;
+    }
+
+    #[tokio::test]
+    async fn portfolio_resolution_hides_cross_account_workspaces_before_member_access() {
+        let Some(pool) = migrated_pool().await else {
+            return;
+        };
+        let owner_id = create_account(&pool).await;
+        let requester_id = create_account(&pool).await;
+        let (service, workspace) = create_workspace(&pool, owner_id).await;
+        service
+            .add_member(
+                &workspace,
+                "eth-mainnet",
+                "0x1111111111111111111111111111111111111111",
+                None,
+            )
+            .await
+            .unwrap();
+        let resolver = RecordingPortfolioResolver::default();
+        let accounts = AccountRepository::database(pool.clone());
+
+        let result = resolve_workspace_portfolio(
+            &service,
+            &accounts,
+            embedded_canonical_registry(),
+            &resolver,
+            requester_id,
+            &workspace.public_id,
+        )
+        .await;
+
+        assert_eq!(result, Err(WorkspacePortfolioAccessError::NotFound));
+        assert_eq!(resolver.call_count(), 0);
+        remove_account(&pool, owner_id).await;
+        remove_account(&pool, requester_id).await;
+    }
+
+    #[tokio::test]
+    async fn an_empty_workspace_resolves_without_a_balance_grant() {
+        let Some(pool) = migrated_pool().await else {
+            return;
+        };
+        let account_id = create_account(&pool).await;
+        let (service, workspace) = create_workspace(&pool, account_id).await;
+        let resolver = RecordingPortfolioResolver::default();
+        let accounts = AccountRepository::database(pool.clone());
+
+        let result = resolve_workspace_portfolio(
+            &service,
+            &accounts,
+            embedded_canonical_registry(),
+            &resolver,
+            account_id,
+            &workspace.public_id,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(resolver.call_count(), 1);
+        assert!(resolver.members().is_empty());
+        remove_account(&pool, account_id).await;
+    }
+
+    #[tokio::test]
+    async fn portfolio_resolution_does_not_persist_snapshots_or_activity() {
+        let Some(pool) = migrated_pool().await else {
+            return;
+        };
+        let account_id = create_account(&pool).await;
+        let (service, workspace) = create_workspace(&pool, account_id).await;
+        service
+            .add_member(
+                &workspace,
+                "eth-mainnet",
+                "0x1111111111111111111111111111111111111111",
+                None,
+            )
+            .await
+            .unwrap();
+        grant_balances_read(&pool, account_id, "eth-mainnet").await;
+        let activities_before = activity_count(&pool, workspace.id).await;
+        let snapshots_before = snapshot_count(&pool, workspace.id).await;
+        let resolver = RecordingPortfolioResolver::default();
+        let accounts = AccountRepository::database(pool.clone());
+
+        let result = resolve_workspace_portfolio(
+            &service,
+            &accounts,
+            embedded_canonical_registry(),
+            &resolver,
+            account_id,
+            &workspace.public_id,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(activity_count(&pool, workspace.id).await, activities_before);
+        assert_eq!(snapshot_count(&pool, workspace.id).await, snapshots_before);
+        remove_account(&pool, account_id).await;
+    }
+
+    #[tokio::test]
+    async fn portfolio_resolver_failures_are_service_unavailable() {
+        let Some(pool) = migrated_pool().await else {
+            return;
+        };
+        let account_id = create_account(&pool).await;
+        let (service, workspace) = create_workspace(&pool, account_id).await;
+        let resolver = RecordingPortfolioResolver {
+            fail: true,
+            ..Default::default()
+        };
+        let accounts = AccountRepository::database(pool.clone());
+
+        let result = resolve_workspace_portfolio(
+            &service,
+            &accounts,
+            embedded_canonical_registry(),
+            &resolver,
+            account_id,
+            &workspace.public_id,
+        )
+        .await;
+
+        assert_eq!(result, Err(WorkspacePortfolioAccessError::Unavailable));
+        assert_eq!(resolver.call_count(), 1);
+        remove_account(&pool, account_id).await;
     }
 }
