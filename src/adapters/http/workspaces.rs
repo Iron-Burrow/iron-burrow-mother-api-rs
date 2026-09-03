@@ -196,17 +196,25 @@ where
     let required_networks = portfolio_resolution_networks(registry, &members)
         .map_err(|_| WorkspacePortfolioAccessError::Unavailable)?;
 
-    for network_slug in required_networks {
-        match allowed(
-            accounts,
-            account_id,
-            Capability::BalancesRead,
-            &network_slug,
-        )
-        .await
-        {
+    if !required_networks.is_empty() {
+        match allowed(accounts, account_id, Capability::BalancesRead, "*").await {
             Ok(true) => {}
-            Ok(false) => return Err(WorkspacePortfolioAccessError::Forbidden),
+            Ok(false) => {
+                for network_slug in required_networks {
+                    match allowed(
+                        accounts,
+                        account_id,
+                        Capability::BalancesRead,
+                        &network_slug,
+                    )
+                    .await
+                    {
+                        Ok(true) => {}
+                        Ok(false) => return Err(WorkspacePortfolioAccessError::Forbidden),
+                        Err(()) => return Err(WorkspacePortfolioAccessError::Unavailable),
+                    }
+                }
+            }
             Err(()) => return Err(WorkspacePortfolioAccessError::Unavailable),
         }
     }
@@ -1327,8 +1335,9 @@ mod tests {
     }
 
     async fn grant_balances_read(pool: &PgPool, account_id: Uuid, network_slug: &str) {
-        sqlx::query("insert into mother_api.ib_account_capability_grant (ib_account_id, capability_id, network_scope) values ($1, 'balances.read', $2)")
+        sqlx::query("insert into mother_api.ib_account_capability_grant (ib_account_id, capability_id, network_scope) values ($1, $2, $3)")
             .bind(account_id)
+            .bind(crate::domain::capabilities::Capability::BalancesRead.id())
             .bind(network_slug)
             .execute(pool)
             .await
@@ -1569,6 +1578,50 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(resolver.call_count(), 1);
         assert_eq!(resolver.members().len(), 3);
+        remove_account(&pool, account_id).await;
+    }
+
+    #[tokio::test]
+    async fn portfolio_resolution_allows_a_wildcard_balance_grant_for_every_network() {
+        let Some(pool) = migrated_pool().await else {
+            return;
+        };
+        let account_id = create_account(&pool).await;
+        let (service, workspace) = create_workspace(&pool, account_id).await;
+        service
+            .add_member(
+                &workspace,
+                "eth-mainnet",
+                "0x1111111111111111111111111111111111111111",
+                None,
+            )
+            .await
+            .unwrap();
+        service
+            .add_member(
+                &workspace,
+                "base-mainnet",
+                "0x2222222222222222222222222222222222222222",
+                None,
+            )
+            .await
+            .unwrap();
+        grant_balances_read(&pool, account_id, "*").await;
+        let resolver = RecordingPortfolioResolver::default();
+        let accounts = AccountRepository::database(pool.clone());
+
+        let result = resolve_workspace_portfolio(
+            &service,
+            &accounts,
+            embedded_canonical_registry(),
+            &resolver,
+            account_id,
+            &workspace.public_id,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(resolver.call_count(), 1);
         remove_account(&pool, account_id).await;
     }
 
